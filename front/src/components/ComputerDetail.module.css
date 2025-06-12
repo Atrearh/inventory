@@ -1,0 +1,26 @@
+/* src/components/ComputerDetail.module.css */
+.container {
+  padding: 16px;
+}
+
+.title {
+  margin-bottom: 16px;
+}
+
+.subtitle {
+  margin: 24px 0 16px;
+}
+
+.csvLink {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #1890ff;
+}
+
+.empty {
+  color: #8c8c8c;
+}
+
+.error {
+  color: #ff4d4f;
+}

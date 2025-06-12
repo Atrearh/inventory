@@ -1,0 +1,17 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+sqlalchemy==2.0.31
+pymysql==1.1.1
+python-dotenv==1.0.1
+requests==2.32.3
+ldap3==2.9.1
+pywinrm==0.4.3
+pydantic==2.8.2
+pydantic-settings==2.3.3
+requests_ntlm==1.2.0
+ntlm-auth==1.5.0
+cryptography==42.0.8
+ping3
+aiomysql==0.2.0
+aiohttp
+#fastapi uvicorn sqlalchemy aiomysql pydantic ldap3 winrm ping3

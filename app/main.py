@@ -260,6 +260,16 @@ async def start_ad_scan(
     background_tasks.add_task(ad_service.scan_and_update_ad, db)
     return {"status": "success", "task_id": task_id}
 
+@app.post("/clean-deleted-software/", response_model=dict)
+async def clean_deleted_software(repo: ComputerRepository = Depends(get_computer_repository)):
+    """Удаляет записи о ПО с is_deleted=True, старше 6 месяцев."""
+    try:
+        deleted_count = await repo.clean_old_deleted_software()
+        return {"message": f"Удалено {deleted_count} записей о ПО"}
+    except Exception as e:
+        logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка сервера")
+    
 app.include_router(router)
 
 if __name__ == "__main__":

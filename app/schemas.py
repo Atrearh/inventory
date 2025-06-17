@@ -5,6 +5,7 @@ import logging
 from .models import CheckStatus, ScanStatus
 import re
 import ipaddress
+from .settings import validate_non_empty_string 
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,20 @@ class Software(BaseModel):
     name: str = Field(..., min_length=1, alias="DisplayName")
     version: Optional[str] = Field(None, alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
+    action: Optional[str] = Field(None, alias="Action")
+    is_deleted: bool = Field(default=False)  # Новое поле
 
     @field_validator('name')
     @classmethod
     def validate_display_name(cls, v):
         return validate_non_empty_string(cls, v, "Software Name")
+
+    @field_validator('action')
+    @classmethod
+    def validate_action(cls, v):
+        if v and v not in ["Installed", "Uninstalled"]:
+            raise ValueError("Action должно быть 'Installed' или 'Uninstalled'")
+        return v
 
     class Config:
         from_attributes = True

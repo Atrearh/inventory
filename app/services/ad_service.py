@@ -4,13 +4,12 @@ from ldap3 import Server, Connection, ALL
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..settings import settings
-from .. import models
-from datetime import datetime, timezone
 from ..repositories.computer_repository import ComputerRepository
+
 logger = logging.getLogger(__name__)
 
 class ADService:
-    def __init__(self, repo: "ComputerRepository"):
+    def __init__(self, repo: ComputerRepository):
         self.repo = repo
 
     def get_ad_computers(self) -> List[dict]:
@@ -64,5 +63,5 @@ class ADService:
         logger.info("Начало сканирования и обновления AD")
         computers = self.get_ad_computers()
         for computer_data in computers:
-            await self.repo.async_upsert_ad_computer(db, computer_data)
+            await self.repo.async_upsert_ad_computer(computer_data)  # Убрали db, так как метод уже использует сессию из repo
         logger.info(f"Успешно обработано {len(computers)} компьютеров AD")

@@ -5,6 +5,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def validate_non_empty_string(cls, v, field_name):
+    """Общая функция валидации непустых строк."""
+    logger.debug(f"Валидация {field_name}: {v}")
+    if not v or not v.strip():
+        raise ValueError(f"{field_name} не может быть пустым")
+    return v.strip()
+
 class Settings(BaseSettings):
     db_user: str
     db_password: str
@@ -30,14 +37,12 @@ class Settings(BaseSettings):
     powershell_encoding: str = "utf-8"
     json_depth: int = 4
     server_port: int = 8000
-    cors_allow_origins: list[str] = ["http://localhost:8000", "http://localhost:5173", "http://localhost:8080"]  # Добавляем настройку для CORS
+    cors_allow_origins: list[str] = ["http://localhost:8000", "http://localhost:5173", "http://localhost:8080"]
 
     @field_validator('ad_username', 'ad_password', 'db_user', 'db_password')
     @classmethod
     def validate_non_empty(cls, v, info):
-        if not v or not v.strip():
-            raise ValueError(f"{info.field_name} не может быть пустым")
-        return v.strip()
+        return validate_non_empty_string(cls, v, info.field_name)
 
     class Config:
         env_file = "app/.env"

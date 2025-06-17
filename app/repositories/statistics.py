@@ -105,4 +105,4 @@ class StatisticsRepository:
             )
         )
         logger.debug(f"Возвращаемые данные статистики: {result.model_dump()}")
-        return result
+        return result  

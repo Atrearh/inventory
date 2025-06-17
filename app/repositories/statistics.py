@@ -35,12 +35,12 @@ class StatisticsRepository:
         logger.debug("Запрос дисков с низким свободным местом")
         result = await self.db.execute(
             select(models.Disk)
-            .join(models.Computer, isouter=True)  # Убедимся, что Computer загружается корректно
+            .join(models.Computer, isouter=True)
             .filter(
                 (models.Disk.total_space > 0) &
                 (models.Disk.free_space / models.Disk.total_space < 0.1)
             )
-            .options(selectinload(models.Disk.computer))  # Явная загрузка Computer
+            .options(selectinload(models.Disk.computer))
         )
         disks = result.scalars().all()
         return [
@@ -69,36 +69,40 @@ class StatisticsRepository:
             ).group_by(models.Computer.check_status)
         )
         return [
-            schemas.StatusStats(status=str(status) or "Unknown", count=count)
+            schemas.StatusStats(status=str(status.value) or "Unknown", count=count)
             for status, count in status_stats.all()
         ]
 
     async def get_statistics(self, metrics: List[str] = None) -> schemas.DashboardStats:
-        """Получение статистики с возможностью выбора метрик."""
         if metrics is None:
             metrics = ["total_computers", "os_versions", "low_disk_space", "last_scan_time", "status_stats"]
-
-        stats = schemas.DashboardStats(
-            total_computers=0,
-            os_versions=[],
-            low_disk_space=[],
-            last_scan_time=None,
-            status_stats=[]
-        )
-
+        total_computers = 0
+        os_versions = []
+        low_disk_space = []
+        last_scan_time = None
+        status_stats = []
         try:
             if "total_computers" in metrics:
-                stats.total_computers = await self.get_total_computers()
+                total_computers = await self.get_total_computers()
             if "os_versions" in metrics:
-                stats.os_versions = await self.get_os_versions()
+                os_versions = await self.get_os_versions()
             if "low_disk_space" in metrics:
-                stats.low_disk_space = await self.get_low_disk_space()
+                low_disk_space = await self.get_low_disk_space()
             if "last_scan_time" in metrics:
-                stats.last_scan_time = await self.get_last_scan_time()
+                last_scan_time = await self.get_last_scan_time()
             if "status_stats" in metrics:
-                stats.status_stats = await self.get_status_stats()
+                status_stats = await self.get_status_stats()
         except Exception as e:
             logger.error(f"Ошибка получения статистики: {str(e)}", exc_info=True)
             raise
-
-        return stats
+        result = schemas.DashboardStats(
+            total_computers=total_computers,
+            os_stats=schemas.OsStats(os_versions=os_versions),
+            disk_stats=schemas.DiskStats(low_disk_space=low_disk_space),
+            scan_stats=schemas.ScanStats(
+                last_scan_time=last_scan_time,
+                status_stats=status_stats
+            )
+        )
+        logger.debug(f"Возвращаемые данные статистики: {result.model_dump()}")
+        return result

@@ -39,7 +39,7 @@ try {
         os_version    = Clean-String $os.Version
         cpu           = Clean-String (Get-CimInstance Win32_Processor).Name
         ram           = [math]::Round($cs.TotalPhysicalMemory / 1MB)
-        mac           = ($nics | Select-Object -ExpandProperty MACAddress | Select-Object -First 1)
+        mac_address   = ($nics | Select-Object -ExpandProperty MACAddress | Select-Object -First 1)
         motherboard   = Clean-String "$($baseboard.Manufacturer) $($baseboard.Product)"  # Используем Manufacturer и Product
         last_boot     = $os.LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")
         is_virtual    = $cs.Model -match 'Virtual|VMware|Hyper-V'

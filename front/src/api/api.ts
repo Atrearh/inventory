@@ -28,7 +28,6 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
 export const getComputers = async (params: {
   hostname?: string;
   os_version?: string;
-  status?: string;
   check_status?: string;
   sort_by?: string;
   sort_order?: string;
@@ -36,12 +35,27 @@ export const getComputers = async (params: {
   limit?: number;
   id?: string;
 }) => {
+  const cleanedParams = {
+    hostname: params.hostname || undefined,
+    os_version: params.os_version || undefined,
+    check_status: params.check_status || undefined,
+    sort_by: params.sort_by || 'hostname',
+    sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
+    page: params.page || 1,
+    limit: params.limit || 50,
+    id: params.id ? Number(params.id) : undefined,
+  };
+
   const response = await axiosInstance.get<{ data: Computer[]; total: number }>('/computers', {
-    params: {
-      ...params,
-      page: params.page || 1,
-      limit: params.limit || 50,
-      sort_order: params.sort_order === 'asc' ? 'asc' : params.sort_order === 'desc' ? 'desc' : undefined,
+    params: cleanedParams,
+    paramsSerializer: (params) => {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== '') {
+          searchParams.append(key, String(value));
+        }
+      }
+      return searchParams.toString();
     },
   });
   return response.data;

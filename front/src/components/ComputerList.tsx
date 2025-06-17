@@ -13,7 +13,6 @@ import type { TableProps } from 'antd';
 interface Filters {
   hostname: string;
   os_version: string;
-  status: string;
   check_status: string;
   sort_by: keyof Computer;
   sort_order: 'asc' | 'desc';
@@ -36,7 +35,6 @@ const ComputerList: React.FC = () => {
   const [filters, setFilters] = useState<Filters>({
     hostname: searchParams.get('hostname') || '',
     os_version: searchParams.get('os_version') || '',
-    status: searchParams.get('status') || '',
     check_status: searchParams.get('check_status') || '',
     sort_by: (searchParams.get('sort_by') as keyof Computer) || 'hostname',
     sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'asc',
@@ -53,7 +51,6 @@ const ComputerList: React.FC = () => {
     setSearchParams({
       hostname: filters.hostname,
       os_version: filters.os_version,
-      status: filters.status,
       check_status: filters.check_status,
       sort_by: filters.sort_by,
       sort_order: filters.sort_order,
@@ -75,6 +72,9 @@ const ComputerList: React.FC = () => {
   const { data, error, isLoading } = useQuery<ComputersResponse, Error>({
     queryKey: ['computers', filters],
     queryFn: () => getComputers(filters),
+    refetchOnWindowFocus: false, 
+    refetchOnReconnect: false,
+    staleTime: 0,
   });
 
   // Обработка сортировки и пагинации через onChange
@@ -120,14 +120,6 @@ const ComputerList: React.FC = () => {
       render: (text: string) => text ?? '-',
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      sorter: true,
-      sortOrder: filters.sort_by === 'status' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      render: (text: string) => text ?? '-',
-    },
-    {
       title: 'Check Status',
       dataIndex: 'check_status',
       key: 'check_status',
@@ -160,16 +152,6 @@ const ComputerList: React.FC = () => {
           onChange={(e) => handleFilterChange('os_version', e.target.value)}
           className={styles.filterInput}
         />
-        <Select
-          value={filters.status}
-          onChange={(value) => handleFilterChange('status', value)}
-          className={styles.filterSelect}
-          placeholder="Все статусы"
-        >
-          <Select.Option value="">Все статусы</Select.Option>
-          <Select.Option value="online">Online</Select.Option>
-          <Select.Option value="offline">Offline</Select.Option>
-        </Select>
         <Select
           value={filters.check_status}
           onChange={(value) => handleFilterChange('check_status', value)}

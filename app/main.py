@@ -1,26 +1,30 @@
-from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select, func
-from typing import List, Optional
+# app/main.py
 import signal
 import asyncio
 import uuid
 import logging
-from .database import AsyncSessionLocal, engine, Base
+import uvicorn
+from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
+from sqlalchemy.exc import SQLAlchemyError
+from typing import List, Optional
+from winrm.exceptions import WinRMTransportError, WinRMError
+from contextlib import asynccontextmanager
+from .database import get_db, async_session, Base, engine
 from . import models, schemas
 from .settings import settings
 from .logging_config import setup_logging
-from .data_collector import get_hosts_for_polling_from_db, get_pc_info, load_ps_script, _script_cache
-import uvicorn
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+from .data_collector import load_ps_script, _script_cache
 from .services.computer_service import ComputerService
 from .repositories.computer_repository import ComputerRepository
 from .services.ad_service import ADService
 from .repositories.statistics import StatisticsRepository
-from datetime import datetime
-from sqlalchemy.orm import selectinload
 from .data_collector import WinRMDataCollector
+from .schemas import ErrorResponse
+
 # Настройка логирования
 logger = setup_logging()
 
@@ -34,7 +38,7 @@ def signal_handler(sig, frame):
 
 # Инициализация базы данных
 async def init_db():
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         try:
             result = await session.execute(text("SHOW TABLES"))
             tables = [row[0] for row in result.fetchall()]
@@ -58,6 +62,9 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Завершение работы приложения...")
     WinRMDataCollector.clear_pool()
+    _script_cache.clear()
+    await engine.dispose()
+    logger.info("Пул соединений aiomysql закрыт")
 
 app = FastAPI(title="Inventory Management", lifespan=lifespan)
 router = APIRouter(prefix="/api")
@@ -80,15 +87,11 @@ async def add_correlation_id(request: Request, call_next):
     response.headers["X-Correlation-ID"] = correlation_id
     return response
 
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
-
 def get_computer_repository(db: AsyncSession = Depends(get_db)) -> ComputerRepository:
     return ComputerRepository(db)
 
 def get_computer_service(repo: ComputerRepository = Depends(get_computer_repository)) -> ComputerService:
-    return ComputerService(repo)
+    return ComputerService(db=repo.db, repo=repo)
 
 def get_ad_service(repo: ComputerRepository = Depends(get_computer_repository)) -> ADService:
     return ADService(repo)
@@ -96,28 +99,59 @@ def get_ad_service(repo: ComputerRepository = Depends(get_computer_repository)) 
 def get_statistics_repo(db: AsyncSession = Depends(get_db)) -> StatisticsRepository:
     return StatisticsRepository(db)
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Глобальный обработчик исключений для централизованного управления ошибками."""
+    correlation_id = request.headers.get("X-Correlation-ID", "unknown")
+    logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
+    logger.error(f"Необработанное исключение: {str(exc)}, correlation_id: {correlation_id}", exc_info=True)
+
+    if isinstance(exc, HTTPException):
+        status_code = exc.status_code
+        error_message = exc.detail
+    elif isinstance(exc, SQLAlchemyError):
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        error_message = "Ошибка базы данных"
+    elif isinstance(exc, (WinRMTransportError, WinRMError)):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        error_message = "Ошибка подключения к WinRM"
+    elif isinstance(exc, ValueError):
+        status_code = status.HTTP_400_BAD_REQUEST
+        error_message = str(exc)
+    else:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        error_message = "Внутренняя ошибка сервера"
+
+    response = ErrorResponse(
+        error=error_message,
+        detail=str(exc) if settings.log_level == "DEBUG" else None,
+        correlation_id=correlation_id
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=response.model_dump(exclude_unset=True)
+    )
+
 @router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
 async def create_computer(
     comp_data: schemas.ComputerCreate,
     computer_service: ComputerService = Depends(get_computer_service),
-    db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
     """Создаёт или обновляет данные компьютера."""
     request.state.logger.info(f"Получен отчет для hostname: {comp_data.hostname}")
-    return await computer_service.upsert_computer_from_schema(comp_data, db)
+    return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname)
 
 @router.post("/update_check_status", operation_id="update_computer_check_status")
 async def update_check_status(
     data: schemas.ComputerUpdateCheckStatus,
     computer_service: ComputerService = Depends(get_computer_service),
-    db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
     """Обновляет check_status компьютера."""
     request.state.logger.info(f"Обновление check_status для {data.hostname}")
     try:
-        db_computer = await computer_service.repo.async_update_computer_check_status(db, data.hostname, data.check_status)
+        db_computer = await computer_service.repo.async_update_computer_check_status(data.hostname, data.check_status)
         if not db_computer:
             raise HTTPException(status_code=404, detail="Компьютер не найден")
         return {"status": "success"}
@@ -129,124 +163,23 @@ async def update_check_status(
 async def get_history(
     computer_id: int,
     computer_service: ComputerService = Depends(get_computer_service),
-    db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Получает историю изменений компьютера."""
     request.state.logger.info(f"Получение истории для computer_id: {computer_id}")
-    return await computer_service.repo.async_get_change_log(db, computer_id)
-
-async def run_scan_task(task_id: str, logger_adapter: logging.LoggerAdapter, computer_service: ComputerService):
-    async with AsyncSessionLocal() as db:
-        db_task = None
-        try:
-            db_task = models.ScanTask(id=task_id, status=models.ScanStatus.running)
-            db.add(db_task)
-            await db.commit()
-            await db.refresh(db_task)
-
-            hosts, simple_username = await get_hosts_for_polling_from_db(db=db)
-            logger_adapter.info(f"Получено {len(hosts)} хостов: {hosts[:5]}...")
-            successful = 0
-            semaphore = asyncio.Semaphore(settings.scan_max_workers)
-
-            async def process_host(host: str):
-                nonlocal successful
-                async with semaphore:
-                    if shutdown_event.is_set():
-                        return
-                    try:
-                        db_computer = await db.execute(
-                            select(models.Computer).filter(models.Computer.hostname == host)
-                        )
-                        db_computer = db_computer.scalar_one_or_none()
-                        last_updated = db_computer.last_updated if db_computer else None
-                        result_data = await get_pc_info(
-                            hostname=host,
-                            user=settings.ad_username,
-                            password=settings.ad_password,
-                            last_updated=last_updated,
-                        )
-                        if result_data is None or not isinstance(result_data, dict):
-                            logger_adapter.error(f"Некорректные данные для {host}: {result_data}", exc_info=False)
-                            await computer_service.repo.async_update_computer_check_status(
-                                db, hostname=host, check_status=models.CheckStatus.unreachable.value
-                            )
-                            await db.commit()
-                            return
-                        if result_data.get("check_status") == models.CheckStatus.unreachable.value:
-                            logger_adapter.error(
-                                f"Хост {host} недоступен: {result_data.get('error', 'Неизвестная ошибка')}", exc_info=False
-                            )
-                            await computer_service.repo.async_update_computer_check_status(
-                                db, hostname=host, check_status=models.CheckStatus.unreachable.value
-                            )
-                            await db.commit()
-                            return
-                        computer_to_create = await computer_service.prepare_computer_data_for_db(db, result_data)
-                        if computer_to_create:
-                            try:
-                                db_computer = await computer_service.upsert_computer_from_schema(computer_to_create, db)
-                                if db_computer:
-                                    await db.commit()
-                                    successful += 1
-                                else:
-                                    logger_adapter.error(f"Не удалось сохранить данные для {host}", exc_info=False)
-                                    await computer_service.repo.async_update_computer_check_status(
-                                        db, hostname=host, check_status=models.CheckStatus.failed.value
-                                    )
-                                    await db.commit()
-                            except Exception as e:
-                                logger_adapter.error(f"Ошибка сохранения данных для {host}: {str(e)}", exc_info=True)
-                                await db.rollback()
-                                await computer_service.repo.async_update_computer_check_status(
-                                    db, hostname=host, check_status=models.CheckStatus.failed.value
-                                )
-                                await db.commit()
-                        else:
-                            logger_adapter.error(f"Ошибка валидации для {host}", exc_info=False)
-                            await computer_service.repo.async_update_computer_check_status(
-                                db, hostname=host, check_status=models.CheckStatus.failed.value
-                            )
-                            await db.commit()
-                    except Exception as e:
-                        logger_adapter.error(f"Исключение для хоста {host}: {str(e)}", exc_info=True)
-                        await computer_service.repo.async_update_computer_check_status(
-                            db, hostname=host, check_status=models.CheckStatus.unreachable.value
-                        )
-                        await db.commit()
-
-            tasks = [process_host(host) for host in hosts]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-            db_task.scanned_hosts = len(hosts)
-            db_task.successful_hosts = successful
-            db_task.status = models.ScanStatus.completed
-            await db.commit()
-            logger_adapter.info(f"Сканирование завершено. Успешно обработано {successful} из {len(hosts)} хостов")
-        except Exception as e:
-            logger_adapter.error(f"Критическая ошибка сканирования: {str(e)}", exc_info=True)
-            if db_task:
-                db_task.status = models.ScanStatus.failed
-                db_task.error = str(e)
-                db.add(db_task)
-            else:
-                failed_task = models.ScanTask(id=task_id, status=models.ScanStatus.failed, error=str(e))
-                db.add(failed_task)
-            await db.commit()
-        finally:
-            await db.close()
+    history = await computer_service.repo.async_get_change_log(computer_id)
+    request.state.logger.debug(f"Возвращена история для computer_id={computer_id}: {len(history)} записей, данные: {history}")
+    return history
 
 @router.post("/scan", response_model=dict, operation_id="start_scan")
 async def start_scan(
     background_tasks: BackgroundTasks,
-    computer_service: ComputerService = Depends(get_computer_service),  # Добавляем зависимость
+    computer_service: ComputerService = Depends(get_computer_service),
     request: Request = None,
 ):
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования с task_id: {task_id}")
-    background_tasks.add_task(run_scan_task, task_id, logger_adapter, computer_service)  # Передаем computer_service
+    background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter)
     return {"status": "success", "task_id": task_id}
 
 @router.get("/scan/status/{task_id}", response_model=schemas.ScanTask, operation_id="get_scan_status")
@@ -257,10 +190,8 @@ async def scan_status(
 ):
     """Получает статус задачи сканирования."""
     logger_adapter = request.state.logger if request else logger
-    db_task = await db.execute(
-        select(models.ScanTask).filter(models.ScanTask.id == task_id)
-    )
-    db_task = db_task.scalar_one_or_none()
+    result = await db.execute(select(models.ScanTask).filter(models.ScanTask.id == task_id))
+    db_task = result.scalars().first()
     if not db_task:
         logger_adapter.error(f"Задача с task_id {task_id} не найдена")
         raise HTTPException(status_code=404, detail="Task not found")
@@ -287,51 +218,32 @@ async def get_computers(
         None,
         description="Фильтр по check_status",
         alias="check_status",
-        # Добавляем валидацию для обработки пустой строки
         regex=r"^(success|failed|unreachable)?$"
     ),
     page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(50, ge=1, le=100, description="Количество на странице")
+    limit: int = Query(50, ge=1, le=100, description="Количество на странице"),
+    id: Optional[int] = Query(None, description="ID компьютера")
 ):
     """Возвращает список компьютеров с сортировкой, фильтрацией и пагинацией."""
     try:
-        # Если check_status пустая строка, преобразуем в None
+        logger.info(f"Запрос компьютеров: id={id}, hostname={hostname}, page={page}")
         if check_status == "":
             check_status = None
-
-        # Асинхронный запрос для подсчета общего количества
-        count_query = select(func.count(models.Computer.id))
-        if hostname and hostname.strip():
-            count_query = count_query.filter(models.Computer.hostname.ilike(f"%{hostname.strip()}%"))
-        if os_version and os_version.strip():
-            count_query = count_query.filter(models.Computer.os_version.ilike(f"%{os_version.strip()}%"))
-        if check_status is not None:
-            count_query = count_query.filter(models.Computer.check_status == check_status)
-        total = await db.execute(count_query)
-        total = total.scalar()
-
-        # Асинхронный запрос для выборки данных
-        query = select(models.Computer).options(selectinload(models.Computer.disks))
-        if hostname and hostname.strip():
-            query = query.filter(models.Computer.hostname.ilike(f"%{hostname.strip()}%"))
-        if os_version and os_version.strip():
-            query = query.filter(models.Computer.os_version.ilike(f"%{os_version.strip()}%"))
-        if check_status is not None:
-            query = query.filter(models.Computer.check_status == check_status)
-
-        sort_field = getattr(models.Computer, sort_by, models.Computer.hostname)
-        if sort_order.lower() == "desc":
-            query = query.order_by(sort_field.desc())
-        else:
-            query = query.order_by(sort_field.asc())
-
-        offset = (page - 1) * limit
-        result = await db.execute(query.offset(offset).limit(limit))
-        computers = result.scalars().all()
-
+        repo = ComputerRepository(db)
+        computers, total = await repo.get_computers(
+            sort_by=sort_by,
+            sort_order=sort_order,
+            hostname=hostname,
+            os_version=os_version,
+            check_status=check_status,
+            page=page,
+            limit=limit,
+            id=id
+        )
+        logger.debug(f"Возвращено {len(computers)} компьютеров, всего: {total}, IDs: {[c.id for c in computers]}")
         return schemas.ComputersResponse(data=computers, total=total)
     except Exception as e:
-        logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=False)
+        logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 @router.post("/ad/scan", response_model=dict, operation_id="start_ad_scan")

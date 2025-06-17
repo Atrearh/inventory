@@ -98,7 +98,7 @@ async def get_hosts_for_polling_from_db(db: AsyncSession) -> tuple[List[str], st
 
     try:
         repo = ComputerRepository(db)
-        hosts = await repo.async_get_hosts_for_polling(db, days_threshold=settings.polling_days_threshold)
+        hosts = await repo.async_get_hosts_for_polling(days_threshold=settings.polling_days_threshold)
         simple_username = settings.ad_username.split('\\')[-1]
         logger.info(f"Найдено {len(hosts)} хостов для опроса из базы данных")
         return hosts, simple_username
@@ -255,15 +255,16 @@ class WinRMDataCollector:
     def cleanup(self):
         """Очищает сессию, но сохраняет её в пуле для повторного использования."""
         if self.session:
-            try:
-                if hasattr(self.session.protocol, 'transport'):
-                    self.session.protocol.transport.close()
-                logger.debug(f"WinRM-сессия для {self.hostname} закрыта")
-            except Exception as e:
-                logger.warning(
-                    f"Ошибка при закрытии WinRM-сессии для {self.hostname}: {str(e)}")
-            finally:
                 self.session = None
+            #try:
+                #if hasattr(self.session.protocol, 'transport'):
+                    #self.session.protocol.transport.close()
+                #logger.debug(f"WinRM-сессия для {self.hostname} закрыта")
+            #except Exception as e:
+                #logger.warning(
+                    #f"Ошибка при закрытии WinRM-сессии для {self.hostname}: {str(e)}")
+            #finally:
+                #self.session = None
                 # Сессия остаётся в _session_pool для повторного использования
 
     @classmethod

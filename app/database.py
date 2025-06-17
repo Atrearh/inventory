@@ -1,6 +1,6 @@
 # app/database.py
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from app.settings import Settings
 import logging
 
@@ -14,7 +14,6 @@ if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("DATABASE_URL not found in settings")
 
 logger.info(f"Using DATABASE_URL: {SQLALCHEMY_DATABASE_URL}")
-
 
 try:
     engine = create_async_engine(
@@ -30,9 +29,8 @@ except Exception as e:
     logger.error(f"Failed to connect to database: {str(e)}")
     raise
 
-
-AsyncSessionLocal = sessionmaker(
-    bind=engine,
+async_session = async_sessionmaker(
+    engine,
     class_=AsyncSession,
     autoflush=False,
     autocommit=False,
@@ -41,5 +39,5 @@ AsyncSessionLocal = sessionmaker(
 Base = declarative_base()
 
 async def get_db():
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         yield session

@@ -1,139 +1,232 @@
+
 # app/services/computer_service.py
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
-from .. import schemas, models
-from ..settings import settings
 import logging
+import asyncio
+from datetime import datetime
+from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from ..settings import settings
+from ..database import async_session
+from ..data_collector import get_pc_info
 from ..repositories.computer_repository import ComputerRepository
+from ..schemas import ComputerCreate
+from .. import models
 
 logger = logging.getLogger(__name__)
 
 class ComputerService:
-    def __init__(self, repo: ComputerRepository):
+    def __init__(self, db: AsyncSession, repo: ComputerRepository):
+        self.db = db
         self.repo = repo
-        self.db = repo.db
 
-    def normalize_hostname(self, hostname: str) -> str:
-        """Нормализует hostname, добавляя суффикс домена, если необходимо."""
-        if not hostname or not isinstance(hostname, str):
-            logger.error("Отсутствует или невалидное поле hostname")
-            raise ValueError("Hostname не может быть пустым или невалидным")
-        hostname = hostname.strip().lower()
-        suffix = settings.ad_fqdn_suffix.lower()
-        if not hostname.endswith(suffix):
-            hostname = f"{hostname}{suffix}"
-        logger.debug(f"Нормализованный hostname: {hostname}")
-        return hostname
+    async def get_hosts_for_polling_from_db(self) -> List[str]:
+        logger.debug("Получение хостов для опроса")
+        try:
+            result = await self.db.execute(select(models.Computer.hostname))
+            hosts = [row[0] for row in result.fetchall()]
+            return hosts
+        except Exception as e:
+            logger.error(f"Ошибка получения хостов: {str(e)}")
+            raise
 
-    async def process_software_list(self, raw_software: List, hostname: str) -> List[schemas.Software]:
-        logger.debug(f"Начало обработки ПО для {hostname}, получено {len(raw_software)} записей: {raw_software[:5]}...")
-        unique_software = set()
-        for soft in raw_software:
-            if not isinstance(soft, dict):
-                logger.warning(f"Некорректный формат записи ПО для {hostname}: {soft}")
-                continue
+    async def process_roles(self, roles: List[str], hostname: str) -> List[dict]:
+        logger.debug(f"Обработка {len(roles)} ролей для {hostname}")
+        return [{"name": role} for role in roles if role]
+
+    async def process_software_list(self, software_list: List[dict], hostname: str) -> List[dict]:
+        logger.debug(f"Обработка {len(software_list)} записей ПО для {hostname}")
+        valid_software = []
+        for soft in software_list:
             try:
-                # Pydantic сам обработает DisplayName -> name, DisplayVersion -> version
-                soft_data = schemas.Software.model_validate(soft)
-                unique_software.add((soft_data.name, soft_data.version or "", soft_data.install_date))
+                valid_software.append({
+                    "name": soft.get("DisplayName"),
+                    "version": soft.get("DisplayVersion"),
+                    "install_date": soft.get("InstallDate")
+                })
             except Exception as e:
                 logger.warning(f"Ошибка обработки ПО для {hostname}: {str(e)}")
-                continue
+        return valid_software
 
-        software_list = []
-        for name, version, install_date in unique_software:
-            software_list.append(schemas.Software(
-                name=name,
-                version=version if version else None,
-                install_date=install_date
-            ))
-            logger.debug(f"Добавлена запись ПО для {hostname}: {name}, версия: {version}, дата: {install_date}")
-        logger.info(f"Обработано {len(software_list)} записей ПО для {hostname}")
-        return software_list
-
-    async def process_disks(self, raw_disks: List[dict], hostname: str) -> List[schemas.Disk]:
-        disks = []
-        logger.debug(f"Обработка дисков для {hostname}: {raw_disks}")
-        for disk in raw_disks:
-            if not isinstance(disk, dict) or not disk.get("DeviceID") or not str(disk.get("DeviceID")).strip():
-                logger.warning(f"Некорректный формат диска для {hostname}: {disk}")
-                continue
+    async def process_disks(self, disks: List[dict], hostname: str) -> List[dict]:
+        logger.debug(f"Обработка {len(disks)} дисков для {hostname}")
+        valid_disks = []
+        for disk in disks:
             try:
-                # Pydantic сам обработает DeviceID -> device_id, TotalSpace -> total_space
-                disk_data = schemas.Disk.model_validate(disk)
-                disks.append(disk_data)
-                logger.debug(f"Добавлен диск для {hostname}: {disk_data}")
-            except (ValueError, TypeError) as e:
-                logger.error(f"Ошибка обработки диска для {hostname}: {str(e)}", exc_info=True)
-                continue
-        logger.debug(f"Обработано {len(disks)} дисков для {hostname}")
-        return disks
+                valid_disks.append({
+                    "device_id": disk.get("DeviceID"),
+                    "total_space": int(disk.get("TotalSpace", 0)),
+                    "free_space": int(disk.get("FreeSpace", 0))
+                })
+            except Exception as e:
+                logger.warning(f"Ошибка обработки диска для {hostname}: {str(e)}")
+        return valid_disks
 
-    async def process_roles(self, raw_roles: List[str], hostname: str) -> List[schemas.Role]:
-        """Обрабатывает список ролей."""
-        roles = [schemas.Role(Name=str(role)) for role in raw_roles if str(role).strip()]
-        logger.debug(f"Обработано {len(roles)} ролей для {hostname}")
-        return roles
-
-    async def prepare_computer_data_for_db(self, db: AsyncSession, raw_data: dict) -> Optional[schemas.ComputerCreate]:
-        """Подготовка данных компьютера для сохранения в БД."""
-        logger.debug(f"Получены сырые данные: {raw_data}")
-        if not isinstance(raw_data, dict) or not raw_data:
-            logger.error("Переданы невалидные или пустые данные")
-            return None
-
+    async def prepare_computer_data_for_db(self, raw_data: dict, hostname: str) -> ComputerCreate:
+        logger.debug(f"Подготовка данных для {hostname}")
         try:
-            hostname = self.normalize_hostname(raw_data.get('hostname'))
-            result = await db.execute(
-                select(models.ADComputer).filter(models.ADComputer.hostname == hostname)
-            )
-            ad_comp = result.scalar_one_or_none()
-            os_name = ad_comp.os_name if ad_comp else "Unknown"
-
-            ip = raw_data.get("ip_address")
-            if isinstance(ip, list):
-                ip = ip[0] if ip else None
-            mac = raw_data.get("mac_address")
-            if isinstance(mac, list):
-                mac = mac[0] if mac else None
-            validated_data = schemas.ComputerCreate(
+            validated_data = ComputerCreate(
                 hostname=hostname,
-                ip=ip,
-                os_name=os_name,
-                os_version=str(raw_data.get("os_version", "")),
-                cpu=str(raw_data.get("cpu", "")),
-                ram=int(raw_data.get("ram", 0)) if raw_data.get("ram") else None,
-                mac=mac,
-                motherboard=str(raw_data.get("motherboard", "")),
-                last_boot=str(raw_data.get("last_boot", "")),
-                is_virtual=bool(raw_data.get("is_virtual", False)),
-                check_status=raw_data.get("check_status", models.CheckStatus.unreachable.value),
+                ip=raw_data.get("ip"),
+                os_name=raw_data.get("os_name"),
+                os_version=raw_data.get("os_version"),
+                cpu=raw_data.get("cpu"),
+                ram=raw_data.get("ram"),
+                mac=raw_data.get("mac"),
+                motherboard=raw_data.get("motherboard"),
+                last_boot=raw_data.get("last_boot"),
+                is_virtual=raw_data.get("is_virtual", False),
+                check_status=raw_data.get("check_status", "success"),
                 roles=await self.process_roles(raw_data.get("roles", []), hostname),
                 software=await self.process_software_list(raw_data.get("software", []), hostname),
                 disks=await self.process_disks(raw_data.get("disks", []), hostname)
             )
-            logger.info(f"Подготовлены данные для {hostname}: {len(validated_data.software)} записей ПО")
+            logger.debug(
+                f"Подготовлены данные для {hostname}: "
+                f"roles={len(validated_data.roles)}, "
+                f"software={len(validated_data.software)}, "
+                f"disks={len(validated_data.disks)}"
+            )
             return validated_data
         except Exception as e:
-            logger.error(f"Ошибка подготовки данных для {hostname}: {str(e)}", exc_info=True)
-            return None
+            logger.error(f"Ошибка подготовки данных для {hostname}: {str(e)}")
+            raise
 
-    async def upsert_computer_from_schema(self, comp_data: schemas.ComputerCreate, db: AsyncSession) -> Optional[models.Computer]:
+    async def upsert_computer_from_schema(self, comp_data: ComputerCreate, hostname: str):
         try:
-            hostname = self.normalize_hostname(comp_data.hostname)
-            logger.debug(f"Попытка upsert компьютера с hostname: {hostname}, данные: {comp_data.model_dump()}")
+            logger.debug(f"Upsert компьютера {hostname}")
             computer_id = await self.repo.async_upsert_computer(comp_data, hostname)
-            result = await db.execute(
-                select(models.Computer).filter(models.Computer.id == computer_id)
-            )
-            db_computer = result.scalar_one_or_none()
-            if db_computer:
-                logger.info(f"Успешно сохранен компьютер: {hostname}")
-            else:
-                logger.error(f"Компьютер {hostname} не найден после сохранения")
-            return db_computer
+            logger.info(f"Компьютер {hostname} успешно сохранен, ID={computer_id}")
+            return computer_id
         except Exception as e:
             logger.error(f"Ошибка при upsert компьютера {hostname}: {str(e)}", exc_info=True)
-            return None
+            raise
+
+    async def run_scan_task(self, task_id: str, logger_adapter: logging.LoggerAdapter):
+        async with async_session() as db:
+            db_task = None
+            successful = 0
+            try:
+                db_task = models.ScanTask(
+                    id=task_id,
+                    status=models.ScanStatus.running,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(db_task)
+                await db.commit()
+                await db.refresh(db_task)
+                logger_adapter.info(f"Задача сканирования {task_id} создана")
+
+                hosts = await self.get_hosts_for_polling_from_db()
+                logger_adapter.info(f"Получено {len(hosts)} хостов: {hosts[:5]}...")
+                semaphore = asyncio.Semaphore(settings.scan_max_workers)
+
+                async def process_host(host: str):
+                    nonlocal successful
+                    async with async_session() as host_db:
+                        try:
+                            db_computer = await host_db.execute(
+                                select(models.Computer).filter(models.Computer.hostname == host)
+                            )
+                            db_computer = db_computer.scalars().first()
+                            last_updated = db_computer.last_updated if db_computer else None
+                            result_data = await get_pc_info(
+                                hostname=host,
+                                user=settings.ad_username,
+                                password=settings.ad_password,
+                                last_updated=last_updated,
+                            )
+                            if result_data is None or not isinstance(result_data, dict):
+                                logger_adapter.error(f"Некорректные данные для {host}: {result_data}")
+                                await self.repo.async_update_computer_check_status(
+                                    hostname=host,
+                                    check_status=models.CheckStatus.unreachable.value
+                                )
+                                await host_db.commit()
+                                return
+                            if result_data.get("check_status") == models.CheckStatus.unreachable.value:
+                                logger_adapter.error(
+                                    f"Хост {host} недоступен: {result_data.get('error', 'Неизвестная ошибка')}"
+                                )
+                                await self.repo.async_update_computer_check_status(
+                                    hostname=host,
+                                    check_status=models.CheckStatus.unreachable.value
+                                )
+                                await host_db.commit()
+                                return
+                            computer_to_create = await self.prepare_computer_data_for_db(
+                                raw_data=result_data,
+                                hostname=host
+                            )
+                            if computer_to_create:
+                                try:
+                                    service = ComputerService(host_db, ComputerRepository(host_db))
+                                    computer_id = await service.upsert_computer_from_schema(computer_to_create, host)
+                                    if computer_id:
+                                        await host_db.commit()
+                                        successful += 1
+                                    else:
+                                        logger_adapter.error(f"Не удалось сохранить данные для {host}")
+                                        await self.repo.async_update_computer_check_status(
+                                            hostname=host,
+                                            check_status=models.CheckStatus.failed.value
+                                        )
+                                        await host_db.commit()
+                                except Exception as e:
+                                    logger_adapter.error(f"Ошибка сохранения данных для {host}: {str(e)}")
+                                    await host_db.rollback()
+                                    await self.repo.async_update_computer_check_status(
+                                        hostname=host,
+                                        check_status=models.CheckStatus.failed.value
+                                    )
+                                    await host_db.commit()
+                            else:
+                                logger_adapter.error(f"Ошибка валидации для {host}: computer_to_create is None")
+                                await self.repo.async_update_computer_check_status(
+                                    hostname=host,
+                                    check_status=models.CheckStatus.failed.value
+                                )
+                                await host_db.commit()
+                        except Exception as e:
+                            logger_adapter.error(f"Исключение для хоста {host}: {str(e)}")
+                            await host_db.rollback()
+                            await self.repo.async_update_computer_check_status(
+                                hostname=host,
+                                check_status=models.CheckStatus.unreachable.value
+                            )
+                            await host_db.commit()
+
+                tasks = []
+                for host in hosts:
+                    async with semaphore:
+                        tasks.append(process_host(host))
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+                db_task.scanned_hosts = len(hosts)
+                db_task.successful_hosts = successful
+                db_task.status = models.ScanStatus.completed
+                db_task.updated_at = datetime.utcnow()
+                await db.commit()
+                logger_adapter.info(f"Сканирование завершено. Успешно обработано {successful} из {len(hosts)} хостов")
+            except Exception as e:
+                logger_adapter.error(f"Критическая ошибка сканирования: {str(e)}", exc_info=True)
+                if db_task:
+                    db_task.status = models.ScanStatus.failed
+                    db_task.error = str(e)
+                    db_task.updated_at = datetime.utcnow()
+                    await db.commit()
+                else:
+                    failed_task = models.ScanTask(
+                        id=task_id,
+                        status=models.ScanStatus.failed,
+                        error=str(e),
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    db.add(failed_task)
+                    await db.commit()
+                raise
+            finally:
+                await db.close()

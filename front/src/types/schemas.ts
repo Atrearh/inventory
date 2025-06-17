@@ -4,15 +4,15 @@ export interface Role {
 }
 
 export interface Software {
-  DisplayName: string;
-  DisplayVersion?: string;
-  InstallDate?: string;
+    name: string;
+    version?: string;
+    install_date?: string;
 }
 
 export interface Disk {
-  DeviceID: string;
-  TotalSpace: number;
-  FreeSpace: number;
+    device_id: string;
+    total_space: number;
+    free_space: number;
 }
 
 export enum Status {
@@ -78,6 +78,20 @@ export interface ScanTask {
   successful_hosts: number;
   error?: string;
 }
+
+export interface OsStats {
+  os_versions: OSStats[];
+}
+
+export interface DiskStats {
+  low_disk_space: DiskSpaceStats[];
+}
+
+export interface ScanStats {
+  last_scan_time?: string;
+  status_stats: StatusStats[];
+}
+
 export interface OSStats {
   os_version: string;
   count: number;
@@ -89,9 +103,14 @@ export interface DiskSpaceStats {
   free_space_percent: number;
 }
 
+export interface StatusStats {
+  status: string;
+  count: number;
+}
+
 export interface DashboardStats {
   total_computers: number;
-  os_versions: OSStats[];
-  low_disk_space: DiskSpaceStats[];
-  last_scan_time?: string;
+  os_stats: OsStats;
+  disk_stats: DiskStats;
+  scan_stats: ScanStats;
 }

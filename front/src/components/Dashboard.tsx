@@ -17,13 +17,15 @@ const Dashboard: React.FC = () => {
       getStatistics({
         metrics: ['total_computers', 'os_versions', 'low_disk_space', 'last_scan_time', 'status_stats'],
       }),
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
   });
 
   useEffect(() => {
-    if (data?.low_disk_space?.length) {
-      console.warn(`${data.low_disk_space.length} computers have low disk space.`);
+    if (data?.disk_stats?.low_disk_space?.length) {
+      console.warn(`${data.disk_stats.low_disk_space.length} computers have low disk space.`);
     }
-  }, [data?.low_disk_space?.length]);
+  }, [data?.disk_stats?.low_disk_space?.length]);
 
   if (isLoading) return <div>Загрузка...</div>;
   if (error) return <div>Ошибка: {error.message}</div>;
@@ -43,11 +45,11 @@ const Dashboard: React.FC = () => {
   ];
 
   const osChartData = {
-    labels: data.os_versions?.map((os) => os.os_version) ?? [],
+    labels: data.os_stats.os_versions?.map((os) => os.os_version) ?? [],
     datasets: [
       {
-        data: data.os_versions?.map((os) => os.count) ?? [],
-        backgroundColor: colors.slice(0, data.os_versions?.length ?? 0),
+        data: data.os_stats.os_versions?.map((os) => os.count) ?? [],
+        backgroundColor: colors.slice(0, data.os_stats.os_versions?.length ?? 0),
       },
     ],
   };
@@ -74,9 +76,9 @@ const Dashboard: React.FC = () => {
   return (
     <div>
       <h2>Статистика инвентаризации</h2>
-      {data.low_disk_space?.length > 0 && (
+      {data.disk_stats.low_disk_space?.length > 0 && (
         <div style={{ color: 'red', marginBottom: '1rem' }}>
-          Внимание: {data.low_disk_space.length} компьютеров с местом на диске менее 10%.
+          Внимание: {data.disk_stats.low_disk_space.length} компьютеров с местом на диске менее 10%.
         </div>
       )}
       {data.total_computers !== undefined && (
@@ -84,13 +86,13 @@ const Dashboard: React.FC = () => {
           <strong>Всего компьютеров:</strong> {data.total_computers}
         </p>
       )}
-      {data.last_scan_time && (
+      {data.scan_stats.last_scan_time && (
         <p>
           <strong>Последний опрос:</strong>{' '}
-          {new Date(data.last_scan_time).toLocaleString('ru-RU')}
+          {new Date(data.scan_stats.last_scan_time).toLocaleString('ru-RU')}
         </p>
       )}
-      {data.os_versions?.length > 0 && (
+      {data.os_stats.os_versions?.length > 0 && (
         <>
           <h3>Версии ОС</h3>
           <div style={{ maxWidth: '400px', margin: 'auto' }}>
@@ -98,12 +100,12 @@ const Dashboard: React.FC = () => {
           </div>
         </>
       )}
-      {data.low_disk_space?.length > 0 ? (
+      {data.disk_stats.low_disk_space?.length > 0 ? (
         <>
           <h3>Компьютеры с местом на диске &lt; 10%</h3>
           <Table
             columns={lowDiskSpaceColumns}
-            dataSource={data.low_disk_space}
+            dataSource={data.disk_stats.low_disk_space}
             rowKey={(record) => `${record.hostname}-${record.disk_id}`}
             pagination={false}
             size="small"

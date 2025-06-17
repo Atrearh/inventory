@@ -3,6 +3,8 @@ from typing import Optional, List
 from datetime import datetime
 import logging
 from .models import CheckStatus, ScanStatus
+import re
+import ipaddress
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class Role(BaseModel):
 
     class Config:
         from_attributes = True
-        populate_by_name = True  # Позволяет использовать как name, так и Name
+        populate_by_name = True
 
 class Software(BaseModel):
     name: str = Field(..., min_length=1, alias="DisplayName")
@@ -62,7 +64,7 @@ class ComputerBase(BaseModel):
     ram: Optional[int] = None
     mac: Optional[str] = None
     motherboard: Optional[str] = None
-    last_boot: Optional[str] = None
+    last_boot: Optional[datetime] = None  # Змінено на datetime
     is_virtual: Optional[bool] = None
     check_status: Optional[CheckStatus] = None
 
@@ -70,6 +72,23 @@ class ComputerBase(BaseModel):
     @classmethod
     def hostname_must_not_be_empty(cls, v):
         return validate_non_empty_string(cls, v, "hostname")
+
+    @field_validator('mac')
+    @classmethod
+    def validate_mac(cls, v):
+        if v and not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
+            raise ValueError("Invalid MAC address format")
+        return v
+
+    @field_validator('ip')
+    @classmethod
+    def validate_ip(cls, v):
+        if v:
+            try:
+                ipaddress.ip_address(v)
+            except ValueError:
+                raise ValueError("Invalid IP address format")
+        return v
 
     class Config:
         from_attributes = True
@@ -144,22 +163,48 @@ class LowDiskSpace(BaseModel):
     class Config:
         from_attributes = True
 
-class StatusStats(BaseModel):  # Добавлено новое определение
-    status: Optional[str]
+class StatusStats(BaseModel):
+    status: CheckStatus
     count: int
 
     class Config:
         from_attributes = True
 
-class DashboardStats(BaseModel):
-    total_computers: Optional[int]
+class OsStats(BaseModel):
     os_versions: List[OsVersion]
+
+    class Config:
+        from_attributes = True
+
+class DiskStats(BaseModel):
     low_disk_space: List[LowDiskSpace]
+
+    class Config:
+        from_attributes = True
+
+class ScanStats(BaseModel):
     last_scan_time: Optional[datetime]
-    status_stats: Optional[List[StatusStats]]  # Изменено с dict на List[StatusStats]
+    status_stats: List[StatusStats]
 
     class Config:
         from_attributes = True
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
+
+class DashboardStats(BaseModel):
+    total_computers: Optional[int]
+    os_stats: OsStats
+    disk_stats: DiskStats
+    scan_stats: ScanStats
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+class ErrorResponse(BaseModel):
+    error: str
+    detail: Optional[str] = None
+    correlation_id: Optional[str] = None

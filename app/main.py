@@ -13,17 +13,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
-from .database import get_db, async_session, Base, engine
+from .database import engine, async_session, get_db, Base
 from . import models, schemas
 from .settings import settings
-from .logging_config import setup_logging
-from .data_collector import load_ps_script, _script_cache
+from .utils import setup_logging
+from .data_collector import _script_cache
 from .services.computer_service import ComputerService
 from .repositories.computer_repository import ComputerRepository
 from .services.ad_service import ADService
 from .repositories.statistics import StatisticsRepository
-from .data_collector import WinRMDataCollector
 from .schemas import ErrorResponse
+from .settings import settings, SettingsRepository
+import ipaddress
 
 # Настройка логирования
 logger = setup_logging()
@@ -46,19 +47,50 @@ async def init_db():
                 logger.info("Таблицы не найдены, создаём схему базы данных...")
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
+                # Инициализация настроек
+                await init_settings(session)
             else:
                 logger.info(f"Найдены таблицы: {tables}")
+            # Загрузка настроек из БД
+            await settings.load_from_db()
         except Exception as e:
             logger.error(f"Ошибка инициализации базы данных: {str(e)}")
             raise
+
+async def init_settings(db: AsyncSession):
+    """Инициализирует настройки в базе данных из текущих настроек."""
+    repo = SettingsRepository(db)
+    default_settings = {
+        "ad_server_url": settings.ad_server_url,
+        "domain": settings.domain,
+        "ad_username": settings.ad_username,
+        "ad_password": settings.ad_password,
+        "api_url": settings.api_url,
+        "test_hosts": settings.test_hosts,
+        "log_level": settings.log_level,
+        "scan_max_workers": str(settings.scan_max_workers),
+        "polling_days_threshold": str(settings.polling_days_threshold),
+        "winrm_operation_timeout": str(settings.winrm_operation_timeout),
+        "winrm_read_timeout": str(settings.winrm_read_timeout),
+        "winrm_port": str(settings.winrm_port),
+        "winrm_server_cert_validation": settings.winrm_server_cert_validation,
+        "winrm_retries": str(settings.winrm_retries),
+        "winrm_retry_delay": str(settings.winrm_retry_delay),
+        "ping_timeout": str(settings.ping_timeout),
+        "powershell_encoding": settings.powershell_encoding,
+        "json_depth": str(settings.json_depth),
+        "server_port": str(settings.server_port),
+        "cors_allow_origins": ",".join(settings.cors_allow_origins),
+        "allowed_ips": ",".join(settings.allowed_ips),
+    }
+    for key, value in default_settings.items():
+        await repo.update_setting(key, value, description=f"Setting {key}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Запуск приложения, инициализация базы данных...")
     await init_db()
     logger.info("Загрузка PowerShell скриптов...")
-    #_script_cache["system_info"] = load_ps_script("system_info.ps1")
-    #_script_cache["software_info"] = load_ps_script("software_info.ps1")
     yield
     logger.info("Завершение работы приложения...")
     _script_cache.clear()
@@ -98,37 +130,66 @@ def get_ad_service(repo: ComputerRepository = Depends(get_computer_repository)) 
 def get_statistics_repo(db: AsyncSession = Depends(get_db)) -> StatisticsRepository:
     return StatisticsRepository(db)
 
+def get_settings_repo(db: AsyncSession = Depends(get_db)):
+    return SettingsRepository(db)
+
+async def check_ip_allowed(request: Request):
+    """Проверяет, является ли IP-адрес клиента разрешенным."""
+    client_ip = request.client.host
+    logger.debug(f"Проверка IP: {client_ip}")
+    allowed = False
+    for ip_range in settings.allowed_ips:
+        try:
+            if '/' in ip_range:
+                network = ipaddress.ip_network(ip_range, strict=False)
+                if ipaddress.ip_address(client_ip) in network:
+                    allowed = True
+                    break
+            elif client_ip == ip_range:
+                allowed = True
+                break
+        except ValueError as e:
+            logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
+    if not allowed:
+        logger.warning(f"Доступ запрещен для IP: {client_ip}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ запрещен: IP не разрешен"
+        )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальный обработчик исключений для централизованного управления ошибками."""
     correlation_id = request.headers.get("X-Correlation-ID", "unknown")
     logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
-    logger.error(f"Необработанное исключение: {str(exc)}, correlation_id: {correlation_id}", exc_info=True)
+    logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
 
-    if isinstance(exc, HTTPException):
-        status_code = exc.status_code
-        error_message = exc.detail
-    elif isinstance(exc, SQLAlchemyError):
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        error_message = "Ошибка базы данных"
-    elif isinstance(exc, (WinRMTransportError, WinRMError)):
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        error_message = "Ошибка подключения к WinRM"
-    elif isinstance(exc, ValueError):
-        status_code = status.HTTP_400_BAD_REQUEST
-        error_message = str(exc)
-    else:
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        error_message = "Внутренняя ошибка сервера"
+    match exc:
+        case HTTPException(status_code=status_code, detail=detail):
+            status_code = status_code
+            error_message = detail
+        case SQLAlchemyError():
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_message = "Ошибка базы данных"
+        case WinRMTransportError() | WinRMError():
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            error_message = "Ошибка подключения к WinRM"
+        case ValueError():
+            status_code = status.HTTP_400_BAD_REQUEST
+            error_message = str(exc)
+        case _:
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_message = "Внутренняя ошибка сервера"
 
     response = ErrorResponse(
         error=error_message,
-        detail=str(exc) if settings.log_level == "DEBUG" else None,
+        detail=str(exc) if settings.log_level == "DEBUG" else "",
         correlation_id=correlation_id
     )
+
     return JSONResponse(
         status_code=status_code,
-        content=response.model_dump(exclude_unset=True)
+        content=response.model_dump(exclude_none=True)
     )
 
 @router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
@@ -137,7 +198,7 @@ async def create_computer(
     computer_service: ComputerService = Depends(get_computer_service),
     request: Request = None,
 ):
-    """Создаёт или обновляет данные компьютера."""
+    """Создает или обновляет данные компьютера."""
     request.state.logger.info(f"Получен отчет для hostname: {comp_data.hostname}")
     return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname)
 
@@ -259,7 +320,7 @@ async def start_ad_scan(
     background_tasks.add_task(ad_service.scan_and_update_ad, db)
     return {"status": "success", "task_id": task_id}
 
-@app.post("/clean-deleted-software/", response_model=dict)
+@router.post("/clean-deleted-software/", response_model=dict)
 async def clean_deleted_software(repo: ComputerRepository = Depends(get_computer_repository)):
     """Удаляет записи о ПО с is_deleted=True, старше 6 месяцев."""
     try:
@@ -268,7 +329,31 @@ async def clean_deleted_software(repo: ComputerRepository = Depends(get_computer
     except Exception as e:
         logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка сервера")
-    
+
+@router.post("/settings", response_model=dict, operation_id="update_settings")
+async def update_settings(
+    settings_data: schemas.AppSettingUpdate,
+    repo: SettingsRepository = Depends(get_settings_repo),
+    request: Request = None,
+    _=Depends(check_ip_allowed),
+):
+    """Обновляет настройки приложения."""
+    logger_adapter = request.state.logger if request else logger
+    logger_adapter.info("Обновление настроек приложения")
+    try:
+        settings_dict = settings_data.model_dump(exclude_unset=True)
+        for key, value in settings_dict.items():
+            if isinstance(value, list):
+                value = ",".join(value)
+            elif isinstance(value, (int, bool)):
+                value = str(value)
+            await repo.update_setting(key, value)
+        await settings.load_from_db()
+        return {"status": "success", "message": "Настройки успешно обновлены"}
+    except Exception as e:
+        logger_adapter.error(f"Ошибка обновления настроек: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 app.include_router(router)
 
 if __name__ == "__main__":

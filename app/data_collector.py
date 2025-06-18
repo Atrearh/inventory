@@ -1,3 +1,4 @@
+# app/data_collector.py
 import logging
 import json
 import winrm
@@ -59,25 +60,8 @@ def clear_script_cache():
     _script_cache.clear()
     logger.debug("Кэш PowerShell-скриптов очищён")
 
-async def get_hosts_for_polling_from_db(db: AsyncSession) -> tuple[List[str], str]:
-    """Получает список хостов из TEST_HOSTS для опроса."""
-    logger.debug(f"Значение settings.test_hosts: '{settings.test_hosts}' (тип: {type(settings.test_hosts)}, длина: {len(settings.test_hosts.strip()) if settings.test_hosts else 0})")
-    logger.debug(f"Исходное значение TEST_HOSTS из .env или settings.py: '{settings.test_hosts}'")
-    if settings.test_hosts and isinstance(settings.test_hosts, str) and settings.test_hosts.strip():
-        try:
-            hosts = [host.strip() for host in settings.test_hosts.split(",") if host.strip()]
-            if not hosts:
-                logger.error("TEST_HOSTS пустой или содержит только пустые строки")
-                raise ValueError("TEST_HOSTS не содержит валидных хостов")
-            simple_username = settings.ad_username.split('\\')[-1]
-            logger.info(f"Используются тестовые хосты: {hosts}")
-            return hosts, simple_username
-        except Exception as e:
-            logger.error(f"Ошибка парсинга TEST_HOSTS: {str(e)}")
-            raise ValueError(f"Неверный формат TEST_HOSTS: {str(e)}")
-
-    logger.error("TEST_HOSTS не задан или пуст, сканирование всех хостов из базы данных запрещено")
-    raise ValueError("TEST_HOSTS должен быть задан в settings.py или .env")
+# УДАЛЕНО: Эта функция была неуместна и ее логика перенесена в ComputerService
+# async def get_hosts_for_polling_from_db(db: AsyncSession) -> tuple[List[str], str]:
 
 def handle_winrm_errors(func):
     """Декоратор для обработки типовых ошибок WinRM."""

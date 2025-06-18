@@ -3,18 +3,9 @@ from typing import Optional, List
 from datetime import datetime
 import logging
 from .models import CheckStatus, ScanStatus
-import re
-import ipaddress
-from .settings import validate_non_empty_string 
+from .utils import validate_hostname, validate_mac_address, validate_ip_address, validate_non_empty_string
 
 logger = logging.getLogger(__name__)
-
-def validate_non_empty_string(cls, v, field_name):
-    """Общая функция валидации непустых строк."""
-    logger.debug(f"Валидация {field_name}: {v}")
-    if not v or not v.strip():
-        raise ValueError(f"{field_name} не может быть пустым")
-    return v.strip()
 
 class Role(BaseModel):
     name: str = Field(..., alias="Name")
@@ -33,7 +24,7 @@ class Software(BaseModel):
     version: Optional[str] = Field(None, alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
     action: Optional[str] = Field(None, alias="Action")
-    is_deleted: bool = Field(default=False)  # Новое поле
+    is_deleted: bool = Field(default=False)
 
     @field_validator('name')
     @classmethod
@@ -74,31 +65,24 @@ class ComputerBase(BaseModel):
     ram: Optional[int] = None
     mac: Optional[str] = None
     motherboard: Optional[str] = None
-    last_boot: Optional[datetime] = None  # Змінено на datetime
+    last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = None
     check_status: Optional[CheckStatus] = None
 
     @field_validator('hostname')
     @classmethod
-    def hostname_must_not_be_empty(cls, v):
-        return validate_non_empty_string(cls, v, "hostname")
+    def validate_hostname_field(cls, v):
+        return validate_hostname(cls, v)
 
     @field_validator('mac')
     @classmethod
     def validate_mac(cls, v):
-        if v and not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
-            raise ValueError("Invalid MAC address format")
-        return v
+        return validate_mac_address(cls, v)
 
     @field_validator('ip')
     @classmethod
     def validate_ip(cls, v):
-        if v:
-            try:
-                ipaddress.ip_address(v)
-            except ValueError:
-                raise ValueError("Invalid IP address format")
-        return v
+        return validate_ip_address(cls, v)
 
     class Config:
         from_attributes = True
@@ -111,13 +95,9 @@ class ComputerCreate(ComputerBase):
 class Computer(ComputerBase):
     id: int
     last_updated: datetime
-    roles: List[Role] = []  # Добавлено явно
-    software: List[Software] = []  # Добавлено явно
-    disks: List[Disk] = []  # Добавлено явно
 
     class Config:
         from_attributes = True
-        arbitrary_types_allowed = True  # Разрешает сериализацию сложных типов
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
@@ -161,7 +141,6 @@ class ComputersResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        arbitrary_types_allowed = True  # Разрешает сериализацию сложных типов
 
 class OsVersion(BaseModel):
     os_version: Optional[str]
@@ -223,3 +202,50 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     correlation_id: Optional[str] = None
+
+class AppSettingUpdate(BaseModel):
+    ad_server_url: Optional[str] = None
+    domain: Optional[str] = None
+    ad_username: Optional[str] = None
+    ad_password: Optional[str] = None
+    api_url: Optional[str] = None
+    test_hosts: Optional[str] = None
+    log_level: Optional[str] = None
+    scan_max_workers: Optional[int] = None
+    polling_days_threshold: Optional[int] = None
+    winrm_operation_timeout: Optional[int] = None
+    winrm_read_timeout: Optional[int] = None
+    winrm_port: Optional[int] = None
+    winrm_server_cert_validation: Optional[str] = None
+    winrm_retries: Optional[int] = None
+    winrm_retry_delay: Optional[int] = None
+    ping_timeout: Optional[int] = None
+    powershell_encoding: Optional[str] = None
+    json_depth: Optional[int] = None
+    server_port: Optional[int] = None
+    cors_allow_origins: Optional[List[str]] = None
+    allowed_ips: Optional[List[str]] = None
+
+    @field_validator('ad_username', 'ad_password')
+    @classmethod
+    def validate_non_empty(cls, v, info):
+        if v is not None:
+            return validate_non_empty_string(cls, v, info.field_name)
+        return v
+
+    @field_validator('log_level')
+    @classmethod
+    def validate_log_level(cls, v):
+        if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+            raise ValueError("Log level должен быть одним из: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+        return v
+
+    @field_validator('winrm_server_cert_validation')
+    @classmethod
+    def validate_cert_validation(cls, v):
+        if v and v not in ["validate", "ignore"]:
+            raise ValueError("winrm_server_cert_validation должен быть 'validate' или 'ignore'")
+        return v
+
+    class Config:
+        from_attributes = True

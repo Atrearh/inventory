@@ -1,10 +1,12 @@
 # app/database.py
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from app.settings import Settings
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import logging
+from .settings import Settings
 
 logger = logging.getLogger(__name__)
+
+Base = declarative_base()
 
 settings = Settings()
 SQLALCHEMY_DATABASE_URL = settings.database_url
@@ -22,7 +24,6 @@ try:
         max_overflow=10,
         pool_timeout=30,
         pool_recycle=300,
-        #echo=True  # Для отладки SQL-запросов
     )
     logger.info("Database connection established with async connection pool")
 except Exception as e:
@@ -36,7 +37,6 @@ async_session = async_sessionmaker(
     autocommit=False,
     expire_on_commit=False
 )
-Base = declarative_base()
 
 async def get_db():
     async with async_session() as session:

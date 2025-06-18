@@ -1,3 +1,4 @@
+# app/computer_service.py
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -19,15 +20,29 @@ class ComputerService:
         self.db = db
         self.repo = repo
 
-    async def get_hosts_for_polling_from_db(self) -> List[str]:
-        """Получает список хостов для опроса."""
-        logger.debug("Получение хостов для опроса")
+    async def get_hosts_to_scan(self) -> List[str]:
+        """
+        Определяет, какие хосты сканировать.
+        Если в настройках заданы test_hosts, использует их.
+        В противном случае, получает все хосты из базы данных.
+        """
+        if settings.test_hosts and settings.test_hosts.strip():
+            hosts = [host.strip() for host in settings.test_hosts.split(",") if host.strip()]
+            logger.info(f"Используются тестовые хосты из настроек: {hosts}")
+            return hosts
+        
+        logger.info("Test_hosts не заданы, получаем все хосты из базы данных.")
+        return await self._get_all_hosts_from_db()
+
+    async def _get_all_hosts_from_db(self) -> List[str]:
+        """Получает список всех хостов из базы данных для опроса."""
+        logger.debug("Получение всех хостов из БД")
         try:
             result = await self.db.execute(select(models.Computer.hostname))
             hosts = [row[0] for row in result.fetchall()]
             return hosts
         except Exception as e:
-            logger.error(f"Ошибка получения хостов: {str(e)}")
+            logger.error(f"Ошибка получения хостов из БД: {str(e)}")
             raise
 
     async def process_list(self, items: List[dict], hostname: str, fields: List[str], log_name: str) -> List[dict]:
@@ -157,149 +172,107 @@ class ComputerService:
                 await db.rollback()
                 raise
 
-    async def process_single_host(self, host: str, repo: ComputerRepository, logger_adapter: logging.LoggerAdapter) -> bool:
+    def _determine_scan_mode(self, db_computer: Optional[models.Computer]) -> str:
+        """Определяет режим сканирования (Full или Changes)."""
+        if not db_computer or not db_computer.last_updated:
+            return "Full"
+        
+        is_full_scan_needed = (
+            not db_computer.last_full_scan or 
+            db_computer.last_full_scan < datetime.utcnow() - timedelta(days=30)
+        )
+        return "Full" if is_full_scan_needed else "Changes"
+
+    async def _update_host_status(self, hostname: str, status: models.CheckStatus, error_message: Optional[str] = None):
+        """Обновляет статус хоста в БД."""
         async with async_session() as db:
+            repo = ComputerRepository(db)
+            await repo.async_update_computer_check_status(
+                hostname=hostname,
+                check_status=status.value,
+                error=error_message
+            )
+            await db.commit()
+
+    async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
+        """Обрабатывает один хост: сбор данных, валидация и сохранение."""
+        async with async_session() as db:
+            repo = ComputerRepository(db)
             try:
-                db_computer = await db.execute(
-                    select(models.Computer).filter(models.Computer.hostname == host)
-                )
-                db_computer = db_computer.scalars().first()
-                last_updated = db_computer.last_updated if db_computer else None
-                last_full_scan = db_computer.last_full_scan if db_computer else None
+                # 1. Получить текущее состояние хоста из БД
+                db_computer_result = await db.execute(select(models.Computer).filter(models.Computer.hostname == host))
+                db_computer = db_computer_result.scalars().first()
+
+                # 2. Определить режим сканирования
+                mode = self._determine_scan_mode(db_computer)
+                
+                # 3. Собрать информацию с удаленного хоста
                 result_data = await get_pc_info(
                     hostname=host,
                     user=settings.ad_username,
                     password=settings.ad_password,
-                    last_updated=last_updated,
-                    last_full_scan=last_full_scan,
+                    last_updated=db_computer.last_updated if db_computer else None,
+                    last_full_scan=db_computer.last_full_scan if db_computer else None,
                 )
-                if result_data is None or not isinstance(result_data, dict):
-                    logger_adapter.error(f"Некорректные данные для {host}: {result_data}")
-                    await repo.async_update_computer_check_status(
-                        hostname=host,
-                        check_status=models.CheckStatus.unreachable.value
-                    )
+
+                # 4. Обработать результат сбора данных
+                if result_data and result_data.get("check_status") not in ("unreachable", "failed"):
+                    computer_to_create = await self.prepare_computer_data_for_db(result_data, host, mode)
+                    await self.upsert_computer_from_schema(computer_to_create, host, mode)
                     await db.commit()
-                    return False
-
-                if result_data.get("check_status") == models.CheckStatus.unreachable.value:
-                    logger_adapter.error(
-                        f"Хост {host} недоступен: {result_data.get('error', 'Неизвестная ошибка')}"
-                    )
-                    await repo.async_update_computer_check_status(
-                        hostname=host,
-                        check_status=models.CheckStatus.unreachable.value
-                    )
-                    await db.commit()
-                    return False
-
-                # Проверка наличия минимальных данных перед обработкой
-                required_fields = ["os_name", "os_version", "software", "disks"]
-                missing_fields = [field for field in required_fields if field not in result_data or result_data[field] is None]
-                if missing_fields:
-                    logger_adapter.error(
-                        f"Недостаточно данных для {host}: отсутствуют поля {missing_fields}"
-                    )
-                    await repo.async_update_computer_check_status(
-                        hostname=host,
-                        check_status=models.CheckStatus.failed.value
-                    )
-                    await db.commit()
-                    return False
-
-                # Проверка поля roles: допустимо, если пустое для несерверных систем
-                if "roles" not in result_data or result_data["roles"] is None:
-                    result_data["roles"] = []  # Устанавливаем пустой список, если roles отсутствует
-                elif result_data.get("os_name", "").lower().find("server") == -1 and not result_data["roles"]:
-                    logger_adapter.debug(f"Хост {host} не является сервером, roles пустой, это допустимо")
-                elif result_data.get("os_name", "").lower().find("server") != -1 and not result_data["roles"]:
-                    logger_adapter.warning(f"Хост {host} является сервером, но roles пустой")
-
-                mode = "Full" if last_updated is None or (
-                    last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
-                ) else "Changes"
-                computer_to_create = await self.prepare_computer_data_for_db(
-                    raw_data=result_data,
-                    hostname=host,
-                    mode=mode
-                )
-                if computer_to_create:
-                    try:
-                        computer_id = await self.upsert_computer_from_schema(computer_to_create, host, mode)
-                        if computer_id:
-                            await db.commit()
-                            logger_adapter.info(f"Хост {host} успешно обработан, ID={computer_id}")
-                            return True
-                        else:
-                            logger_adapter.error(f"Не удалось сохранить данные для {host}")
-                            await repo.async_update_computer_check_status(
-                                hostname=host,
-                                check_status=models.CheckStatus.failed.value
-                            )
-                            await db.commit()
-                            return False
-                    except Exception as e:
-                        logger_adapter.error(f"Ошибка сохранения данных для {host}: {str(e)}")
-                        await db.rollback()
-                        await repo.async_update_computer_check_status(
-                            hostname=host,
-                            check_status=models.CheckStatus.failed.value
-                        )
-                        await db.commit()
-                        return False
+                    logger_adapter.info(f"Хост {host} успешно обработан.")
+                    return True
                 else:
-                    logger_adapter.error(f"Ошибка валидации для {host}: computer_to_create is None")
-                    await repo.async_update_computer_check_status(
-                        hostname=host,
-                        check_status=models.CheckStatus.failed.value
-                    )
-                    await db.commit()
+                    error_msg = result_data.get('error', 'Неизвестная ошибка сбора данных')
+                    status = models.CheckStatus.unreachable if result_data.get("check_status") == "unreachable" else models.CheckStatus.failed
+                    logger_adapter.error(f"Сбор данных для {host} не удался: {error_msg}")
+                    await self._update_host_status(host, status, error_msg)
                     return False
+
             except Exception as e:
-                logger_adapter.error(f"Исключение для хоста {host}: {str(e)}")
-                await db.rollback()
-                await repo.async_update_computer_check_status(
-                    hostname=host,
-                    check_status=models.CheckStatus.unreachable.value
-                )
-                await db.commit()
+                logger_adapter.error(f"Критическая ошибка при обработке хоста {host}: {str(e)}", exc_info=True)
+                # По умолчанию считаем хост недоступным при неизвестных исключениях
+                await self._update_host_status(host, models.CheckStatus.unreachable, str(e))
                 return False
-        
+
     async def run_scan_task(self, task_id: str, logger_adapter: logging.LoggerAdapter):
         """Координирует процесс сканирования хостов."""
+        hosts = []
+        successful = 0
         try:
             await self.create_scan_task(task_id)
-            hosts = await self.get_hosts_for_polling_from_db()
-            logger_adapter.info(f"Получено {len(hosts)} хостов: {hosts[:5]}...")
+            hosts = await self.get_hosts_to_scan()
+            logger_adapter.info(f"Получено {len(hosts)} хостов для сканирования: {hosts[:5]}...")
 
-            successful = 0
-            repo = ComputerRepository(self.db)
+            if not hosts:
+                logger_adapter.warning("Список хостов для сканирования пуст. Завершение задачи.")
+                await self.update_scan_task_status(
+                    task_id=task_id, status=models.ScanStatus.completed, scanned_hosts=0, successful_hosts=0
+                )
+                return
+
             semaphore = asyncio.Semaphore(settings.scan_max_workers)
 
             async def process_host_with_semaphore(host: str):
                 async with semaphore:
-                    success = await self.process_single_host(host, repo, logger_adapter)
-                    if success:
+                    if await self.process_single_host(host, logger_adapter):
                         nonlocal successful
                         successful += 1
 
             tasks = [process_host_with_semaphore(host) for host in hosts]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks)
 
             await self.update_scan_task_status(
-                task_id=task_id,
-                status=models.ScanStatus.completed,
-                scanned_hosts=len(hosts),
-                successful_hosts=successful
+                task_id=task_id, status=models.ScanStatus.completed, scanned_hosts=len(hosts), successful_hosts=successful
             )
             logger_adapter.info(f"Сканирование завершено. Успешно обработано {successful} из {len(hosts)} хостов")
+        
         except Exception as e:
-            logger_adapter.error(f"Критическая ошибка сканирования: {str(e)}", exc_info=True)
+            logger_adapter.error(f"Критическая ошибка в задаче сканирования {task_id}: {str(e)}", exc_info=True)
             await self.update_scan_task_status(
                 task_id=task_id,
                 status=models.ScanStatus.failed,
-                scanned_hosts=len(hosts) if 'hosts' in locals() else 0,
-                successful_hosts=successful if 'successful' in locals() else 0,
+                scanned_hosts=len(hosts),
+                successful_hosts=successful,
                 error=str(e)
             )
-            raise

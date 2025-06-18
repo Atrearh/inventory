@@ -1,12 +1,8 @@
+# app/models.py
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger
 from sqlalchemy.orm import relationship
-from .database import Base
 import enum
-from pydantic import BaseModel, field_validator
-from typing import Optional 
-import ipaddress
-from datetime import datetime       
-from .settings import validate_non_empty_string 
+from .database import Base
 
 class CheckStatus(enum.Enum):
     success = "success"
@@ -56,36 +52,7 @@ class Computer(Base):
         Index('idx_computer_hostname', 'hostname'),
     )
 
-class ComputerBase(BaseModel):
-    hostname: str
-    ip: Optional[str] = None
-    os_name: Optional[str] = None
-    os_version: Optional[str] = None
-    cpu: Optional[str] = None
-    ram: Optional[int] = None
-    mac: Optional[str] = None
-    motherboard: Optional[str] = None
-    last_boot: Optional[datetime] = None
-    last_updated: Optional[datetime] = None
-    last_full_scan: Optional[datetime] = None  # Новое поле
-    is_virtual: Optional[bool] = False
-    check_status: Optional[CheckStatus] = CheckStatus.success
-
-    @field_validator('hostname')
-    @classmethod
-    def validate_hostname(cls, v):
-        return validate_non_empty_string(cls, v, "Hostname")
-
-    @field_validator('ip')
-    @classmethod
-    def validate_ip(cls, v):
-        if v:
-            try:
-                ipaddress.ip_address(v)
-            except ValueError:
-                raise ValueError("Неверный формат IP-адреса")
-        return v
-
+# УДАЛЕНО: Модель ComputerBase перемещена в schemas.py
 
 class Role(Base):
     __tablename__ = "roles"
@@ -111,7 +78,7 @@ class Software(Base):
     __table_args__ = (
         Index('idx_computer_software', 'computer_id', 'name', 'version', unique=True),
         Index('idx_software_computer_id', 'computer_id'),
-        Index('idx_software_is_deleted', 'is_deleted'),  # Новый индекс
+        Index('idx_software_is_deleted', 'is_deleted'),
     )
 
 class Disk(Base):
@@ -149,3 +116,13 @@ class ScanTask(Base):
     error = Column(String)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now())
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    last_updated = Column(DateTime, default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        Index('idx_app_setting_key', 'key'),
+    )

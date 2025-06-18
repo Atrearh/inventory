@@ -1,94 +1,41 @@
-# software_info.ps1
-param(
-    [Parameter(Mandatory=$false)]
-    [ValidateSet("Full", "Changes")]
-    [string]$Mode = "Full",
-    [Parameter(Mandatory=$false)]
-    [string]$LastUpdated
-)
-
 $ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-
-function Clean-String {
-    param([string]$s)
-    if ([string]::IsNullOrEmpty($s)) { return "" }
-    ($s -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\s+False$', ''
+[Console]::OutputEncoding = $OutputEncoding = [Text.Encoding]::UTF8
+function Clean-String($s) {
+    if (!$s) { "" }
+    else { ($s -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\s+False$', '' }
 }
-
-function Get-SoftwareRegistry {
-    $softPaths = @(
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    $softRaw = $softPaths | ForEach-Object {
-        Get-ItemProperty -Path $_ -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -and $_.DisplayName.Trim() }
-    }
-    Write-Debug "Raw software entries: $($softRaw.Count)"
-    $softUnique = @{}
-    foreach ($s in $softRaw) {
-        $name = Clean-String $s.DisplayName
-        if ([string]::IsNullOrEmpty($name)) { continue }
-        $installDate = if ($s.InstallDate) {
-            try { [datetime]::ParseExact($s.InstallDate, "yyyyMMdd", $null) } catch { $null }
-        } else { $null }
-        if (-not $LastUpdated -or -not $installDate -or $installDate -gt [datetime]::Parse($LastUpdated)) {
-            $softUnique[$name] = @{
-                DisplayName = $name
-                DisplayVersion = Clean-String $s.DisplayVersion
-                InstallDate = if ($installDate) { $installDate.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
-            }
-        }
-    }
-    Write-Debug "Unique software entries: $($softUnique.Count)"
-    return $softUnique
-}
-
-function Get-SoftwareChanges {
-    param([string]$LastUpdated)
-    $changes = @()
-    $afterTime = if ($LastUpdated) { [datetime]::Parse($LastUpdated) } else { (Get-Date).AddDays(-1) }
-    $events = Get-WinEvent -FilterHashtable @{
-        LogName = "Application"
-        Id = 102, 103, 11707, 11724
-        StartTime = $afterTime
-    } -ErrorAction SilentlyContinue
-    foreach ($event in $events) {
-        $name = $event.Properties[0].Value
-        $version = $event.Properties[1].Value
-        $action = switch ($event.Id) {
-            102 { "Installed" }
-            103 { "Uninstalled" }
-            11707 { "Installed" }
-            11724 { "Uninstalled" }
-        }
-        if ($name) {
-            $changes += @{
-                DisplayName = Clean-String $name
-                DisplayVersion = Clean-String $version
-                Action = $action
-                EventTime = $event.TimeCreated.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            }
-        }
-    }
-    Write-Debug "Detected software changes: $($changes.Count)"
-    return $changes
-}
-
 try {
-    switch ($Mode) {
-        "Full" {
-            $software = Get-SoftwareRegistry
-            $software.Values | ConvertTo-Json -Depth 4 -Compress
-        }
-        "Changes" {
-            $changes = Get-SoftwareChanges -LastUpdated $LastUpdated
-            $changes | ConvertTo-Json -Depth 4 -Compress
+    $result = @{}
+    $os = Get-CimInstance Win32_OperatingSystem
+    $result.os_name = Clean-String $os.Caption
+    $result.os_version = $os.Version
+    $result.last_boot = if ($os.LastBootUpTime) { $os.LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
+    $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+    $result.cpu = Clean-String $cp
+    $result.ram = [math]::Round(($os.TotalVisibleMemorySize / 1MB), 0)
+    $result.disks = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+        @{
+            DeviceID = $_.DeviceID
+            TotalSpace = $_.Size
+            FreeSpace = $_.FreeSpace
         }
     }
+    $mb = (Get-CimInstance Win32_BaseBoard).Product
+    $result.motherboard = Clean-String $mb
+    $adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 1
+    $result.ip_address = if ($adapter.IPAddress) { $adapter.IPAddress[0] } else { $null }
+    $result.mac_address = if ($adapter.MACAddress) { $adapter.MACAddress } else { $null }
+    $result.is_virtual = (Get-CimInstance Win32_ComputerSystem).Model -match "Virtual|VMware|Hyper-V"
+    $result.roles = @()
+    $result.status = "online"
+    $result.check_status = "success"
+    $result.hostname = $env:COMPUTERNAME
+    $result | ConvertTo-Json -Depth 4 -Compress
 } catch {
-    Write-Error "Error in software_info.ps1: $($_.Exception.Message)"
-    @() | ConvertTo-Json -Compress
+    Write-Error "system_info.ps1: $($_.Exception.Message)"
+    @{
+        hostname = $env:COMPUTERNAME
+        check_status = "failed"
+        error = $_.Exception.Message
+    } | ConvertTo-Json -Compress
 }

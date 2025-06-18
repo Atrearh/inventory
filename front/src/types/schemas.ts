@@ -1,18 +1,23 @@
 // src/types/schemas.ts
 export interface Role {
+  id?: number; // Додайте id, якщо бекенд його повертає
   Name: string;
 }
 
 export interface Software {
-    name: string;
-    version?: string;
-    install_date?: string;
+  id?: number; // Додайте id, якщо бекенд його повертає
+  name: string; // Залишаємо name для зворотної сумісності
+  DisplayName: string; // Додаємо DisplayName для відповідності бекенду
+  DisplayVersion?: string;
+  InstallDate?: string;
+  action?: string;
+  is_deleted?: boolean;
 }
 
 export interface Disk {
-    device_id: string;
-    total_space: number;
-    free_space: number;
+  DeviceID: string;
+  TotalSpace: number;
+  free_space: number;
 }
 
 export enum Status {

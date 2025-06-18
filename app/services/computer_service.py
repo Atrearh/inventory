@@ -77,12 +77,12 @@ class ComputerService:
         try:
             computer_data = {
                 "hostname": hostname,
-                "ip": raw_data.get("ip"),
+                "ip": raw_data.get("ip_address"),
                 "os_name": raw_data.get("os_name"),
                 "os_version": raw_data.get("os_version"),
                 "cpu": raw_data.get("cpu"),
                 "ram": raw_data.get("ram"),
-                "mac": raw_data.get("mac"),
+                "mac": raw_data.get("mac_address"),
                 "motherboard": raw_data.get("motherboard"),
                 "last_boot": raw_data.get("last_boot"),
                 "is_virtual": raw_data.get("is_virtual", False),
@@ -158,7 +158,6 @@ class ComputerService:
                 raise
 
     async def process_single_host(self, host: str, repo: ComputerRepository, logger_adapter: logging.LoggerAdapter) -> bool:
-        """Обрабатывает данные одного хоста."""
         async with async_session() as db:
             try:
                 db_computer = await db.execute(
@@ -193,6 +192,28 @@ class ComputerService:
                     )
                     await db.commit()
                     return False
+
+                # Проверка наличия минимальных данных перед обработкой
+                required_fields = ["os_name", "os_version", "software", "disks"]
+                missing_fields = [field for field in required_fields if field not in result_data or result_data[field] is None]
+                if missing_fields:
+                    logger_adapter.error(
+                        f"Недостаточно данных для {host}: отсутствуют поля {missing_fields}"
+                    )
+                    await repo.async_update_computer_check_status(
+                        hostname=host,
+                        check_status=models.CheckStatus.failed.value
+                    )
+                    await db.commit()
+                    return False
+
+                # Проверка поля roles: допустимо, если пустое для несерверных систем
+                if "roles" not in result_data or result_data["roles"] is None:
+                    result_data["roles"] = []  # Устанавливаем пустой список, если roles отсутствует
+                elif result_data.get("os_name", "").lower().find("server") == -1 and not result_data["roles"]:
+                    logger_adapter.debug(f"Хост {host} не является сервером, roles пустой, это допустимо")
+                elif result_data.get("os_name", "").lower().find("server") != -1 and not result_data["roles"]:
+                    logger_adapter.warning(f"Хост {host} является сервером, но roles пустой")
 
                 mode = "Full" if last_updated is None or (
                     last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
@@ -243,7 +264,7 @@ class ComputerService:
                 )
                 await db.commit()
                 return False
-
+        
     async def run_scan_task(self, task_id: str, logger_adapter: logging.LoggerAdapter):
         """Координирует процесс сканирования хостов."""
         try:

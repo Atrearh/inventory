@@ -18,7 +18,6 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer }) => (
       {computer?.last_boot ? new Date(computer.last_boot).toLocaleString('ru-RU') : '-'}
     </Descriptions.Item>
     <Descriptions.Item label="Виртуальный">{computer?.is_virtual ? 'Да' : 'Нет'}</Descriptions.Item>
-    <Descriptions.Item label="Статус">{computer?.status ?? '-'}</Descriptions.Item>
     <Descriptions.Item label="Check Status">{computer?.check_status ?? '-'}</Descriptions.Item>
   </Descriptions>
 );

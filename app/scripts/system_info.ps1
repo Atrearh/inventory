@@ -1,4 +1,3 @@
-# scripts/system_info.ps1
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -11,7 +10,7 @@ try {
     $os = Get-CimInstance Win32_OperatingSystem
     $cs = Get-CimInstance Win32_ComputerSystem
     $bios = Get-CimInstance Win32_BIOS
-    $baseboard = Get-CimInstance Win32_BaseBoard  # Добавляем получение информации о материнской плате
+    $baseboard = Get-CimInstance Win32_BaseBoard  
     $disks = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 -and $_.Size -gt 0 }
     $nics = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled }
     
@@ -31,8 +30,7 @@ try {
             total_space = [int64]$_.Size
             free_space  = [int64]$_.FreeSpace
         }
-    })
-    
+    }) 
     @{
         hostname      = Clean-String $env:COMPUTERNAME
         os_name       = Clean-String $os.Caption

@@ -6,10 +6,10 @@ from typing import Optional, Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import settings
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
+import requests
 from .repositories.computer_repository import ComputerRepository
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = BASE_DIR / "app/scripts"
 
 _script_cache = {}
-_session_pool = defaultdict(dict)
 
 def decode_output(output: bytes) -> str:
     """Декодирует вывод PowerShell, пробуя UTF-8 и fallback-кодировку."""
@@ -34,157 +33,153 @@ def decode_output(output: bytes) -> str:
             return output.decode('utf-8', errors='replace')
 
 def load_ps_script(file_name: str) -> str:
-    """Загружает PowerShell-скрипт из файла и кэширует его."""
+    """Загружает PowerShell-скрипт без экранирования специальных символов."""
     if file_name not in _script_cache:
         file_path = SCRIPTS_DIR / file_name
         try:
             if not file_path.exists():
-                logger.error(f"Файл скрипта {file_path} не найден", exc_info=True)
+                logger.error(f"Файл скрипта {file_path} не найден")
                 raise FileNotFoundError(f"Файл {file_path} не найден")
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            cleaned_lines = []
-            in_block_comment = False
-            for line in lines:
-                line = line.rstrip()
-                if not line or line.strip().startswith('#'):
-                    continue
-                if '<#' in line:
-                    in_block_comment = True
-                    continue
-                if in_block_comment:
-                    if '#>' in line:
-                        in_block_comment = False
-                    continue
-                if '#' in line and not line.strip().startswith('#'):
-                    line = line[:line.index('#')].rstrip()
-                if line:
-                    cleaned_lines.append(line)
-            script = '\n'.join(cleaned_lines)
+            with open(file_path, 'r', encoding='utf-8-sig') as f:
+                script = f.read().rstrip()
             _script_cache[file_name] = script
             logger.debug(f"Загружен и закэширован PowerShell-скрипт из {file_path}, длина: {len(script)} символов")
+            if len(script) > 2000:
+                logger.warning(f"Скрипт {file_name} имеет длину {len(script)} символов, возможны проблемы с выполнением")
         except FileNotFoundError as e:
-            logger.error(f"Ошибка загрузки скрипта {file_path}: {str(e)}", exc_info=True)
+            logger.error(f"Ошибка загрузки скрипта {file_path}: {str(e)}")
             raise
         except Exception as e:
-            logger.error(f"Неизвестная ошибка загрузки скрипта {file_path}: {str(e)}", exc_info=True)
+            logger.error(f"Неизвестная ошибка загрузки скрипта {file_path}: {str(e)}")
             raise
     return _script_cache[file_name]
 
-async def get_session(hostname: str, username: str, password: str, retries: int = 3) -> Optional[winrm.Session]:
-    """Асинхронно возвращает WinRM-сессию, используя WinRMDataCollector."""
-    collector = WinRMDataCollector.get_instance(hostname, username, password)
-    return await collector._create_winrm_session()
+def clear_script_cache():
+    """Очищает кэш загруженных скриптов."""
+    _script_cache.clear()
+    logger.debug("Кэш PowerShell-скриптов очищён")
 
 async def get_hosts_for_polling_from_db(db: AsyncSession) -> tuple[List[str], str]:
-    """Получает список хостов из базы данных или TEST_HOSTS для опроса."""
-    if settings.test_hosts:
+    """Получает список хостов из TEST_HOSTS для опроса."""
+    logger.debug(f"Значение settings.test_hosts: '{settings.test_hosts}' (тип: {type(settings.test_hosts)}, длина: {len(settings.test_hosts.strip()) if settings.test_hosts else 0})")
+    logger.debug(f"Исходное значение TEST_HOSTS из .env или settings.py: '{settings.test_hosts}'")
+    if settings.test_hosts and isinstance(settings.test_hosts, str) and settings.test_hosts.strip():
         try:
-            hosts = [host.strip() for host in settings.test_hosts.split(",")]
+            hosts = [host.strip() for host in settings.test_hosts.split(",") if host.strip()]
+            if not hosts:
+                logger.error("TEST_HOSTS пустой или содержит только пустые строки")
+                raise ValueError("TEST_HOSTS не содержит валидных хостов")
             simple_username = settings.ad_username.split('\\')[-1]
             logger.info(f"Используются тестовые хосты: {hosts}")
             return hosts, simple_username
         except Exception as e:
-            logger.error(f"Ошибка парсинга TEST_HOSTS: {str(e)}", exc_info=True)
-            raise ValueError("Неверный формат TEST_HOSTS")
+            logger.error(f"Ошибка парсинга TEST_HOSTS: {str(e)}")
+            raise ValueError(f"Неверный формат TEST_HOSTS: {str(e)}")
 
-    try:
-        repo = ComputerRepository(db)
-        hosts = await repo.async_get_hosts_for_polling(days_threshold=settings.polling_days_threshold)
-        simple_username = settings.ad_username.split('\\')[-1]
-        logger.info(f"Найдено {len(hosts)} хостов для опроса из базы данных")
-        return hosts, simple_username
-    except Exception as e:
-        logger.error(f"Ошибка базы данных при получения хостов: {str(e)}", exc_info=True)
-        raise
+    logger.error("TEST_HOSTS не задан или пуст, сканирование всех хостов из базы данных запрещено")
+    raise ValueError("TEST_HOSTS должен быть задан в settings.py или .env")
+
+def handle_winrm_errors(func):
+    """Декоратор для обработки типовых ошибок WinRM."""
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except WinRMError as e:
+            logger.error(f"Ошибка WinRM: {str(e)}")
+            raise
+        except requests.exceptions.ConnectTimeout as e:
+            logger.error(f"Тайм-аут подключения: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка: {str(e)}")
+            raise
+    return wrapper
 
 class WinRMDataCollector:
-    _instances = {}
-
-    @classmethod
-    def get_instance(cls, hostname: str, username: str, password: str) -> 'WinRMDataCollector':
-        """Возвращает существующий экземпляр или создаёт новый."""
-        if hostname not in cls._instances:
-            cls._instances[hostname] = cls(hostname, username, password)
-            logger.debug(f"Создан новый экземпляр WinRMDataCollector для {hostname}")
-        else:
-            logger.debug(f"Переиспользуется экземпляр WinRMDataCollector для {hostname}")
-        return cls._instances[hostname]
-
     def __init__(self, hostname: str, username: str, password: str):
         """Инициализирует коллектор данных с параметрами подключения."""
         self.hostname = hostname
-        self.usernames = username
+        self.username = username
         self.password = password
-        self.session = None
 
-    async def _create_winrm_session(self) -> Optional[winrm.Session]:
-        """Создаёт WinRM-сессию с повторными попытками."""
-        if self.hostname in _session_pool and self.usernames in _session_pool[self.hostname]:
-            logger.debug(f"Переиспользуется существующая WinRM-сессия для {self.hostname} (username: {self.usernames})")
-            return _session_pool[self.hostname][self.usernames]
-
+    @handle_winrm_errors
+    async def _create_winrm_session(self) -> winrm.Session:
+        """Создаёт новую WinRM-сессию."""
         def sync_create_session():
             return winrm.Session(
                 f"http://{self.hostname}:{settings.winrm_port}/wsman",
-                auth=(self.usernames, self.password),
+                auth=(self.username, self.password),
                 transport="ntlm",
                 server_cert_validation=settings.winrm_server_cert_validation,
-                operation_timeout_sec=settings.winrm_operation_timeout,
-                read_timeout_sec=settings.winrm_read_timeout
+                operation_timeout_sec=getattr(settings, 'winrm_operation_timeout', 60),
+                read_timeout_sec=getattr(settings, 'winrm_read_timeout', 90)
             )
 
-        def log_retry_attempt(attempt: int, error: Exception) -> None:
-            """Логирует неудачную попытку создания сессии."""
-            logger.warning(f"Попытка {attempt} для {self.hostname} не удалась: {str(error)}")
-
         for attempt in range(1, settings.winrm_retries + 1):
+            logger.debug(f"Попытка {attempt} создания WinRM-сессии для {self.hostname}")
             try:
                 session = await asyncio.to_thread(sync_create_session)
-                logger.debug(f"WinRM-сессия успешно создана для {self.hostname} (username: {self.usernames}) на попытке {attempt}")
-                _session_pool[self.hostname][self.usernames] = session
+                logger.debug(f"WinRM-сессия создана для {self.hostname} на попытке {attempt}")
                 return session
-            except WinRMError as e:
-                log_retry_attempt(attempt, e)
+            except (WinRMError, requests.exceptions.ConnectTimeout) as e:
+                logger.warning(f"Попытка {attempt} подключения к {self.hostname} не удалась: {str(e)}")
                 if attempt < settings.winrm_retries:
                     await asyncio.sleep(settings.winrm_retry_delay)
                 continue
             except Exception as e:
-                log_retry_attempt(attempt, e)
+                logger.error(f"Неизвестная ошибка при создании сессии для {self.hostname}: {str(e)}")
                 if attempt < settings.winrm_retries:
                     await asyncio.sleep(settings.winrm_retry_delay)
                 continue
         logger.error(f"Не удалось создать WinRM-сессию для {self.hostname} после {settings.winrm_retries} попыток")
-        return None
+        raise ConnectionError(f"Не удалось создать сессию для {self.hostname}")
 
-    async def connect(self):
-        """Подключается к хосту, используя пул сессий."""
-        self.session = await self._create_winrm_session()
-        if not self.session:
-            raise ConnectionError(f"Failed to create WinRM session for {self.hostname}")
-
+    @handle_winrm_errors
     async def _run_script(self, script_name: str, mode: str = "Full", last_updated: Optional[datetime] = None) -> dict:
-        """Выполняет PowerShell-скрипт на удалённом хосте с указанным режимом."""
-        if not self.session:
-            await self.connect()
+        """Выполняет PowerShell-скрипт на удалённом хосте с тайм-аутом."""
+        if script_name == "software_info.ps1":
+            script_name = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
         script_content = load_ps_script(script_name)
-        last_updated_str = last_updated.isoformat() if last_updated else None
-        ps_command = f'$script = @"\n{script_content}\n"@\nInvoke-Command -ScriptBlock {{ {script_content} }} -ArgumentList "{mode}", "{last_updated_str}"'
-        logger.debug(f"Выполняется {script_name} для {self.hostname} в режиме {mode}, LastUpdated: {last_updated_str}")
+        session = await self._create_winrm_session()
+
+        logger.debug(f"Выполняется {script_name} для {self.hostname}, длина скрипта: {len(script_content)} символов")
+        if len(script_content) > 2000:
+            logger.warning(f"Длина скрипта {script_name} для {self.hostname}: {len(script_content)} символов")
+
         try:
-            result = await asyncio.to_thread(lambda: self.session.run_ps(ps_command))
+            async def run_ps_with_timeout():
+                command = script_content
+                if script_name == "software_info_changes.ps1" and last_updated:
+                    last_updated_str = last_updated.isoformat()
+                    command = f"& {{ {script_content} }} -LastUpdated '{last_updated_str}'"
+                logger.debug(f"Длина команды для {script_name}: {len(command)} символов")
+                if len(command) > 6000:
+                    logger.warning(f"Команда для {script_name} превышает 6000 символов: {len(command)}")
+                return await asyncio.to_thread(lambda: session.run_ps(command))
+
+            result = await asyncio.wait_for(
+                run_ps_with_timeout(),
+                timeout=settings.winrm_operation_timeout + settings.winrm_read_timeout
+            )
+
             if result.status_code != 0:
                 error_message = decode_output(result.std_err)
                 logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {error_message}, статус: {result.status_code}")
                 raise RuntimeError(f"Ошибка выполнения {script_name}: {error_message}")
+
             output = decode_output(result.std_out)
+            if not output.strip():
+                logger.error(f"Пустой вывод от {script_name} для {self.hostname}")
+                raise RuntimeError(f"Скрипт {script_name} вернул пустой вывод")
             logger.debug(f"Вывод {script_name} для {self.hostname}: {output[:500]}...")
+            logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
             return json.loads(output)
+
+        except asyncio.TimeoutError:
+            logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}")
+            raise
         except json.JSONDecodeError as e:
             logger.error(f"Ошибка парсинга JSON из {script_name} для {self.hostname}: {str(e)}, вывод: {output[:500]}...")
-            raise
-        except Exception as e:
-            logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {str(e)}", exc_info=True)
             raise
 
     async def get_system_info(self) -> dict:
@@ -197,57 +192,62 @@ class WinRMDataCollector:
         if not isinstance(data, list):
             logger.warning(f"software_info.ps1 для {self.hostname} вернул не массив: {data}")
             return []
-        if not data and mode == "Changes":
-            logger.warning(f"software_info.ps1 для {self.hostname} в режиме Changes вернул пустой массив")
         return data
 
     async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> dict:
-        """Собирает полную информацию о ПК."""
+        """Собирает полную информацию о ПК, сохраняя частичные данные при ошибках."""
+        result = {
+            "hostname": self.hostname,
+            "check_status": "partial",
+            "error": None
+        }
+
         try:
+            # Пытаемся получить системную информацию
             system_data = await self.get_system_info()
-            system_data["software"] = await self.get_software_info(mode=mode, last_updated=last_updated)
-            system_data["hostname"] = self.hostname
-            system_data["check_status"] = "success"
-            logger.info(f"Успешно собраны данные для {self.hostname} в режиме {mode}")
-            return system_data
+            result.update(system_data)
+            result["check_status"] = "success"
         except Exception as e:
-            logger.error(f"Ошибка сбора данных для {self.hostname}: {str(e)}", exc_info=True)
-            return {
-                "hostname": self.hostname,
-                "check_status": "failed",
-                "error": str(e)
-            }
-        finally:
-            self.cleanup()
+            logger.error(f"Ошибка получения system_info для {self.hostname}: {str(e)}")
+            result["error"] = f"System info error: {str(e)}"
+            result["check_status"] = "failed"
 
-    def cleanup(self):
-        """Очищает сессию, но сохраняет её в пуле для повторного использования."""
-        if self.session:
-            self.session = None
+        try:
+            # Пытаемся получить информацию о ПО
+            software_data = await self.get_software_info(mode=mode, last_updated=last_updated)
+            result["software"] = software_data
+            if result["check_status"] != "failed":
+                result["check_status"] = "success"
+        except Exception as e:
+            logger.error(f"Ошибка получения software_info для {self.hostname}: {str(e)}")
+            if result["error"]:
+                result["error"] += f"; Software info error: {str(e)}"
+            else:
+                result["error"] = f"Software info error: {str(e)}"
+            if result["check_status"] == "success":
+                result["check_status"] = "partial"
 
-    @classmethod
-    def clear_pool(cls):
-        """Очищает пул экземпляров и сессий."""
-        for hostname, instance in cls._instances.items():
-            instance.cleanup()
-        cls._instances.clear()
-        _session_pool.clear()
-        logger.debug("Пул WinRMDataCollector и сессий очищен")
+        if result["check_status"] == "success":
+            logger.info(f"Успешно собраны все данные для {self.hostname} в режиме {mode}")
+        elif result["check_status"] == "partial":
+            logger.warning(f"Собраны частичные данные для {self.hostname} в режиме {mode}: {result['error']}")
+        else:
+            logger.error(f"Не удалось собрать данные для {self.hostname}: {result['error']}")
+
+        return result
 
 async def get_pc_info(hostname: str, user: str, password: str, retries: int = 3, last_updated: Optional[datetime] = None, last_full_scan: Optional[datetime] = None) -> Optional[Dict]:
-    """Получает информацию о ПК, переиспользуя WinRMDataCollector."""
-    from datetime import timedelta
-    collector = WinRMDataCollector.get_instance(hostname, user, password)
+    """Получает информацию о ПК, используя WinRMDataCollector."""
+    collector = WinRMDataCollector(hostname, user, password)
     try:
-        # Проверяем, нужно ли выполнить полное сканирование
-        if last_updated is None or (last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)):
-            mode = "Full"
-        else:
-            mode = "Changes"
+        mode = "Full" if last_updated is None or (
+            last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
+        ) else "Changes"
         return await collector.get_all_pc_info(mode=mode, last_updated=last_updated)
-    except ConnectionError:
+    except ConnectionError as e:
+        logger.error(f"Ошибка подключения для {hostname}: {str(e)}")
         return {
             "hostname": hostname,
             "check_status": "unreachable",
-            "error": f"Не удалось установить WinRM-сессию для {hostname}"
+            "error": str(e)
         }

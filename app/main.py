@@ -57,11 +57,10 @@ async def lifespan(app: FastAPI):
     logger.info("Запуск приложения, инициализация базы данных...")
     await init_db()
     logger.info("Загрузка PowerShell скриптов...")
-    _script_cache["system_info"] = load_ps_script("system_info.ps1")
-    _script_cache["software_info"] = load_ps_script("software_info.ps1")
+    #_script_cache["system_info"] = load_ps_script("system_info.ps1")
+    #_script_cache["software_info"] = load_ps_script("software_info.ps1")
     yield
     logger.info("Завершение работы приложения...")
-    WinRMDataCollector.clear_pool()
     _script_cache.clear()
     await engine.dispose()
     logger.info("Пул соединений aiomysql закрыт")

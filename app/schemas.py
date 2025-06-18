@@ -111,9 +111,13 @@ class ComputerCreate(ComputerBase):
 class Computer(ComputerBase):
     id: int
     last_updated: datetime
+    roles: List[Role] = []  # Добавлено явно
+    software: List[Software] = []  # Добавлено явно
+    disks: List[Disk] = []  # Добавлено явно
 
     class Config:
         from_attributes = True
+        arbitrary_types_allowed = True  # Разрешает сериализацию сложных типов
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
@@ -157,6 +161,7 @@ class ComputersResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        arbitrary_types_allowed = True  # Разрешает сериализацию сложных типов
 
 class OsVersion(BaseModel):
     os_version: Optional[str]

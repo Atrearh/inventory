@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from .. import models, schemas
 from ..models import Computer, Software, ChangeLog
-from sqlalchemy import and_
+
 logger = logging.getLogger(__name__)
 
 
@@ -401,15 +401,9 @@ class ComputerRepository:
                 stmt = select(Computer).options(
                     joinedload(Computer.roles),
                     joinedload(Computer.disks),
-                    joinedload(Computer.software).load_only(  # Фильтр на уровне загрузки
-                        Software.id,
-                        Software.computer_id,
-                        Software.name,
-                        Software.version,
-                        Software.install_date,
-                        Software.action,
-                        Software.is_deleted
-                    ).filter(Software.is_deleted == False)  # Фильтр только для связанных данных
+                    joinedload(Computer.software                   #joinedload(Computer.software.and_(Software.is_deleted.is_(False))).load_only(  
+                        #Software.id, Software.computer_id,Software.name, Software.version,Software.install_date, Software.action,   Software.is_deleted
+                    )
                 )
 
                 # Фильтрация
@@ -446,6 +440,8 @@ class ComputerRepository:
 
                 result = await self.db.execute(stmt)
                 computers = result.unique().scalars().all()
+                for c in computers:
+                    logger.debug(f"Компьютер {c.id}: roles={len(c.roles)}, software={len(c.software)}, disks={len(c.disks)}")
 
                 return computers, total
             except SQLAlchemyError as e:

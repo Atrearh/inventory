@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ad_username: str
     ad_password: str
     api_url: str = ""
-    test_hosts: str = ""
+    test_hosts: str = "admins.express.local,economist-4.express.local,buhgalter-12.express.local,1c-ogk.express.local"
     log_level: str = "INFO"
     scan_max_workers: int = 10
     polling_days_threshold: int = 1

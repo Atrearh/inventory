@@ -68,6 +68,9 @@ class ComputerBase(BaseModel):
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = None
     check_status: Optional[CheckStatus] = None
+    disks: List[Disk] = []  
+    roles: List[Role] = []  
+    software: List[Software] = []  
 
     @field_validator('hostname')
     @classmethod

@@ -37,7 +37,6 @@ def signal_handler(sig, frame):
     logger.info(f"Получен сигнал {sig}, инициируется завершение...")
     shutdown_event.set()
 
-# Инициализация базы данных
 async def init_db():
     async with async_session() as session:
         try:
@@ -47,7 +46,6 @@ async def init_db():
                 logger.info("Таблицы не найдены, создаём схему базы данных...")
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
-                # Инициализация настроек
                 await init_settings(session)
             else:
                 logger.info(f"Найдены таблицы: {tables}")
@@ -90,7 +88,6 @@ async def init_settings(db: AsyncSession):
 async def lifespan(app: FastAPI):
     logger.info("Запуск приложения, инициализация базы данных...")
     await init_db()
-    logger.info("Загрузка PowerShell скриптов...")
     yield
     logger.info("Завершение работы приложения...")
     _script_cache.clear()

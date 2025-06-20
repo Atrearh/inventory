@@ -177,7 +177,7 @@ const ComputerDetail: React.FC = () => {
       title: 'Обсяг',
       dataIndex: 'TotalSpace',
       key: 'TotalSpace',
-      render: (value) => `${value ?? '-'} MB`,
+      render: (value) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ`,
       sorter: true,
       sortOrder: sort.key === 'TotalSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
       onHeaderCell: () => ({ onClick: () => handleSort('TotalSpace') }),
@@ -186,13 +186,12 @@ const ComputerDetail: React.FC = () => {
       title: 'Вільно',
       dataIndex: 'FreeSpace',
       key: 'FreeSpace',
-      render: (value, record) => `${value ?? '-'} MB (${value && record.TotalSpace ? ((value / record.TotalSpace) * 100).toFixed(2) : '0'}%)`,
+      render: (value, record) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ (${value && record.TotalSpace ? ((value / record.TotalSpace) * 100).toFixed(2) : '0'}%)`,
       sorter: true,
       sortOrder: sort.key === 'FreeSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
       onHeaderCell: () => ({ onClick: () => handleSort('FreeSpace') }),
     },
   ];
-
   const historyColumns: TableProps<ChangeLog>['columns'] = [
     {
       title: 'Поле',

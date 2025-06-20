@@ -47,14 +47,16 @@ class Software(BaseModel):
 
 
 class Disk(BaseModel):
-    device_id: str = Field(..., alias="DeviceID")
+    device_id: Optional[str] = Field(None, alias="DeviceID")
     total_space: float = Field(ge=0, alias="TotalSpace")
-    free_space: float = Field(ge=0, alias="FreeSpace")
+    free_space: Optional[int] = Field(None, ge=0, alias="FreeSpace")
 
     @field_validator('device_id')
     @classmethod
     def validate_device_id(cls, v):
-        return validate_non_empty_string(cls, v, "Disk device_id")
+        if v is not None:
+            return validate_non_empty_string(cls, v, "Disk device_id")
+        return v
 
     class Config:
         from_attributes = True

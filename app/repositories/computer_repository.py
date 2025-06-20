@@ -472,3 +472,4 @@ class ComputerRepository:
         except Exception as e:
             logger.error(f"Неизвестная ошибка при получении компьютера ID {computer_id}: {str(e)}")
             raise
+ 

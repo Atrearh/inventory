@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 def validate_non_empty_string(cls, v: str, field_name: str) -> str:
     """Общая функция валидации непустых строк."""
-    logger.debug(f"Валидация {field_name}: {v}")
+    #logger.debug(f"Валидация {field_name}: {v}")
     if not v or not v.strip():
         raise ValueError(f"{field_name} не может быть пустым")
     return v.strip()

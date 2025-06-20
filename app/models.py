@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger
+from sqlalchemy import  Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger, Float
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
 from .database import Base
@@ -84,9 +84,9 @@ class Disk(Base):
     __tablename__ = "disks"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
-    device_id: Mapped[str] = mapped_column(String, nullable=False)
-    total_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    free_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    total_space: Mapped[float] = mapped_column(Float, nullable=False)
+    free_space: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="disks")
     __table_args__ = (
         Index('idx_computer_disk', 'computer_id', 'device_id', unique=True),

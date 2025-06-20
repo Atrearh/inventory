@@ -1,4 +1,3 @@
-# app/data_collector.py
 import logging
 import json
 import winrm
@@ -9,12 +8,13 @@ from datetime import datetime, timedelta
 import asyncio
 import requests
 from contextlib import contextmanager
-from . import settings
+from .settings import settings
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = BASE_DIR / "app/scripts"
+logger.debug(f"Settings attributes: {dir(settings)}, winrm_port: {getattr(settings, 'winrm_port', 'Not found')}")
 
 class ScriptCache:
     """Управление кэшем PowerShell-скриптов."""
@@ -60,6 +60,7 @@ def winrm_session(hostname: str, username: str, password: str):
     """Создаёт WinRM-сессию с обработкой ошибок."""
     session = None
     try:
+        logger.debug(f"Создание WinRM-сессии для {hostname}, порт: {settings.winrm_port}")
         session = winrm.Session(
             f"http://{hostname}:{settings.winrm_port}/wsman",
             auth=(username, password),
@@ -71,8 +72,11 @@ def winrm_session(hostname: str, username: str, password: str):
         logger.debug(f"WinRM-сессия создана для {hostname}")
         yield session
     except (WinRMError, requests.exceptions.ConnectTimeout) as e:
-        logger.error(f"Не удалось создать WinRM-сессию для {hostname}: {str(e)}")
-        raise ConnectionError(f"Не удалось подключиться к {hostname}")
+        logger.error(f"Не удалось создать WinRM-сессию для {hostname}: {str(e)}", exc_info=True)
+        raise ConnectionError(f"Не удалось подключиться к {hostname}: {str(e)}")
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при создании WinRM-сессии для {hostname}: {str(e)}", exc_info=True)
+        raise
     finally:
         if session:
             logger.debug(f"Закрытие WinRM-сессии для {hostname}")
@@ -110,7 +114,7 @@ class WinRMDataCollector:
                 )
                 if result.status_code != 0:
                     error_message = decode_output(result.std_err)
-                    logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {error_message}")
+                    logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {error_message}", exc_info=True)
                     raise RuntimeError(f"Ошибка выполнения скрипта: {error_message}")
                 output = decode_output(result.std_out)
                 if not output.strip():
@@ -119,7 +123,10 @@ class WinRMDataCollector:
                 logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
                 return json.loads(output)
             except asyncio.TimeoutError:
-                logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}")
+                logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}", exc_info=True)
+                raise
+            except Exception as e:
+                logger.error(f"Неожиданная ошибка при выполнении {script_name} для {self.hostname}: {str(e)}", exc_info=True)
                 raise
 
     async def get_system_info(self) -> dict:
@@ -141,6 +148,7 @@ class WinRMDataCollector:
         try:
             system_data = await self.get_system_info()
             result.update(system_data)
+            logger.info( f"Собраны данные для {self.hostname} raw data: {system_data}")
             result["check_status"] = "success"
         except Exception as e:
             result["error"] = f"System info error: {str(e)}"

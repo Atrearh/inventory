@@ -1,4 +1,3 @@
-# app/main.py
 import signal
 import asyncio
 import uuid
@@ -13,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
-from .database import engine, get_db, init_db
+from .database import engine, get_db, init_db, shutdown_db  # Добавляем shutdown_db
 from . import models, schemas
 from .settings import settings
 from .services.computer_service import ComputerService
@@ -33,18 +32,20 @@ shutdown_event = asyncio.Event()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Инициализация приложения...")
-    await init_db()  # Инициализация базы данных
-    yield
-    logger.info("Завершение работы...")
-    tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
-    for task in tasks:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    await engine.dispose()
-    logger.info("Пул соединений закрыт")
+    try:
+        await init_db()  # Инициализация базы данных
+        yield
+    finally:
+        logger.info("Завершение работы...")
+        await shutdown_db()  # Используем shutdown_db для корректного завершения
+        tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Все асинхронные задачи завершены")
 
 app = FastAPI(title="Inventory Management", lifespan=lifespan)
 router = APIRouter(prefix="/api")

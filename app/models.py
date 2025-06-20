@@ -1,8 +1,9 @@
 # app/models.py
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
 from .database import Base
+from typing import Optional, List
 
 class CheckStatus(enum.Enum):
     success = "success"
@@ -17,49 +18,47 @@ class ScanStatus(enum.Enum):
 
 class ADComputer(Base):
     __tablename__ = "ad_computers"
-    id = Column(Integer, primary_key=True, index=True)
-    hostname = Column(String, unique=True, nullable=False)
-    os_name = Column(String)
-    object_guid = Column(String)
-    when_created = Column(DateTime)
-    when_changed = Column(DateTime)
-    enabled = Column(Boolean)
-    last_updated = Column(DateTime, default=func.now())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    os_name: Mapped[Optional[str]] = mapped_column(String)
+    object_guid: Mapped[Optional[str]] = mapped_column(String)
+    when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
+    last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
 
 class Computer(Base):
     __tablename__ = "computers"
-    id = Column(Integer, primary_key=True, index=True)
-    hostname = Column(String, unique=True, nullable=False)
-    ip = Column(String)
-    os_name = Column(String)
-    os_version = Column(String)
-    cpu = Column(String)
-    ram = Column(Integer)
-    mac = Column(String)
-    motherboard = Column(String)
-    last_boot = Column(DateTime)
-    last_updated = Column(DateTime, default=func.now())
-    last_full_scan = Column(DateTime)
-    is_virtual = Column(Boolean, default=False)
-    check_status = Column(Enum(CheckStatus), default=CheckStatus.success, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    ip: Mapped[Optional[str]] = mapped_column(String)
+    os_name: Mapped[Optional[str]] = mapped_column(String)
+    os_version: Mapped[Optional[str]] = mapped_column(String)
+    cpu: Mapped[Optional[str]] = mapped_column(String)
+    ram: Mapped[Optional[int]] = mapped_column(Integer)
+    mac: Mapped[Optional[str]] = mapped_column(String)
+    motherboard: Mapped[Optional[str]] = mapped_column(String)
+    last_boot: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
+    check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), default=CheckStatus.success, nullable=False)
 
-    roles = relationship("Role", back_populates="computer", cascade="all, delete-orphan")
-    software = relationship("Software", back_populates="computer", cascade="all, delete-orphan")
-    disks = relationship("Disk", back_populates="computer", cascade="all, delete-orphan")
-    change_logs = relationship("ChangeLog", back_populates="computer", cascade="all, delete-orphan")
+    roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    software: Mapped[List["Software"]] = relationship("Software", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    disks: Mapped[List["Disk"]] = relationship("Disk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    change_logs: Mapped[List["ChangeLog"]] = relationship("ChangeLog", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
 
     __table_args__ = (
         Index('idx_computer_hostname', 'hostname'),
     )
 
-# УДАЛЕНО: Модель ComputerBase перемещена в schemas.py
-
 class Role(Base):
     __tablename__ = "roles"
-    id = Column(Integer, primary_key=True, index=True)
-    computer_id = Column(Integer, ForeignKey("computers.id"), nullable=False)
-    name = Column(String, nullable=False)
-    computer = relationship("Computer", back_populates="roles")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="roles")
     __table_args__ = (
         Index('idx_computer_role', 'computer_id', 'name', unique=True),
         Index('idx_role_computer_id', 'computer_id'),
@@ -67,14 +66,14 @@ class Role(Base):
 
 class Software(Base):
     __tablename__ = "software"
-    id = Column(Integer, primary_key=True, index=True)
-    computer_id = Column(Integer, ForeignKey("computers.id"), nullable=False)
-    name = Column(String, nullable=False)
-    version = Column(String, nullable=True)
-    install_date = Column(DateTime, nullable=True)
-    action = Column(String(20), nullable=True)
-    is_deleted = Column(Boolean, default=False, nullable=False)
-    computer = relationship("Computer", back_populates="software")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    install_date: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
+    action: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="software")
     __table_args__ = (
         Index('idx_computer_software', 'computer_id', 'name', 'version', unique=True),
         Index('idx_software_computer_id', 'computer_id'),
@@ -83,12 +82,12 @@ class Software(Base):
 
 class Disk(Base):
     __tablename__ = "disks"
-    id = Column(Integer, primary_key=True, index=True)
-    computer_id = Column(Integer, ForeignKey("computers.id"), nullable=False)
-    device_id = Column(String, nullable=False)
-    total_space = Column(BigInteger, nullable=False)
-    free_space = Column(BigInteger, nullable=False)
-    computer = relationship("Computer", back_populates="disks")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    total_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    free_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="disks")
     __table_args__ = (
         Index('idx_computer_disk', 'computer_id', 'device_id', unique=True),
         Index('idx_disk_computer_id', 'computer_id'),
@@ -96,33 +95,23 @@ class Disk(Base):
 
 class ChangeLog(Base):
     __tablename__ = "change_log"
-    id = Column(Integer, primary_key=True, index=True)
-    computer_id = Column(Integer, ForeignKey("computers.id"), nullable=False)
-    field = Column(String, nullable=False)
-    old_value = Column(String(255))
-    new_value = Column(String(255))
-    changed_at = Column(DateTime, default=func.now())
-    computer = relationship("Computer", back_populates="change_logs")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    field: Mapped[str] = mapped_column(String, nullable=False)
+    old_value: Mapped[Optional[str]] = mapped_column(String(255))
+    new_value: Mapped[Optional[str]] = mapped_column(String(255))
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="change_logs")
     __table_args__ = (
         Index('idx_change_log_computer_id', 'computer_id'),
     )
 
 class ScanTask(Base):
     __tablename__ = "scan_tasks"
-    id = Column(String, primary_key=True, index=True)
-    status = Column(Enum(ScanStatus), default=ScanStatus.pending, nullable=False)
-    scanned_hosts = Column(Integer, default=0)
-    successful_hosts = Column(Integer, default=0)
-    error = Column(String)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now())
-
-class AppSetting(Base):
-    __tablename__ = "app_settings"
-    key = Column(String, primary_key=True)
-    value = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-    last_updated = Column(DateTime, default=func.now(), onupdate=func.now())
-    __table_args__ = (
-        Index('idx_app_setting_key', 'key'),
-    )
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    status: Mapped[ScanStatus] = mapped_column(Enum(ScanStatus), default=ScanStatus.pending, nullable=False)
+    scanned_hosts: Mapped[int] = mapped_column(Integer, default=0)
+    successful_hosts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())

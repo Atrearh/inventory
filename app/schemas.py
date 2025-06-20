@@ -7,6 +7,7 @@ from .utils import validate_hostname, validate_mac_address, validate_ip_address,
 
 logger = logging.getLogger(__name__)
 
+
 class Role(BaseModel):
     name: str = Field(..., alias="Name")
 
@@ -18,6 +19,7 @@ class Role(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True
+
 
 class Software(BaseModel):
     name: str = Field(..., min_length=1, alias="DisplayName")
@@ -35,12 +37,14 @@ class Software(BaseModel):
     @classmethod
     def validate_action(cls, v):
         if v and v not in ["Installed", "Uninstalled"]:
-            raise ValueError("Action должно быть 'Installed' или 'Uninstalled'")
+            raise ValueError(
+                "Action должно быть 'Installed' или 'Uninstalled'")
         return v
 
     class Config:
         from_attributes = True
         populate_by_name = True
+
 
 class Disk(BaseModel):
     device_id: str = Field(..., alias="DeviceID")
@@ -56,6 +60,7 @@ class Disk(BaseModel):
         from_attributes = True
         populate_by_name = True
 
+
 class ComputerBase(BaseModel):
     hostname: str
     ip: Optional[str] = None
@@ -68,9 +73,6 @@ class ComputerBase(BaseModel):
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = None
     check_status: Optional[CheckStatus] = None
-    disks: List[Disk] = []  
-    roles: List[Role] = []  
-    software: List[Software] = []  
 
     @field_validator('hostname')
     @classmethod
@@ -90,12 +92,9 @@ class ComputerBase(BaseModel):
     class Config:
         from_attributes = True
 
-class ComputerCreate(ComputerBase):
-    roles: List[Role] = []
-    software: List[Software] = []
-    disks: List[Disk] = []
 
-class Computer(ComputerBase):
+class ComputerList(ComputerBase):
+    """Схема для списка компьютеров без связанных данных."""
     id: int
     last_updated: datetime
 
@@ -105,9 +104,32 @@ class Computer(ComputerBase):
             datetime: lambda v: v.isoformat() if v else None
         }
 
+
+class Computer(ComputerBase):
+    """Схема для детальной информации о компьютере с связанными данными."""
+    id: int
+    last_updated: datetime
+    disks: List[Disk] = []
+    roles: List[Role] = []
+    software: List[Software] = []
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+
+class ComputerCreate(ComputerBase):
+    roles: List[Role] = []
+    software: List[Software] = []
+    disks: List[Disk] = []
+
+
 class ComputerUpdateCheckStatus(BaseModel):
     hostname: str
     check_status: CheckStatus
+
 
 class ChangeLog(BaseModel):
     id: int
@@ -122,6 +144,7 @@ class ChangeLog(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
+
 
 class ScanTask(BaseModel):
     id: str
@@ -138,12 +161,14 @@ class ScanTask(BaseModel):
             datetime: lambda v: v.isoformat() if v else None
         }
 
+
 class ComputersResponse(BaseModel):
-    data: List[Computer]
+    data: List[ComputerList]  # Используем ComputerList вместо Computer
     total: int
 
     class Config:
         from_attributes = True
+
 
 class OsVersion(BaseModel):
     os_version: Optional[str]
@@ -151,6 +176,7 @@ class OsVersion(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class LowDiskSpace(BaseModel):
     hostname: str
@@ -160,6 +186,7 @@ class LowDiskSpace(BaseModel):
     class Config:
         from_attributes = True
 
+
 class StatusStats(BaseModel):
     status: CheckStatus
     count: int
@@ -167,17 +194,20 @@ class StatusStats(BaseModel):
     class Config:
         from_attributes = True
 
+
 class OsStats(BaseModel):
     os_versions: List[OsVersion]
 
     class Config:
         from_attributes = True
 
+
 class DiskStats(BaseModel):
     low_disk_space: List[LowDiskSpace]
 
     class Config:
         from_attributes = True
+
 
 class ScanStats(BaseModel):
     last_scan_time: Optional[datetime]
@@ -188,6 +218,7 @@ class ScanStats(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }
+
 
 class DashboardStats(BaseModel):
     total_computers: Optional[int]
@@ -201,10 +232,12 @@ class DashboardStats(BaseModel):
             datetime: lambda v: v.isoformat() if v else None
         }
 
+
 class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     correlation_id: Optional[str] = None
+
 
 class AppSettingUpdate(BaseModel):
     ad_server_url: Optional[str] = None
@@ -220,8 +253,6 @@ class AppSettingUpdate(BaseModel):
     winrm_read_timeout: Optional[int] = None
     winrm_port: Optional[int] = None
     winrm_server_cert_validation: Optional[str] = None
-    winrm_retries: Optional[int] = None
-    winrm_retry_delay: Optional[int] = None
     ping_timeout: Optional[int] = None
     powershell_encoding: Optional[str] = None
     json_depth: Optional[int] = None
@@ -240,14 +271,16 @@ class AppSettingUpdate(BaseModel):
     @classmethod
     def validate_log_level(cls, v):
         if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            raise ValueError("Log level должен быть одним из: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+            raise ValueError(
+                "Log level должен быть одним из: DEBUG, INFO, WARNING, ERROR, CRITICAL")
         return v
 
     @field_validator('winrm_server_cert_validation')
     @classmethod
     def validate_cert_validation(cls, v):
         if v and v not in ["validate", "ignore"]:
-            raise ValueError("winrm_server_cert_validation должен быть 'validate' или 'ignore'")
+            raise ValueError(
+                "winrm_server_cert_validation должен быть 'validate' или 'ignore'")
         return v
 
     class Config:

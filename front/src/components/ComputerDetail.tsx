@@ -1,7 +1,7 @@
 // src/components/ComputerDetail.tsx
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { getComputers, getHistory } from '../api/api';
+import { getComputerById, getHistory } from '../api/api';
 import { Computer, ChangeLog, Role, Software, Disk } from '../types/schemas';
 import { useState } from 'react';
 import { Skeleton, Typography, Table, Button, Collapse } from 'antd';
@@ -40,22 +40,14 @@ const ComputerDetail: React.FC = () => {
     return <div className={styles.error}>Невірний ID комп'ютера</div>;
   }
 
-  const { data: computerData, error: compError, isLoading: compLoading } = useQuery({
-    queryKey: ['computers', computerIdNum],
-    queryFn: async () => {
-      const response = await getComputers({ id: String(computerIdNum) });
-      const uniqueComputer = response.data?.length > 1
-        ? response.data.find((c: Computer) => Number(c.id) === computerIdNum) || response.data[0]
-        : response.data?.[0] || null;
-      return { data: uniqueComputer ? [uniqueComputer] : [] };
-    },
+  const { data: computer, error: compError, isLoading: compLoading } = useQuery({
+    queryKey: ['computer', computerIdNum],
+    queryFn: () => getComputerById(computerIdNum),
     enabled: !!computerId,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 5 * 60 * 1000,
   });
-
-  const computer = computerData?.data?.[0] || null;
 
   const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
     queryKey: ['history', computerIdNum],
@@ -91,13 +83,15 @@ const ComputerDetail: React.FC = () => {
   }
 
   const isServerOS = computer.os_name?.toLowerCase().includes('server');
-  const currentDate = new Date('2025-06-18T11:48:00+03:00'); // Оновлено до поточної дати та часу
+  const currentDate = new Date('2025-06-20T09:08:00+03:00'); // Текущая дата и время
 
   // Статистика
   const roleCount = computer.roles?.length || 0;
   const softwareCount = computer.software?.length || 0;
   const historyCount = history.length;
-  const lastCheck = history.length > 0 ? new Date(Math.max(...history.map((h) => new Date(h.changed_at).getTime()))).toLocaleString('uk-UA') : 'Немає даних';
+  const lastCheck = history.length > 0
+    ? new Date(Math.max(...history.map((h) => new Date(h.changed_at).getTime()))).toLocaleString('uk-UA')
+    : 'Немає даних';
 
   // Групування ролей
   const groupedRoles = computer.roles?.reduce((acc, role) => {
@@ -171,16 +165,70 @@ const ComputerDetail: React.FC = () => {
   ];
 
   const diskColumns: TableProps<Disk>['columns'] = [
-    { title: 'ID', dataIndex: 'DeviceID', key: 'DeviceID', sorter: true, sortOrder: sort.key === 'DeviceID' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('DeviceID') }) },
-    { title: 'Обсяг', dataIndex: 'TotalSpace', key: 'TotalSpace', render: (value) => `${value ?? '-'} MB`, sorter: true, sortOrder: sort.key === 'TotalSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('TotalSpace') }) },
-    { title: 'Вільно', dataIndex: 'FreeSpace', key: 'FreeSpace', render: (value, record) => `${value ?? '-'} MB (${value && record.TotalSpace ? ((value / record.TotalSpace) * 100).toFixed(2) : '0'}%)`, sorter: true, sortOrder: sort.key === 'FreeSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('FreeSpace') }) },
+    {
+      title: 'ID',
+      dataIndex: 'DeviceID',
+      key: 'DeviceID',
+      sorter: true,
+      sortOrder: sort.key === 'DeviceID' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('DeviceID') }),
+    },
+    {
+      title: 'Обсяг',
+      dataIndex: 'TotalSpace',
+      key: 'TotalSpace',
+      render: (value) => `${value ?? '-'} MB`,
+      sorter: true,
+      sortOrder: sort.key === 'TotalSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('TotalSpace') }),
+    },
+    {
+      title: 'Вільно',
+      dataIndex: 'FreeSpace',
+      key: 'FreeSpace',
+      render: (value, record) => `${value ?? '-'} MB (${value && record.TotalSpace ? ((value / record.TotalSpace) * 100).toFixed(2) : '0'}%)`,
+      sorter: true,
+      sortOrder: sort.key === 'FreeSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('FreeSpace') }),
+    },
   ];
 
   const historyColumns: TableProps<ChangeLog>['columns'] = [
-    { title: 'Поле', dataIndex: 'field', key: 'field', sorter: true, sortOrder: sort.key === 'field' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('field') }) },
-    { title: 'Старе', dataIndex: 'old_value', key: 'old_value', render: (value) => value ?? '-', sorter: true, sortOrder: sort.key === 'old_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('old_value') }) },
-    { title: 'Нове', dataIndex: 'new_value', key: 'new_value', render: (value) => value ?? '-', sorter: true, sortOrder: sort.key === 'new_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('new_value') }) },
-    { title: 'Дата', dataIndex: 'changed_at', key: 'changed_at', render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'), sorter: true, sortOrder: sort.key === 'changed_at' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null, onHeaderCell: () => ({ onClick: () => handleSort('changed_at') }) },
+    {
+      title: 'Поле',
+      dataIndex: 'field',
+      key: 'field',
+      sorter: true,
+      sortOrder: sort.key === 'field' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('field') }),
+    },
+    {
+      title: 'Старе',
+      dataIndex: 'old_value',
+      key: 'old_value',
+      render: (value) => value ?? '-',
+      sorter: true,
+      sortOrder: sort.key === 'old_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('old_value') }),
+    },
+    {
+      title: 'Нове',
+      dataIndex: 'new_value',
+      key: 'new_value',
+      render: (value) => value ?? '-',
+      sorter: true,
+      sortOrder: sort.key === 'new_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('new_value') }),
+    },
+    {
+      title: 'Дата',
+      dataIndex: 'changed_at',
+      key: 'changed_at',
+      render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
+      sorter: true,
+      sortOrder: sort.key === 'changed_at' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('changed_at') }),
+    },
   ];
 
   const toggleSection = (section: SectionKey) => {
@@ -206,7 +254,7 @@ const ComputerDetail: React.FC = () => {
         <div>
           <Title level={3} className={styles.subtitle}>Ролі</Title>
           <Button onClick={() => toggleSection('roles')} style={{ marginBottom: 8 }}>
-            Показати всі ролі
+            {collapsedSections.roles ? 'Показати всі ролі' : 'Сховати ролі'}
           </Button>
           <Text>Кількість ролей: {roleCount}</Text>
           {!collapsedSections.roles && groupedRoles && (
@@ -227,7 +275,7 @@ const ComputerDetail: React.FC = () => {
       <div>
         <Title level={3} className={styles.subtitle}>Програмне забезпечення</Title>
         <Button onClick={() => toggleSection('software')} style={{ marginBottom: 8 }}>
-          Показати все ПЗ
+          {collapsedSections.software ? 'Показати все ПЗ' : 'Сховати ПЗ'}
         </Button>
         <Text>Кількість програм: {softwareCount}</Text>
         {!collapsedSections.software && (
@@ -248,7 +296,7 @@ const ComputerDetail: React.FC = () => {
       <div>
         <Title level={3} className={styles.subtitle}>Історія змін</Title>
         <Button onClick={() => toggleSection('history')} style={{ marginBottom: 8 }}>
-          Показати всю історію
+          {collapsedSections.history ? 'Показати всю історію' : 'Сховати історію'}
         </Button>
         <Text>Кількість змін: {historyCount}, Остання перевірка: {lastCheck}</Text>
         {!collapsedSections.history && (

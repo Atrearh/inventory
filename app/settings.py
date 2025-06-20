@@ -1,11 +1,7 @@
-# app/settings.py
+import logging
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
-from sqlalchemy import select , insert, update
-from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 from .utils import validate_non_empty_string
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +24,6 @@ class Settings(BaseSettings):
     winrm_read_timeout: int = 30
     winrm_port: int = 5985
     winrm_server_cert_validation: str = "ignore"
-    winrm_retries: int = 3
-    winrm_retry_delay: int = 5
     ping_timeout: int = 2
     powershell_encoding: str = "utf-8"
     json_depth: int = 4
@@ -45,31 +39,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = "app/.env"
         env_file_encoding = "utf-8"
-
-    async def load_from_db(self):
-        """Загружает настройки из базы данных."""
-        from .models import AppSetting  # Отложенный импорт
-        from .database import async_session
-        async with async_session() as db:
-            try:
-                result = await db.execute(select(AppSetting))
-                settings = {row.key: row.value for row in result.scalars().all()}
-                for key, value in settings.items():
-                    if hasattr(self, key):
-                        try:
-                            field_type = self.__annotations__.get(key)
-                            if field_type == list[str]:
-                                setattr(self, key, value.split(",") if value else [])
-                            elif field_type == int:
-                                setattr(self, key, int(value))
-                            elif field_type == str:
-                                setattr(self, key, value)
-                            logger.debug(f"Загружена настройка {key}={value}")
-                        except (ValueError, TypeError) as e:
-                            logger.error(f"Ошибка преобразования настройки {key}: {str(e)}")
-            except Exception as e:
-                logger.error(f"Ошибка загрузки настроек из БД: {str(e)}")
-                raise
+        extra = "ignore"
 
     @property
     def database_url(self):
@@ -83,47 +53,6 @@ class Settings(BaseSettings):
     def ad_fqdn_suffix(self):
         return f".{self.domain}" if self.domain else ""
 
-class SettingsRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def get_all_settings(self) -> Dict[str, str]:
-        """Получает все настройки из базы данных."""
-        from .models import AppSetting  # Отложенный импорт
-        try:
-            result = await self.db.execute(select(AppSetting))
-            settings = {row.key: row.value for row in result.scalars().all()}
-            logger.debug(f"Получено {len(settings)} настроек из базы данных")
-            return settings
-        except Exception as e:
-            logger.error(f"Ошибка получения настроек: {str(e)}")
-            raise
-
-    async def update_setting(self, key: str, value: str, description: Optional[str] = None) -> None:
-        """Обновляет или создает настройку."""
-        from .models import AppSetting  # Отложенный импорт
-        try:
-            existing = await self.db.execute(
-                select(AppSetting).filter(AppSetting.key == key)
-            )
-            existing_setting = existing.scalars().first()
-            if existing_setting:
-                await self.db.execute(
-                    update(AppSetting)
-                    .where(AppSetting.key == key)
-                    .values(value=value, description=description)
-                )
-                logger.debug(f"Обновлена настройка {key}={value}")
-            else:
-                await self.db.execute(
-                    insert(AppSetting)
-                    .values(key=key, value=value, description=description)
-                )
-                logger.debug(f"Создана новая настройка {key}={value}")
-            await self.db.commit()
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Ошибка обновления настройки {key}: {str(e)}")
-            raise
-
+# Создаем экземпляр настроек сразу при импорте модуля
 settings = Settings()
+logger.info("Настройки успешно инициализированы.")

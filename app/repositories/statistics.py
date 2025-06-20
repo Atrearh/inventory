@@ -14,66 +14,97 @@ class StatisticsRepository:
         self.db = db
 
     async def get_total_computers(self) -> int:
+        """Возвращает общее количество компьютеров."""
         logger.debug("Запрос количества компьютеров")
-        result = await self.db.execute(select(func.count(models.Computer.id)))
-        return result.scalar()
+        try:
+            async with self.db as session:  # Извлекаем сессию
+                result = await session.execute(select(func.count(models.Computer.id)))
+                return result.scalar_one()
+        except Exception as e:
+            logger.error(f"Ошибка при получении количества компьютеров: {str(e)}")
+            raise
 
     async def get_os_versions(self) -> List[schemas.OsVersion]:
+        """Возвращает статистику по версиям ОС."""
         logger.debug("Запрос статистики по версиям ОС")
-        os_stats = await self.db.execute(
-            select(
-                models.Computer.os_version,
-                func.count(models.Computer.id).label("count")
-            ).group_by(models.Computer.os_version)
-        )
-        return [
-            schemas.OsVersion(os_version=str(os_version) or "Unknown", count=count)
-            for os_version, count in os_stats.all()
-        ]
+        try:
+            async with self.db as session:  # Извлекаем сессию
+                result = await session.execute(
+                    select(
+                        models.Computer.os_version,
+                        func.count(models.Computer.id).label("count")
+                    ).group_by(models.Computer.os_version)
+                )
+                return [
+                    schemas.OsVersion(os_version=str(os_version) or "Unknown", count=count)
+                    for os_version, count in result.all()
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики ОС: {str(e)}")
+            raise
 
     async def get_low_disk_space(self) -> List[schemas.LowDiskSpace]:
+        """Возвращает список дисков с низким свободным местом."""
         logger.debug("Запрос дисков с низким свободным местом")
-        result = await self.db.execute(
-            select(models.Disk)
-            .join(models.Computer, isouter=True)
-            .filter(
-                (models.Disk.total_space > 0) &
-                (models.Disk.free_space / models.Disk.total_space < 0.1)
-            )
-            .options(selectinload(models.Disk.computer))
-        )
-        disks = result.scalars().all()
-        return [
-            schemas.LowDiskSpace(
-                hostname=disk.computer.hostname if disk.computer else "Unknown",
-                disk_id=disk.device_id or "Unknown",
-                free_space_percent=(disk.free_space / disk.total_space * 100 if disk.total_space and disk.free_space else 0.0)
-            )
-            for disk in disks
-        ]
+        try:
+            async with self.db as session:  # Извлекаем сессию
+                result = await session.execute(
+                    select(models.Disk)
+                    .join(models.Computer, isouter=True)
+                    .filter(
+                        (models.Disk.total_space > 0) &
+                        (models.Disk.free_space / models.Disk.total_space < 0.1)
+                    )
+                    .options(selectinload(models.Disk.computer))
+                )
+                disks = result.scalars().all()
+                return [
+                    schemas.LowDiskSpace(
+                        hostname=disk.computer.hostname if disk.computer else "Unknown",
+                        disk_id=disk.device_id or "Unknown",
+                        free_space_percent=(disk.free_space / disk.total_space * 100 if disk.total_space and disk.free_space else 0.0)
+                    )
+                    for disk in disks
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении данных о дисках: {str(e)}")
+            raise
 
     async def get_last_scan_time(self) -> Optional[datetime]:
+        """Возвращает время последнего полного сканирования."""
         logger.debug("Запрос последней задачи сканирования")
-        last_scan = await self.db.execute(
-            select(models.ScanTask).order_by(models.ScanTask.updated_at.desc()).limit(1)
-        )
-        last_scan = last_scan.scalar_one_or_none()
-        return last_scan.updated_at if last_scan else None
+        try:
+            async with self.db as session:  # Извлекаем сессию
+                result = await session.execute(
+                    select(models.ScanTask).order_by(models.ScanTask.updated_at.desc()).limit(1)
+                )
+                last_scan = result.scalar_one_or_none()
+                return last_scan.updated_at if last_scan else None
+        except Exception as e:
+            logger.error(f"Ошибка при получении времени последнего сканирования: {str(e)}")
+            raise
 
     async def get_status_stats(self) -> List[schemas.StatusStats]:
+        """Возвращает статистику по статусам компьютеров."""
         logger.debug("Запрос статистики по статусам")
-        status_stats = await self.db.execute(
-            select(
-                models.Computer.check_status,
-                func.count(models.Computer.id).label("count")
-            ).group_by(models.Computer.check_status)
-        )
-        return [
-            schemas.StatusStats(status=str(status.value) or "Unknown", count=count)
-            for status, count in status_stats.all()
-        ]
+        try:
+            async with self.db as session:  # Извлекаем сессию
+                result = await session.execute(
+                    select(
+                        models.Computer.check_status,
+                        func.count(models.Computer.id).label("count")
+                    ).group_by(models.Computer.check_status)
+                )
+                return [
+                    schemas.StatusStats(status=str(status.value) or "Unknown", count=count)
+                    for status, count in result.all()
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики статусов: {str(e)}")
+            raise
 
     async def get_statistics(self, metrics: List[str] = None) -> schemas.DashboardStats:
+        """Возвращает статистику для дашборда."""
         if metrics is None:
             metrics = ["total_computers", "os_versions", "low_disk_space", "last_scan_time", "status_stats"]
         total_computers = 0
@@ -105,4 +136,4 @@ class StatisticsRepository:
             )
         )
         logger.debug(f"Возвращаемые данные статистики: {result.model_dump()}")
-        return result  
+        return result

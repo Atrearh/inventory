@@ -11,7 +11,7 @@ from ..data_collector import get_pc_info
 from ..repositories.computer_repository import ComputerRepository
 from ..schemas import ComputerCreate
 from .. import models
-
+from ..database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -132,45 +132,43 @@ class ComputerService:
             raise
 
     async def create_scan_task(self, task_id: str) -> models.ScanTask:
-        """Создает новую задачу сканирования в базе данных."""
-        async with async_session() as db:
-            try:
-                db_task = models.ScanTask(
-                    id=task_id,
-                    status=models.ScanStatus.running,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
-                db.add(db_task)
-                await db.commit()
-                await db.refresh(db_task)
-                logger.info(f"Задача сканирования {task_id} создана")
-                return db_task
-            except Exception as e:
-                logger.error(f"Ошибка создания задачи сканирования {task_id}: {str(e)}")
-                await db.rollback()
-                raise
+            async with get_db() as db:  # Используем get_db вместо async_session
+                try:
+                    db_task = models.ScanTask(
+                        id=task_id,
+                        status=models.ScanStatus.running,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    db.add(db_task)
+                    await db.commit()
+                    await db.refresh(db_task)
+                    logger.info(f"Задача сканирования {task_id} создана")
+                    return db_task
+                except Exception as e:
+                    logger.error(f"Ошибка создания задачи сканирования {task_id}: {str(e)}")
+                    await db.rollback()
+                    raise
 
     async def update_scan_task_status(self, task_id: str, status: models.ScanStatus, scanned_hosts: int = 0, successful_hosts: int = 0, error: Optional[str] = None):
-        """Обновляет статус задачи сканирования."""
-        async with async_session() as db:
-            try:
-                result = await db.execute(select(models.ScanTask).filter(models.ScanTask.id == task_id))
-                db_task = result.scalars().first()
-                if not db_task:
-                    logger.error(f"Задача сканирования {task_id} не найдена")
-                    raise ValueError("Задача не найдена")
-                db_task.status = status
-                db_task.scanned_hosts = scanned_hosts
-                db_task.successful_hosts = successful_hosts
-                db_task.updated_at = datetime.utcnow()
-                db_task.error = error
-                await db.commit()
-                logger.info(f"Статус задачи {task_id} обновлен: {status}, обработано {scanned_hosts} хостов, успешно {successful_hosts}")
-            except Exception as e:
-                logger.error(f"Ошибка обновления статуса задачи {task_id}: {str(e)}")
-                await db.rollback()
-                raise
+            async with get_db() as db:  # Используем get_db вместо async_session
+                try:
+                    result = await db.execute(select(models.ScanTask).filter(models.ScanTask.id == task_id))
+                    db_task = result.scalars().first()
+                    if not db_task:
+                        logger.error(f"Задача сканирования {task_id} не найдена")
+                        raise ValueError("Задача не найдена")
+                    db_task.status = status
+                    db_task.scanned_hosts = scanned_hosts
+                    db_task.successful_hosts = successful_hosts
+                    db_task.updated_at = datetime.utcnow()
+                    db_task.error = error
+                    await db.commit()
+                    logger.info(f"Статус задачи {task_id} обновлен: {status}, обработано {scanned_hosts} хостов, успешно {successful_hosts}")
+                except Exception as e:
+                    logger.error(f"Ошибка обновления статуса задачи {task_id}: {str(e)}")
+                    await db.rollback()
+                    raise
 
     def _determine_scan_mode(self, db_computer: Optional[models.Computer]) -> str:
         """Определяет режим сканирования (Full или Changes)."""
@@ -183,21 +181,21 @@ class ComputerService:
         )
         return "Full" if is_full_scan_needed else "Changes"
 
-    async def _update_host_status(self, hostname: str, status: models.CheckStatus, error_message: Optional[str] = None):
+    async def _update_host_status(self, hostname: str, status: models.CheckStatus = None, error_msg: Optional[str] = None):
         """Обновляет статус хоста в БД."""
         async with async_session() as db:
             repo = ComputerRepository(db)
+            if error_msg:
+                logger.error(f"Ошибка для хоста {hostname}: {error_msg}")
             await repo.async_update_computer_check_status(
                 hostname=hostname,
-                check_status=status.value,
-                error=error_message
+                check_status=status.value if status else models.CheckStatus.unreachable.value,
             )
             await db.commit()
 
     async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обрабатывает один хост: сбор данных, валидация и сохранение."""
         async with async_session() as db:
-            repo = ComputerRepository(db)
             try:
                 # 1. Получить текущее состояние хоста из БД
                 db_computer_result = await db.execute(select(models.Computer).filter(models.Computer.hostname == host))
@@ -276,3 +274,4 @@ class ComputerService:
                 successful_hosts=successful,
                 error=str(e)
             )
+            

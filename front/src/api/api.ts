@@ -61,6 +61,11 @@ export const getComputers = async (params: {
   return response.data;
 };
 
+export const getComputerById = async (computerId: number) => {
+  const response = await axiosInstance.get<Computer>(`/computers/${computerId}`);
+  return response.data;
+};
+
 export const getHistory = async (computerId: number) => {
   const response = await axiosInstance.get<ChangeLog[]>(`/history/${computerId}`);
   return response.data;

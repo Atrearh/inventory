@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "generate:ts": "cd front && npm run generate:ts",
+    "dev": "cd front && npm run dev",
+    "build": "cd front && npm run build"
+  }
+}

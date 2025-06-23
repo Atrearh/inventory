@@ -1,17 +1,34 @@
+# --- FastAPI core ---
 fastapi==0.111.0
 uvicorn==0.30.1
-sqlalchemy==2.0.31
-pymysql==1.1.1
-python-dotenv==1.0.1
-requests==2.32.3
-ldap3==2.9.1
-pywinrm==0.4.3
+
+# --- Pydantic & Settings ---
 pydantic==2.8.2
 pydantic-settings==2.3.3
+
+# --- Database ---
+sqlalchemy==2.0.31
+pymysql==1.1.1
+aiomysql==0.2.0  # або asyncmy==0.2.8 як альтернатива
+
+# --- Env config (не обов'язково, якщо використовуєш pydantic-settings) ---
+#python-dotenv==1.0.1
+
+# --- Networking / HTTP ---
+requests==2.32.3
+aiohttp==3.9.5
+
+# --- LDAP / WinRM / NTLM ---
+ldap3==2.9.1
+pywinrm==0.4.3
 requests_ntlm==1.2.0
 ntlm-auth==1.5.0
+
+# --- Security / SSL ---
 cryptography==42.0.8
-ping3
-aiomysql==0.2.0
-aiohttp
-#fastapi uvicorn sqlalchemy aiomysql pydantic ldap3 winrm ping3
+
+# --- Tools / utils ---
+ping3==4.0.4
+
+# --- Development only (можна винести в dev-requirements.txt) ---
+pydantic-to-typescript>=2.0.0

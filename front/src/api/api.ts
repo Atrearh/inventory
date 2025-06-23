@@ -2,10 +2,16 @@
 import axios from 'axios';
 import { Computer, ChangeLog, DashboardStats } from '../types/schemas';
 import { API_URL } from '../config';
+//import { apiClient } from './client';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
 });
+
+export const startADScan = async () => {
+  const response = await apiClient.post('/ad/scan');
+  return response.data;
+};
 
 export const getStatistics = async (params: { metrics?: string[] } = {}) => {
   const response = await axiosInstance.get<DashboardStats>('/statistics', {

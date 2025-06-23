@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "concurrently \"vite\" \"npm run generate:ts\"",
+    "build": "npm run generate:ts && vite build",
+    "preview": "vite preview",
+    "generate:ts": "python ../generate_ts_types.py"
   },
   "keywords": [],
   "author": "",
@@ -35,6 +36,8 @@
     "@types/react-dom": "^18.3.1",
     "@types/react-router-dom": "^5.3.3",
     "@vitejs/plugin-react": "^4.3.3",
-    "vite": "^6.3.5"
+    "concurrently": "^9.1.2",
+    "vite": "^6.3.5",
+    "vite-plugin-run": "^0.6.1"
   }
 }

@@ -12,16 +12,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
-from .database import engine, get_db, init_db, shutdown_db  # Добавляем shutdown_db
+from .database import engine, get_db, init_db, shutdown_db
 from . import models, schemas
-from .settings import settings
+from .settings import settings, Settings
 from .services.computer_service import ComputerService
 from .repositories.computer_repository import ComputerRepository
 from .services.ad_service import ADService
 from .repositories.statistics import StatisticsRepository
-from .schemas import ErrorResponse
+from .schemas import ErrorResponse, AppSettingUpdate
 from .logging_config import setup_logging
 import ipaddress
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,11 @@ shutdown_event = asyncio.Event()
 async def lifespan(app: FastAPI):
     logger.info("Инициализация приложения...")
     try:
-        await init_db()  # Инициализация базы данных
+        await init_db()
         yield
     finally:
         logger.info("Завершение работы...")
-        await shutdown_db()  # Используем shutdown_db для корректного завершения
+        await shutdown_db()
         tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         for task in tasks:
             task.cancel()
@@ -114,7 +116,6 @@ async def get_statistics_repo(db: AsyncSession = Depends(get_db)) -> StatisticsR
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Глобальный обработчик исключений для централизованного управления ошибками."""
     correlation_id = getattr(request.state, 'correlation_id', "unknown")
     logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
     logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
@@ -148,13 +149,86 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers={"Access-Control-Allow-Origin": "*"}
     )
 
+@router.get("/settings", response_model=AppSettingUpdate, operation_id="get_settings")
+async def get_settings(request: Request = None):
+    """Получает текущие настройки приложения."""
+    logger_adapter = request.state.logger if request else logger
+    logger_adapter.info("Получение текущих настроек")
+    try:
+        return AppSettingUpdate(
+            ad_server_url=settings.ad_server_url,
+            domain=settings.domain,
+            ad_username=settings.ad_username,
+            ad_password=settings.ad_password,
+            api_url=settings.api_url,
+            test_hosts=settings.test_hosts,
+            log_level=settings.log_level,
+            scan_max_workers=settings.scan_max_workers,
+            polling_days_threshold=settings.polling_days_threshold,
+            winrm_operation_timeout=settings.winrm_operation_timeout,
+            winrm_read_timeout=settings.winrm_read_timeout,
+            winrm_port=settings.winrm_port,
+            winrm_server_cert_validation=settings.winrm_server_cert_validation,
+            ping_timeout=settings.ping_timeout,
+            powershell_encoding=settings.powershell_encoding,
+            json_depth=settings.json_depth,
+            server_port=settings.server_port,
+            cors_allow_origins=settings.cors_allow_origins,
+            allowed_ips=settings.allowed_ips
+        )
+    except Exception as e:
+        logger_adapter.error(f"Ошибка получения настроек: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка сервера")
+
+@router.post("/settings", response_model=dict, operation_id="update_settings")
+async def update_settings(
+    data: AppSettingUpdate,
+    request: Request = None
+):
+    """Обновляет настройки приложения."""
+    logger_adapter = request.state.logger if request else logger
+    logger_adapter.info("Обновление настроек приложения")
+    try:
+        # Обновляем настройки в памяти
+        update_data = data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if value is not None:
+                setattr(settings, key, value)
+
+        # Перезаписываем .env файл
+        env_file = Path("app/.env")
+        env_content = {}
+        if env_file.exists():
+            with env_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and not line.startswith("#"):
+                        key, value = line.strip().split("=", 1)
+                        env_content[key] = value.strip('"')
+
+        for key, value in update_data.items():
+            if value is not None:
+                env_key = key.upper()
+                if isinstance(value, list):
+                    env_content[env_key] = ",".join(value)
+                else:
+                    env_content[env_key] = str(value)
+
+        with env_file.open("w", encoding="utf-8") as f:
+            for key, value in env_content.items():
+                f.write(f'{key}="{value}"\n')
+
+        logger_adapter.info("Настройки успешно обновлены")
+        return {"status": "success"}
+    except Exception as e:
+        logger_adapter.error(f"Ошибка обновления настроек: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка сервера")
+
 @router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
 async def create_computer(
     comp_data: schemas.ComputerCreate,
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Создает или обновляет данные компьютера."""
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Получен отчет для hostname: {comp_data.hostname}")
     try:
@@ -171,8 +245,7 @@ async def update_check_status(
     data: schemas.ComputerUpdateCheckStatus,
     db: AsyncSession = Depends(get_db),
     request: Request = None,
-):
-    """Обновляет check_status компьютера."""
+):    
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Обновление check_status для {data.hostname}")
     try:
@@ -193,7 +266,6 @@ async def get_history(
     computer_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Получает историю изменений для компьютера."""
     try:
         async with db as session:
             repo = ComputerRepository(session)
@@ -209,7 +281,6 @@ async def start_scan(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Запускает сканирование в фоновом режиме."""
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования с task_id: {task_id}")
@@ -229,7 +300,6 @@ async def scan_status(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Получает статус задачи сканирования."""
     logger_adapter = request.state.logger if request else logger
     try:
         async with db as session:
@@ -248,12 +318,11 @@ async def get_statistics(
     metrics: List[str] = Query(None, description="Список метрик для получения статистики"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Возвращает статистику для дашборда."""
     try:
         async with db as session:
             repo = StatisticsRepository(session)
             if metrics is None:
-                metrics = ["total_computers", "os_versions", "low_disk_space", "last_scan_time", "status_stats"]
+                metrics = ["total_computers","os_name", "os_versions", "low_disk_space", "last_scan_time", "status_stats"]
             return await repo.get_statistics(metrics)
     except Exception as e:
         logger.error(f"Ошибка получения статистики: {str(e)}", exc_info=True)
@@ -276,7 +345,6 @@ async def get_computers(
     limit: int = Query(50, ge=1, le=100, description="Количество на странице"),
     id: Optional[int] = Query(None, description="ID компьютера")
 ):
-    """Возвращает список компьютеров с сортировкой, фильтрацией и пагинацией."""
     try:
         logger.info(f"Запрос компьютеров: id={id}, hostname={hostname}, page={page}")
         if check_status == "":
@@ -305,7 +373,6 @@ async def start_ad_scan(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Запускает сканирование Active Directory в фоновом режиме."""
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования AD с task_id: {task_id}")
@@ -323,7 +390,6 @@ async def start_ad_scan(
 async def clean_deleted_software(
     db: AsyncSession = Depends(get_db),
 ):
-    """Удаляет записи о ПО с is_deleted=True, старше 6 месяцев."""
     try:
         async with db as session:
             repo = ComputerRepository(session)
@@ -339,7 +405,6 @@ async def get_computer_by_id(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Возвращает полную информацию о компьютере по ID."""
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Получение данных компьютера с ID: {computer_id}")
     try:

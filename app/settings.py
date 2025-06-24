@@ -6,18 +6,18 @@ from .utils import NonEmptyStr
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
-    db_user: NonEmptyStr
-    db_password: NonEmptyStr
+    db_user: NonEmptyStr = "default_user"
+    db_password: NonEmptyStr = "default_password"
     db_host: NonEmptyStr = "localhost"
     db_port: NonEmptyStr = "3306"
     db_name: NonEmptyStr = "inventory"
     ad_server_url: str = ""
     domain: str = ""
-    ad_username: NonEmptyStr
-    ad_password: NonEmptyStr
+    ad_username: NonEmptyStr = "admin"
+    ad_password: NonEmptyStr = "password"
     api_url: str = ""
-    test_hosts: str = "admins.express.local,economist-4.express.local,buhgalter-12.express.local,1c-ogk.express.local"
-    log_level: NonEmptyStr = "INFO"
+    test_hosts: str = ""
+    log_level: NonEmptyStr = "INFO" 
     scan_max_workers: int = 10
     polling_days_threshold: int = 1
     winrm_operation_timeout: int = 20
@@ -28,14 +28,14 @@ class Settings(BaseSettings):
     powershell_encoding: NonEmptyStr = "utf-8"
     json_depth: int = 4
     server_port: int = 8000
-    cors_allow_origins: list[NonEmptyStr] = ["http://localhost:8000", "http://localhost:5173", "http://localhost:8080"]
-    allowed_ips: list[NonEmptyStr] = ["127.0.0.1", "192.168.1.0/24"]
-
+    cors_allow_origins: NonEmptyStr = "http://localhost:8000,http://localhost:5173,http://localhost:8080"
+    allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23"
+ 
     class Config:
         env_file = "app/.env"
         env_file_encoding = "utf-8"
         extra = "ignore"
- 
+
     @property
     def database_url(self):
         return f"mysql+aiomysql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     @property
     def ad_fqdn_suffix(self):
         return f".{self.domain}" if self.domain else ""
+
+    @property
+    def cors_allow_origins_list(self) -> list[str]:
+        """Преобразует строку cors_allow_origins в список."""
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+
+    @property
+    def allowed_ips_list(self) -> list[str]:
+        """Преобразует строку allowed_ips в список."""
+        return [ip.strip() for ip in self.allowed_ips.split(",") if ip.strip()]
 
 settings = Settings()
 logger.info("Настройки успешно инициализированы.")

@@ -1,15 +1,22 @@
-// src/api/api.ts
 import axios from 'axios';
 import { Computer, ChangeLog, DashboardStats } from '../types/schemas';
 import { API_URL } from '../config';
-//import { apiClient } from './client';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
 });
 
+export interface RestartResponse {
+  message: string;
+}
+
+export const restartServer = async (): Promise<RestartResponse> => {
+  const response = await axiosInstance.post<RestartResponse>('/restart');
+  return response.data;
+};
+
 export const startADScan = async () => {
-  const response = await apiClient.post('/ad/scan');
+  const response = await axiosInstance.post<{ message: string }>('/ad/scan');
   return response.data;
 };
 
@@ -34,6 +41,7 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
 export const getComputers = async (params: {
   hostname?: string;
   os_version?: string;
+  os_name?: string;
   check_status?: string;
   sort_by?: string;
   sort_order?: string;
@@ -44,6 +52,7 @@ export const getComputers = async (params: {
   const cleanedParams = {
     hostname: params.hostname || undefined,
     os_version: params.os_version || undefined,
+    os_name: params.os_name || undefined,
     check_status: params.check_status || undefined,
     sort_by: params.sort_by || 'hostname',
     sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',

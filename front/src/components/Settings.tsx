@@ -3,7 +3,6 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Form, Input, Button, Select, message, Spin } from 'antd';
 import axios from 'axios';
 
-
 interface SettingsData {
   ad_server_url?: string;
   domain?: string;
@@ -22,8 +21,8 @@ interface SettingsData {
   powershell_encoding?: string;
   json_depth?: number;
   server_port?: number;
-  cors_allow_origins?: string[];
-  allowed_ips?: string[];
+  cors_allow_origins?: string;
+  allowed_ips?: string;
 }
 
 const Settings: React.FC = () => {
@@ -40,7 +39,13 @@ const Settings: React.FC = () => {
 
   const mutation = useMutation({
     mutationFn: async (values: SettingsData) => {
-      const response = await axios.post('/api/settings', values);
+      // Убедимся, что строки отправляются как есть
+      const processedValues = {
+        ...values,
+        cors_allow_origins: values.cors_allow_origins?.trim(),
+        allowed_ips: values.allowed_ips?.trim(),
+      };
+      const response = await axios.post('/api/settings', processedValues);
       return response.data;
     },
     onSuccess: () => {
@@ -60,9 +65,9 @@ const Settings: React.FC = () => {
   const onFinish = (values: SettingsData) => {
     mutation.mutate(values);
   };
+
   if (isLoading) return <Spin size="large" />;
-  if (isLoading) return <Spin size="large" />;
-  if (error) return <div>Ошибка загрузки настроек: {error.message}</div>;
+  if (error) return <div>Ошибка загрузки настроек: {(error as any).message}</div>;
 
   return (
     <>
@@ -133,11 +138,19 @@ const Settings: React.FC = () => {
         <Form.Item label="Server Port" name="server_port">
           <Input type="number" min={1} />
         </Form.Item>
-        <Form.Item label="CORS Allow Origins" name="cors_allow_origins">
-          <Select mode="tags" placeholder="Enter origins, comma-separated" />
+        <Form.Item
+          label="CORS Allow Origins"
+          name="cors_allow_origins"
+          rules={[{ message: 'Введите origins, разделённые запятыми, например: http://localhost:8000,http://localhost:5173' }]}
+        >
+          <Input placeholder="Enter origins, e.g. http://localhost:8000,http://localhost:5173" />
         </Form.Item>
-        <Form.Item label="Allowed IPs" name="allowed_ips">
-          <Select mode="tags" placeholder="Enter IPs or ranges, comma-separated" />
+        <Form.Item
+          label="Allowed IPs"
+          name="allowed_ips"
+          rules={[{ message: 'Введите IP или диапазоны, разделённые запятыми, например: 127.0.0.1,192.168.1.0/24' }]}
+        >
+          <Input placeholder="Enter IPs or ranges, e.g. 127.0.0.1,192.168.1.0/24" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={mutation.isPending}>

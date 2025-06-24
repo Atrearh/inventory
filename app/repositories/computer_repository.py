@@ -26,9 +26,10 @@ class ComputerRepository:
                 changed_at=datetime.utcnow()
             )
             self.db.add(change_log)
-            logger.debug(f"Логировано изменение: computer_id={computer_id}, поле={field}")
+            logger.debug(f"Логировано изменение: computer_id={computer_id}, field={field}")
         except Exception as e:
             logger.error(f"Ошибка логирования: {str(e)}")
+            raise
 
     async def _get_or_create_computer(self, computer_data: dict, hostname: str) -> Computer:
         """Получает существующий компьютер или создает новый."""
@@ -38,7 +39,7 @@ class ComputerRepository:
             )
             existing_computer = result.scalars().first()
 
-            computer_data["last_updated"] = datetime.now()
+            computer_data["last_updated"] = datetime.utcnow()
             if existing_computer:
                 for key, value in computer_data.items():
                     setattr(existing_computer, key, value)
@@ -166,16 +167,23 @@ class ComputerRepository:
             return
 
         try:
+            # Получаем все существующие записи ПО для компьютера одним запросом
+            result = await self.db.execute(
+                select(models.Software).where(models.Software.computer_id == db_computer.id)
+            )
+            existing_software = result.scalars().all()
+            # Создаем словарь для быстрого доступа: ключ — (name, version), значение — объект Software
+            existing_software_dict = {
+                (s.name.lower(), s.version.lower() if s.version else ''): s
+                for s in existing_software
+            }
+
+            new_entries = []
+            updates = []
+
             for soft in new_software:
-                result = await self.db.execute(
-                    select(models.Software)
-                    .where(
-                        models.Software.computer_id == db_computer.id,
-                        models.Software.name.ilike(soft.name),
-                        models.Software.version.ilike(soft.version if soft.version else '')
-                    )
-                )
-                existing = result.scalars().first()
+                key = (soft.name.lower(), soft.version.lower() if soft.version else '')
+                existing = existing_software_dict.get(key)
 
                 if mode == "Full" or soft.action == "Installed":
                     if existing:
@@ -190,16 +198,13 @@ class ComputerRepository:
                                 f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
                                 f"version: {soft.version}, install_date: {soft.install_date}, is_deleted: False"
                             )
-                            await self.db.execute(
-                                update(models.Software)
-                                .where(models.Software.id == existing.id)
-                                .values(
-                                    version=soft.version,
-                                    install_date=soft.install_date,
-                                    action=soft.action,
-                                    is_deleted=False
-                                )
-                            )
+                            updates.append({
+                                "id": existing.id,
+                                "version": soft.version,
+                                "install_date": soft.install_date,
+                                "action": soft.action,
+                                "is_deleted": False
+                            })
                             logger.debug(f"Обновлено ПО {soft.name} для {db_computer.hostname}")
                     else:
                         new_soft = models.Software(
@@ -210,7 +215,7 @@ class ComputerRepository:
                             action=soft.action,
                             is_deleted=False
                         )
-                        self.db.add(new_soft)
+                        new_entries.append(new_soft)
                         logger.debug(f"Добавлено ПО {soft.name} для {db_computer.hostname}")
                 elif soft.action == "Uninstalled":
                     if existing and not existing.is_deleted:
@@ -220,15 +225,32 @@ class ComputerRepository:
                             f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
                             "is_deleted: True"
                         )
-                        await self.db.execute(
-                            update(models.Software)
-                            .where(models.Software.id == existing.id)
-                            .values(
-                                action=soft.action,
-                                is_deleted=True
-                            )
-                        )
+                        updates.append({
+                            "id": existing.id,
+                            "action": soft.action,
+                            "is_deleted": True
+                        })
                         logger.debug(f"Пометка удаления ПО {soft.name} для {db_computer.hostname}")
+
+            # Добавляем новые записи
+            if new_entries:
+                self.db.add_all(new_entries)
+                logger.debug(f"Добавлено {len(new_entries)} новых ПО для {db_computer.hostname}")
+
+            # Выполняем массовое обновление существующих записей
+            if updates:
+                for update_data in updates:
+                    await self.db.execute(
+                        update(models.Software)
+                        .where(models.Software.id == update_data["id"])
+                        .values(
+                            version=update_data.get("version"),
+                            install_date=update_data.get("install_date"),
+                            action=update_data.get("action"),
+                            is_deleted=update_data["is_deleted"]
+                        )
+                    )
+                logger.debug(f"Обновлено {len(updates)} ПО для {db_computer.hostname}")
 
             await self.db.flush()
         except Exception as e:
@@ -248,11 +270,9 @@ class ComputerRepository:
                 .returning(models.Software.id)
             )
             deleted_count = len(result.fetchall())
-            await self.db.commit()
             logger.info(f"Удалено {deleted_count} записей о ПО с is_deleted=True, старше 6 месяцев")
             return deleted_count
         except Exception as e:
-            await self.db.rollback()
             logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
             raise
 
@@ -260,7 +280,7 @@ class ComputerRepository:
         """Добавляет или обновляет компьютер и связанные данные."""
         try:
             computer_data = computer.model_dump(exclude_unset=True, exclude={"roles", "disks", "software"})
-            computer_data["last_updated"] = datetime.now()
+            computer_data["last_updated"] = datetime.utcnow()
             db_computer = await self._get_or_create_computer(computer_data, hostname)
             computer_id = db_computer.id
 
@@ -271,22 +291,19 @@ class ComputerRepository:
             if computer.software:
                 await self._update_software_async(db_computer, computer.software, mode=mode)
 
-            await self.db.commit()
             logger.info(f"Успешно сохранен компьютер: {hostname}")
             return computer_id
         except SQLAlchemyError as e:
-            await self.db.rollback()
             logger.error(f"Ошибка базы данных при сохранении компьютера {hostname}: {str(e)}", exc_info=True)
             raise
         except Exception as e:
-            await self.db.rollback()
             logger.error(f"Ошибка сохранения компьютера {hostname}: {str(e)}", exc_info=True)
             raise
 
     async def async_get_hosts_for_polling(self, days_threshold: int = 1) -> List[str]:
         """Получение списка хостов для проверки."""
         try:
-            threshold = datetime.now() - timedelta(days=days_threshold)
+            threshold = datetime.utcnow() - timedelta(days=days_threshold)
             query = (
                 select(models.ADComputer.hostname)
                 .outerjoin(models.Computer, models.ADComputer.hostname == models.Computer.hostname)
@@ -319,17 +336,14 @@ class ComputerRepository:
                     return None
                 if old_status != new_check_status:
                     db_computer.check_status = new_check_status
-                    db_computer.last_updated = datetime.now()
+                    db_computer.last_updated = datetime.utcnow()
                     await self.async_log_change(db_computer.id, "check_status", str(old_status), str(new_check_status))
-                    await self.db.commit()
-                    await self.db.refresh(db_computer)
                     logger.info(f"Обновлен check_status для {hostname}: {new_check_status}")
                 return db_computer
             return None
         except Exception as e:
-            await self.db.rollback()
             logger.error(f"Ошибка обновления check_status для {hostname}: {str(e)}", exc_info=True)
-            return None
+            raise
 
     async def async_get_change_log(self, computer_id: int) -> List[models.ChangeLog]:
         """Получает историю изменений."""
@@ -353,7 +367,7 @@ class ComputerRepository:
                 select(models.ADComputer).filter(models.ADComputer.hostname == computer_data["hostname"])
             )
             db_comp = result.scalar_one_or_none()
-            current_time = datetime.now()
+            current_time = datetime.utcnow()
             if db_comp:
                 db_comp.os_name = computer_data["os_name"]
                 db_comp.object_guid = computer_data["object_guid"]
@@ -373,12 +387,9 @@ class ComputerRepository:
                 )
                 self.db.add(db_comp)
 
-            await self.db.commit()
-            await self.db.refresh(db_comp)
             logger.info(f"{'Обновлен' if db_comp.id else 'Создан'} AD компьютер: {computer_data['hostname']}")
             return db_comp
         except Exception as e:
-            await self.db.rollback()
             logger.error(f"Ошибка при обновлении AD компьютера {computer_data['hostname']}: {str(e)}")
             raise
 
@@ -387,6 +398,7 @@ class ComputerRepository:
         id: Optional[int] = None,
         hostname: Optional[str] = None,
         os_version: Optional[str] = None,
+        os_name: Optional[str] = None,
         check_status: Optional[str] = None,
         page: int = 1,
         limit: int = 10,
@@ -394,22 +406,21 @@ class ComputerRepository:
         sort_order: str = "asc"
     ) -> Tuple[List[Computer], int]:
         """Получает список компьютеров с пагинацией и фильтрацией без загрузки связанных данных."""
-        logger.debug(f"Запрос компьютеров: id={id}, hostname={hostname}, os_version={os_version}, check_status={check_status}, page={page}")
+        logger.debug(f"Запрос компьютеров: id={id}, hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}, page={page}")
         try:
-            # Основной запрос без загрузки связанных сущностей
             stmt = select(Computer)
 
-            # Фильтрация
             if id:
                 stmt = stmt.filter(Computer.id == id)
             if hostname:
                 stmt = stmt.filter(Computer.hostname.ilike(f"%{hostname}%"))
             if os_version:
                 stmt = stmt.filter(Computer.os_version.ilike(f"%{os_version}%"))
+            if os_name:
+                stmt = stmt.filter(Computer.os_name.ilike(f"%{os_name}%"))
             if check_status:
                 stmt = stmt.filter(Computer.check_status == check_status)
 
-            # Подсчёт общего количества записей
             count_stmt = select(func.count()).select_from(Computer)
             if id:
                 count_stmt = count_stmt.filter(Computer.id == id)
@@ -417,19 +428,19 @@ class ComputerRepository:
                 count_stmt = count_stmt.filter(Computer.hostname.ilike(f"%{hostname}%"))
             if os_version:
                 count_stmt = count_stmt.filter(Computer.os_version.ilike(f"%{os_version}%"))
+            if os_name:
+                count_stmt = count_stmt.filter(Computer.os_name.ilike(f"%{os_name}%"))
             if check_status:
                 count_stmt = count_stmt.filter(Computer.check_status == check_status)
 
             total_result = await self.db.execute(count_stmt)
             total = total_result.scalar_one()
 
-            # Сортировка
             sort_column = getattr(Computer, sort_by, Computer.hostname)
             if sort_order.lower() == "desc":
                 sort_column = sort_column.desc()
             stmt = stmt.order_by(sort_column)
 
-            # Пагинация
             stmt = stmt.offset((page - 1) * limit).limit(limit)
 
             result = await self.db.execute(stmt)
@@ -471,5 +482,4 @@ class ComputerRepository:
             raise
         except Exception as e:
             logger.error(f"Неизвестная ошибка при получении компьютера ID {computer_id}: {str(e)}")
-            raise
- 
+            raise   

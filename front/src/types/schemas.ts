@@ -26,8 +26,8 @@ export interface AppSettingUpdate {
   powershell_encoding?: string | null;
   json_depth?: number | null;
   server_port?: number | null;
-  cors_allow_origins?: string[] | null;
-  allowed_ips?: string[] | null;
+  cors_allow_origins?: string | null;
+  allowed_ips?: string | null;
 }
 export interface ChangeLog {
   id: number;
@@ -129,19 +129,25 @@ export interface DashboardStats {
   scan_stats: ScanStats;
 }
 export interface OsStats {
-  os_versions: OsVersion[];
+  client_os: OsDistribution[];
+  server_os: ServerDistribution[];
 }
-export interface OsVersion {
-  os_version: string | null;
+export interface OsDistribution {
+  category: string;
+  count: number;
+}
+export interface ServerDistribution {
+  category: string;
   count: number;
 }
 export interface DiskStats {
-  low_disk_space: LowDiskSpace[];
+  low_disk_space: DiskVolume[];
 }
-export interface LowDiskSpace {
+export interface DiskVolume {
   hostname: string;
   disk_id: string;
-  free_space_percent: number;
+  total_space_gb: number;
+  free_space_gb: number;
 }
 export interface ScanStats {
   last_scan_time: string | null;

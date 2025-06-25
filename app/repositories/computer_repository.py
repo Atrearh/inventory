@@ -39,17 +39,21 @@ class ComputerRepository:
             )
             existing_computer = result.scalars().first()
 
+            # Обновляем last_full_scan для полного сканирования
             computer_data["last_updated"] = datetime.utcnow()
+            if computer_data.get("check_status") == "success":
+                computer_data["last_full_scan"] = datetime.utcnow()
+
             if existing_computer:
                 for key, value in computer_data.items():
-                    setattr(existing_computer, key, value)
+                    setattr(existing_computer, key, value)  
                 logger.info(f"Обновлены основные данные компьютера: {hostname}")
                 return existing_computer
             else:
                 new_computer = Computer(**computer_data)
                 self.db.add(new_computer)
                 await self.db.flush()
-                logger.info(f"Создан новый компьютер: {hostname}")
+                logger.info(f"Создан новый компьютер: {hostname}") 
                 return new_computer
         except Exception as e:
             logger.error(f"Ошибка при получении/создании компьютера {hostname}: {str(e)}")

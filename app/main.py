@@ -4,12 +4,14 @@ import uuid
 import logging
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
+import io
+import csv
 from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
 from .database import engine, get_db, init_db, shutdown_db
@@ -23,6 +25,7 @@ from .schemas import ErrorResponse, AppSettingUpdate
 from .logging_config import setup_logging
 import ipaddress
 import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             error_message = str(exc)
         case _:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Внутренняя ошибка сервера"
+            error_file = "Внутренняя ошибка сервера"
 
     response = ErrorResponse(
         error=error_message,
@@ -208,6 +211,67 @@ async def update_settings(settings_data: AppSettingUpdate, request: Request):
         logger_adapter.error(f"Ошибка обновления настроек: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
+@router.get("/computers/export/csv", response_model=None)
+async def export_computers_to_csv(
+    db: AsyncSession = Depends(get_db),
+    hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
+    os_version: Optional[str] = Query(None, description="Фильтр по версии ОС"),
+    os_name: Optional[str] = Query(None, description="Фильтр по имени ОС"),
+    check_status: Optional[schemas.CheckStatus] = Query(None, description="Фильтр по check_status"),
+    sort_by: str = Query("hostname", description="Поле для сортировки"),
+    sort_order: str = Query("asc", description="Порядок: asc или desc"),
+):
+    """Экспортирует список компьютеров в CSV."""
+    logger.info(f"Экспорт компьютеров в CSV с параметрами: hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}")
+    try:
+        async with db as session:
+            repo = ComputerRepository(session)
+            # Получаем все компьютеры без пагинации
+            computers, _ = await repo.get_computers(
+                hostname=hostname,
+                os_version=os_version,
+                os_name=os_name,
+                check_status=check_status,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                page=1,
+                limit=10000  # Большое значение, чтобы получить все данные
+            )
+
+            # Подготовка CSV с учетом BOM для UTF-8 и явным разделителем ';'
+            output = io.StringIO()
+            writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
+            # Добавляем BOM для корректного отображения кириллицы в Excel
+            output.write('\ufeff')
+            # Заголовки
+            writer.writerow(['IP', 'Назва', 'Процесор', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС', 'Время последней проверки'])
+            # Данные, фильтруем пустые записи
+            for computer in computers:
+                # Проверяем, есть ли хоть одно заполненное поле
+                if any([computer.ip, computer.hostname, computer.cpu, computer.ram, computer.mac, computer.motherboard, computer.os_name, computer.last_updated]):
+                    writer.writerow([
+                        computer.ip or '',
+                        computer.hostname or '',
+                        computer.cpu or '',
+                        str(computer.ram) if computer.ram is not None else '',
+                        computer.mac or '',
+                        computer.motherboard or '',
+                        computer.os_name or '',
+                        computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else ''
+                    ])
+
+            # Создаем StreamingResponse
+            output.seek(0)
+            headers = {
+                'Content-Disposition': 'attachment; filename="computers.csv"',
+                'Content-Type': 'text/csv; charset=utf-8-sig'
+            }
+            return StreamingResponse(output, headers=headers)
+
+    except Exception as e:
+        logger.error(f"Ошибка экспорта компьютеров в CSV: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка сервера")
+    
 @router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
 async def create_computer(
     comp_data: schemas.ComputerCreate,

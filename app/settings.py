@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     powershell_encoding: NonEmptyStr = "utf-8"
     json_depth: int = 4
     server_port: int = 8000
-    cors_allow_origins: NonEmptyStr = "http://localhost:8000,http://localhost:5173,http://localhost:8080"
-    allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23"
+    cors_allow_origins: NonEmptyStr = "http://localhost:8000,http://localhost:5173,http://localhost:8080,http://192.168.0.143:8080,http://192.168.0.143:8000,http://192.168.0.143:5173"
+    allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23" 
  
     class Config:
         env_file = "app/.env"

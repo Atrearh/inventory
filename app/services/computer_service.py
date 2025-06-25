@@ -131,57 +131,64 @@ class ComputerService:
             return result
 
     async def prepare_computer_data_for_db(self, comp_data: Dict[str, Any], hostname: str, mode: str = "Full") -> ComputerCreate:
-            """Підготовка даних комп'ютера для збереження в БД."""
-            logger.debug(f"Підготовка даних для комп'ютера: {hostname}")
+        """Подготовка данных компьютера для сохранения в БД."""
+        logger.debug(f"Подготовка данных для компьютера: {hostname}")
 
-            try:
-                # Валідація основних полів
-                validated_hostname = validate_hostname(None, hostname)
-                ip = validate_ip_address(None, comp_data.get('ip'))
-                mac = validate_mac_address(None, comp_data.get('mac'))
+        try:
+            # Валидация основных полей
+            validated_hostname = validate_hostname(None, hostname)
+            ip_address = validate_ip_address(None, comp_data.get('ip_address'))
+            mac_address = validate_mac_address(None, comp_data.get('mac_address'))
 
-                # Обробка списків ролей, програм та дисків
-                roles = self.process_list(
-                    comp_data.get('roles', []),
-                    key="Name",
-                    schema=Role,
-                    required_fields=["Name"]
-                )
-                software = self.process_list(
-                    comp_data.get('software', []),
-                    key="DisplayName",
-                    schema=Software,
-                    required_fields=["DisplayName"]
-                )
-                disks = self.process_list(
-                    comp_data.get('disks', []),
-                    key="DeviceID",
-                    schema=Disk,
-                    required_fields=["total_space"]
-                )
+            # Преобразование ролей в формат словарей, если они пришли как строки
+            raw_roles = comp_data.get('roles', [])
+            roles_data = [
+                {"Name": role} if isinstance(role, str) else role
+                for role in raw_roles
+            ]
 
-                # Формування об'єкта ComputerCreate
-                computer_data = ComputerCreate(
-                    hostname=validated_hostname,
-                    ip=ip,
-                    os_name=comp_data.get('os_name'),
-                    os_version=comp_data.get('os_version'),
-                    cpu=comp_data.get('cpu'),
-                    ram=comp_data.get('ram'),
-                    mac=mac,
-                    motherboard=comp_data.get('motherboard'),
-                    last_boot=comp_data.get('last_boot'),
-                    is_virtual=comp_data.get('is_virtual', False),
-                    check_status=comp_data.get('check_status', CheckStatus.success),
-                    roles=roles,
-                    software=software,
-                    disks=disks
-                )
-                logger.info(f"Дані комп'ютера {hostname} підготовлено успішно")
-                return computer_data
-            except Exception as e:
-                logger.error(f"Помилка підготовки даних для {hostname}: {str(e)}")
-                raise
+            # Обработка списков ролей, программ и дисков
+            roles = self.process_list(
+                roles_data,
+                key="Name",
+                schema=Role,
+                required_fields=["Name"]
+            )
+            software = self.process_list(
+                comp_data.get('software', []),
+                key="DisplayName",
+                schema=Software,
+                required_fields=["DisplayName"]
+            )
+            disks = self.process_list(
+                comp_data.get('disks', []),
+                key="DeviceID",
+                schema=Disk,
+                required_fields=["total_space"]
+            )
+
+            # Формирование объекта ComputerCreate
+            computer_data = ComputerCreate(
+                hostname=validated_hostname,
+                ip=ip_address,
+                os_name=comp_data.get('os_name'),
+                os_version=comp_data.get('os_version'),
+                cpu=comp_data.get('cpu'),
+                ram=comp_data.get('ram'),
+                mac=mac_address,
+                motherboard=comp_data.get('motherboard'),
+                last_boot=comp_data.get('last_boot'),
+                is_virtual=comp_data.get('is_virtual', False),
+                check_status=comp_data.get('check_status', CheckStatus.success),
+                roles=roles,
+                software=software,
+                disks=disks 
+            )
+            logger.info(f"Данные компьютера {hostname} подготовлены successfully")
+            return computer_data
+        except Exception as e:
+            logger.error(f"Ошибка подготовки данных для {hostname}: {str(e)}")
+            raise
 
     async def upsert_computer_from_schema(self, comp_data: ComputerCreate, hostname: str) -> Computer:
             """Оновлення або створення комп'ютера з використанням схеми."""

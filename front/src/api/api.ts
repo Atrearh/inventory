@@ -76,6 +76,39 @@ export const getComputers = async (params: {
   return response.data;
 };
 
+export const exportComputersToCSV = async (params: {
+  hostname?: string;
+  os_version?: string;
+  os_name?: string;
+  check_status?: string;
+  sort_by?: string;
+  sort_order?: string;
+}) => {
+  const cleanedParams = {
+    hostname: params.hostname || undefined,
+    os_version: params.os_version || undefined,
+    os_name: params.os_name || undefined,
+    check_status: params.check_status || undefined,
+    sort_by: params.sort_by || 'hostname',
+    sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
+  };
+
+  const response = await axiosInstance.get('/computers/export/csv', {
+    params: cleanedParams,
+    responseType: 'blob',
+    paramsSerializer: (params) => {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== '') {
+          searchParams.append(key, String(value));
+        }
+      }
+      return searchParams.toString();
+    },
+  });
+  return response.data;
+};
+
 export const getComputerById = async (computerId: number) => {
   const response = await axiosInstance.get<Computer>(`/computers/${computerId}`);
   return response.data;

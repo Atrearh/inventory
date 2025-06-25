@@ -1,14 +1,15 @@
-// src/components/ComputerList.tsx
 import { useQuery } from '@tanstack/react-query';
 import { getComputers } from '../api/api';
 import { Computer } from '../types/schemas';
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { notification, Skeleton, Input, Select, Table } from 'antd';
+import { notification, Skeleton, Input, Select, Table, Button } from 'antd';
 import { useDebounce } from '../hooks/useDebounce';
 import { ITEMS_PER_PAGE } from '../config';
 import styles from './ComputerList.module.css';
 import type { TableProps } from 'antd';
+import axios from 'axios';
+import { API_URL } from '../config';
 
 interface Filters {
   hostname: string;
@@ -76,6 +77,44 @@ const ComputerList: React.FC = () => {
     refetchOnReconnect: false,
     staleTime: 0,
   });
+
+// Функция для экспорта в CSV
+  const handleExportCSV = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/computers/export/csv`, {
+        params: {
+          hostname: filters.hostname || undefined,
+          os_version: filters.os_version || undefined,
+          check_status: filters.check_status || undefined,
+          sort_by: filters.sort_by,
+          sort_order: filters.sort_order,
+        },
+        responseType: 'blob',
+      });
+
+      const currentDate = new Date().toISOString().split('T')[0]; // Формат YYYY-MM-DD
+      const filename = `computers_${currentDate}.csv`;
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      notification.success({
+        message: 'Успех',
+        description: 'Файл CSV успешно скачан',
+      });
+    } catch (error) {
+      notification.error({
+        message: 'Ошибка',
+        description: 'Не удалось экспортировать данные в CSV',
+      });
+    }
+  };
 
   // Обработка сортировки и пагинации через onChange
   const handleTableChange: TableProps<Computer>['onChange'] = (pagination, _, sorter) => {
@@ -163,6 +202,9 @@ const ComputerList: React.FC = () => {
           <Select.Option value="failed">Failed</Select.Option>
           <Select.Option value="unreachable">Unreachable</Select.Option>
         </Select>
+        <Button type="primary" onClick={handleExportCSV} style={{ marginLeft: 8 }}>
+          Экспорт в CSV
+        </Button>
       </div>
       <Table
         columns={columns}

@@ -243,7 +243,7 @@ const ComputerDetail: React.FC = () => {
         <Table
           dataSource={computer.disks || []}
           columns={diskColumns}
-          rowKey={(record) => record.DeviceID}
+          rowKey={(record) => record.DeviceID ?? 'unknown-disk'}
           pagination={false}
           locale={{ emptyText: 'Немає даних про диски' }}
           size="small"

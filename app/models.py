@@ -37,7 +37,7 @@ class Computer(Base):
     cpu: Mapped[Optional[str]] = mapped_column(String)
     ram: Mapped[Optional[int]] = mapped_column(Integer)
     mac: Mapped[Optional[str]] = mapped_column(String)
-    motherboard: Mapped[Optional[str]] = mapped_column(String)
+    motherboard: Mapped[Optional[str]] = mapped_column(String) 
     last_boot: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)

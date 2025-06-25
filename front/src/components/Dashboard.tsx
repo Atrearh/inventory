@@ -15,7 +15,7 @@ const Dashboard: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [filteredComputers, setFilteredComputers] = useState<ComputerList[]>([]);
 
-  // Запрос статистики для дашборда
+  // Запит статистики для дашборду
   const { data, error: statsError, isLoading } = useQuery<DashboardStats, Error>({
     queryKey: ['statistics'],
     queryFn: () =>
@@ -26,7 +26,7 @@ const Dashboard: React.FC = () => {
     refetchOnReconnect: false,
   });
 
-  // Запрос отфильтрованного списка компьютеров по os_name
+  // Запит відфільтрованого списку комп'ютерів за os_name
   const {
     data: computersData,
     isLoading: isComputersLoading,
@@ -34,7 +34,7 @@ const Dashboard: React.FC = () => {
   } = useQuery<{ data: ComputerList[]; total: number }, Error>({
     queryKey: ['computers', selectedOs],
     queryFn: () => {
-      console.log('Отправка запроса getComputers с os_name:', selectedOs);
+      console.log('Надсилання запиту getComputers з os_name:', selectedOs);
       return getComputers({
         os_name: selectedOs || undefined,
         page: 1,
@@ -44,27 +44,27 @@ const Dashboard: React.FC = () => {
     enabled: !!selectedOs,
   });
 
-  // Логирование предупреждения о низком месте на диске
+  // Логування попередження про низький обсяг диска
   useEffect(() => {
     if (data?.disk_stats?.low_disk_space?.length) {
-      console.warn(`${data.disk_stats.low_disk_space.length} компьютеров имеют низкое место на диске.`);
+      console.warn(`${data.disk_stats.low_disk_space.length} комп'ютерів мають низький обсяг диска.`);
     }
   }, [data?.disk_stats?.low_disk_space?.length]);
 
-  // Обновление списка компьютеров и открытие модального окна
+  // Оновлення списку комп'ютерів та відкриття модального вікна
   useEffect(() => {
     if (computersData?.data) {
-      console.log('Получены данные компьютеров:', computersData.data);
+      console.log('Отримано дані компютерів:', computersData.data);
       setFilteredComputers(computersData.data);
       setIsModalVisible(true);
     }
   }, [computersData]);
 
-  if (isLoading) return <div>Загрузка...</div>;
-  if (statsError) return <div>Ошибка: {statsError.message}</div>;
-  if (!data) return <div>Данные недоступны</div>;
+  if (isLoading) return <div>Завантаження...</div>;
+  if (statsError) return <div>Помилка: {statsError.message}</div>;
+  if (!data) return <div>Дані недоступні</div>;
 
-  // Данные для диаграммы распределения клиентских ОС
+  // Дані для діаграми розподілу клієнтських ОС
   const clientOsChartData = {
     labels: data.os_stats.client_os.map(os => os.category) || [],
     datasets: [
@@ -75,7 +75,7 @@ const Dashboard: React.FC = () => {
     ],
   };
 
-  // Данные для диаграммы распределения серверных ОС
+  // Дані для діаграми розподілу серверних ОС
   const serverOsChartData = {
     labels: data.os_stats.server_os.map(os => os.category) || [],
     datasets: [
@@ -86,25 +86,25 @@ const Dashboard: React.FC = () => {
     ],
   };
 
-  // Колонки для таблицы дисков
+  // Колонки для таблиці дисків
   const diskColumns = [
     { title: 'Hostname', dataIndex: 'hostname', key: 'hostname' },
     { title: 'Диск', dataIndex: 'disk_id', key: 'disk_id' },
-    { title: 'Общий объем (GB)', dataIndex: 'total_space_gb', key: 'total_space_gb', render: (value: number) => value.toFixed(2) },
-    { title: 'Свободный объем (GB)', dataIndex: 'free_space_gb', key: 'free_space_gb', render: (value: number) => value.toFixed(2) },
+    { title: 'Загальний обсяг (ГБ)', dataIndex: 'total_space_gb', key: 'total_space_gb', render: (value: number) => value.toFixed(2) },
+    { title: 'Вільний обсяг (ГБ)', dataIndex: 'free_space_gb', key: 'free_space_gb', render: (value: number) => value.toFixed(2) },
   ];
 
-  // Колонки для таблицы компьютеров в модальном окне
+  // Колонки для таблиці комп'ютерів у модальному вікні
   const computerColumns = [
     { title: 'Hostname', dataIndex: 'hostname', key: 'hostname' },
     { title: 'IP', dataIndex: 'ip', key: 'ip' },
-    { title: 'Версия ОС', dataIndex: 'os_version', key: 'os_version' },
+    { title: 'Версія ОС', dataIndex: 'os_version', key: 'OS_version' },
     { title: 'Статус', dataIndex: 'check_status', key: 'check_status' },
   ];
 
   const diskData = data.disk_stats.low_disk_space || [];
 
-  // Маппинг меток ОС для соответствия os_name в базе данных
+  // Мапінг міток ОС для відповідності os_name у базі даних
   const osMapping: Record<string, string> = {
     'Windows 10': 'Windows 10%',
     'Windows 11': 'Windows 11%',
@@ -116,64 +116,64 @@ const Dashboard: React.FC = () => {
     'Debian': 'Debian%',
   };
 
-  // Обработчик клика по диаграмме
+  // Обробник кліку по діаграмі
   const handlePieClick = (
     event: ChartEvent,
     elements: ActiveElement[],
     chart: Chart<'pie', number[], string>,
     isClientOs: boolean
   ) => {
-    // Обработка клика вне активных элементов
+    // Обробка кліку поза активними елементами
     if (!elements || elements.length === 0) {
-      console.log('Клик вне активных элементов диаграммы');
+      console.log('Клік поза активними елементами діаграми');
       return;
     }
     const index = elements[0].index;
     const os = chart.data.labels?.[index];
     if (typeof os === 'string') {
-      const mappedOs = osMapping[os] || os; // Применяем маппинг или используем исходное значение
-      console.log(`Выбрана ОС: ${os}, mappedOs: ${mappedOs}, isClientOs: ${isClientOs}`);
+      const mappedOs = osMapping[os] || os; // Застосовуємо мапінг або використовуємо вихідне значення
+      console.log(`Вибрано ОС: ${os}, mappedOs: ${mappedOs}, isClientOs: ${isClientOs}`);
       setSelectedOs(mappedOs);
       setIsModalVisible(true);
     } else {
-      console.error('Метка ОС не является строкой:', os);
+      console.error('Мітка ОС не є рядком:', os);
     }
   };
 
   return (
     <div style={{ padding: 16 }}>
-      {/* Заголовок и статистика в одном ряду */}
+      {/* Заголовок і статистика в одному рядку */}
       <Row gutter={[16, 16]} align="middle">
         <Col>
-          <h2 style={{ margin: 0 }}>Статистика инвентаризации</h2>
+          <h2 style={{ margin: 0 }}>Статистика інвентаризації</h2>
         </Col>
         <Col>
           <div style={{ background: '#f0f2f5', padding: 8, borderRadius: 8 }}>
             {data.total_computers !== undefined && (
               <span>
-                <strong>Всего компьютеров:</strong> {data.total_computers}{' '}
+                <strong>Усього комп'ютерів:</strong> {data.total_computers}{' '}
               </span>
             )}
             {data.scan_stats.last_scan_time && (
               <span>
-                <strong>Последний опрос:</strong> {new Date(data.scan_stats.last_scan_time).toLocaleString('ru-RU')}
+                <strong>Останнє сканування:</strong> {new Date(data.scan_stats.last_scan_time).toLocaleString('uk-UA')}
               </span>
             )}
           </div>
         </Col>
       </Row>
 
-      {/* Предупреждение о низком месте на диске */}
+      {/* Попередження про низький обсяг диска */}
       {data.disk_stats.low_disk_space?.length > 0 && (
         <div style={{ color: 'red', margin: '1rem 0' }}>
-          Внимание: {data.disk_stats.low_disk_space.length} компьютеров с местом на диске менее 10%.
+          Увага: {data.disk_stats.low_disk_space.length} комп'ютерів із обсягом диска менше 10%.
         </div>
       )}
 
-      {/* Диаграммы в одном ряду */}
+      {/* Діаграми в одному рядку */}
       <Row gutter={[16, 16]}>
         <Col span={12}>
-          <h3>Распределение клиентских ОС</h3>
+          <h3>Розподіл клієнтських ОС</h3>
           {clientOsChartData.labels.length > 0 ? (
             <div style={{ height: '300px', cursor: 'pointer' }}>
               <Pie
@@ -187,11 +187,11 @@ const Dashboard: React.FC = () => {
               />
             </div>
           ) : (
-            <p>Нет данных о клиентских ОС</p>
+            <p>Немає даних про клієнтські ОС</p>
           )}
         </Col>
         <Col span={12}>
-          <h3>Распределение серверных ОС</h3>
+          <h3>Розподіл серверних ОС</h3>
           {serverOsChartData.labels.length > 0 ? (
             <div style={{ height: '300px', cursor: 'pointer' }}>
               <Pie
@@ -205,31 +205,31 @@ const Dashboard: React.FC = () => {
               />
             </div>
           ) : (
-            <p>Нет данных о серверных ОС</p>
+            <p>Немає даних про серверні ОС</p>
           )}
         </Col>
       </Row>
 
-      {/* Таблица с отключенной пагинацией */}
+      {/* Таблиця з відключеною пагінацією */}
       {diskData.length > 0 ? (
         <div style={{ marginTop: '16px' }}>
-          <h3>Компьютеры с местом на диске меньше 10%</h3>
+          <h3>Комп'ютери з обсягом диска менше 10%</h3>
           <Table
             columns={diskColumns}
             dataSource={diskData}
             rowKey={(record) => `${record.hostname}-${record.disk_id}`}
             size="middle"
-            locale={{ emptyText: 'Нет данных' }}
+            locale={{ emptyText: 'Немає даних' }}
             pagination={false}
           />
         </div>
       ) : (
-        <p style={{ marginTop: '16px' }}>Нет компьютеров с низким местом на диске.</p>
+        <p style={{ marginTop: '16px' }}>Немає комп'ютерів із низьким обсягом диска.</p>
       )}
 
-      {/* Модальное окно для отображения отфильтрованных компьютеров */}
+      {/* Модальне вікно для відображення відфільтрованих комп'ютерів */}
       <Modal
-        title={`Компьютеры с ОС: ${selectedOs ? selectedOs.replace('%', '') : ''}`}
+        title={`Комп'ютери з ОС: ${selectedOs ? selectedOs.replace('%', '') : ''}`}
         open={isModalVisible}
         onCancel={() => {
           setIsModalVisible(false);
@@ -239,24 +239,24 @@ const Dashboard: React.FC = () => {
         width={800}
       >
         {isComputersLoading ? (
-          <div>Загрузка...</div>
+          <div>Завантаження...</div>
         ) : computersError ? (
-          <p>Ошибка загрузки данных: {computersError.message}</p>
+          <p>Помилка завантаження даних: {computersError.message}</p>
         ) : filteredComputers.length > 0 ? (
           <Table
             columns={computerColumns}
             dataSource={filteredComputers}
             rowKey="id"
             size="small"
-            locale={{ emptyText: 'Нет данных' }}
+            locale={{ emptyText: 'Немає даних' }}
           />
         ) : (
-          <p>Нет данных</p>
+          <p>Немає даних</p>
         )}
       </Modal>
 
-      <Link to="/computers" aria-label="Перейти к списку всех компьютеров" style={{ marginTop: '16px', display: 'block' }}>
-        Перейти к списку компьютеров
+      <Link to="/computers" aria-label="Перейти до списку всіх комп'ютерів" style={{ marginTop: '16px', display: 'block' }}>
+        Перейти до списку комп'ютерів
       </Link>
     </div>
   );

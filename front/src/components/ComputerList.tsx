@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import { getComputers } from '../api/api';
-import { Computer } from '../types/schemas';
+// src/components/ComputerList.tsx
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getComputers, getStatistics} from '../api/api';
+import { ComputersResponse, DashboardStats, ComputerList } from '../types/schemas';
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { notification, Skeleton, Input, Select, Table, Button } from 'antd';
@@ -13,17 +14,13 @@ import { API_URL } from '../config';
 
 interface Filters {
   hostname: string;
-  os_version: string;
+  os_name: string | undefined;
   check_status: string;
-  sort_by: keyof Computer;
+  sort_by: string; // Изменено на string вместо keyof ComputerList
   sort_order: 'asc' | 'desc';
   page: number;
   limit: number;
-}
-
-interface ComputersResponse {
-  data: Computer[];
-  total: number;
+  server_filter?: string;
 }
 
 interface Sorter {
@@ -31,68 +28,96 @@ interface Sorter {
   order?: 'ascend' | 'descend';
 }
 
-const ComputerList: React.FC = () => {
+const ComputerListComponent: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Filters>({
     hostname: searchParams.get('hostname') || '',
-    os_version: searchParams.get('os_version') || '',
+    os_name: searchParams.get('os_name') || '',
     check_status: searchParams.get('check_status') || '',
-    sort_by: (searchParams.get('sort_by') as keyof Computer) || 'hostname',
+    sort_by: searchParams.get('sort_by') || 'hostname',
     sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'asc',
     page: Number(searchParams.get('page')) || 1,
     limit: Number(searchParams.get('limit')) || ITEMS_PER_PAGE,
   });
 
-  // Debounce для полей ввода
-  const debouncedHostname = useDebounce(filters.hostname, 500);
-  const debouncedOsVersion = useDebounce(filters.os_version, 500);
+  const debouncedHostname = useDebounce(filters.hostname, 800);
+  const debouncedOsName = useDebounce(filters.os_name, 800);
 
-  // Синхронизация фильтров с URL
+   const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<ComputersResponse, Error>({
+    queryKey: ['computers', { ...filters, hostname: debouncedHostname, os_name: debouncedOsName }],
+    queryFn: () => {
+      const params = { ...filters, hostname: debouncedHostname, os_name: debouncedOsName };
+      if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
+        params.os_name = 'unknown';
+      } else if (params.os_name === 'Other Servers') {
+        params.os_name = undefined;
+        params.server_filter = 'server';
+      }
+      return getComputers(params);
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+  });
+
+  const { data: statsData, error: statsError, isLoading: isStatsLoading } = useQuery<DashboardStats, Error>({
+    queryKey: ['statistics'],
+    queryFn: () => getStatistics({
+      metrics: ['os_names'], // Запрашиваем только os_names для оптимизации
+    }),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60 * 60 * 1000, // Кэшируем на 1 час
+  });
+
   useEffect(() => {
-    setSearchParams({
+    const params: Record<string, string> = {
       hostname: filters.hostname,
-      os_version: filters.os_version,
       check_status: filters.check_status,
       sort_by: filters.sort_by,
       sort_order: filters.sort_order,
       page: String(filters.page),
       limit: String(filters.limit),
-    });
-  }, [filters, setSearchParams]);
+    };
+    if (filters.os_name) {
+      params.os_name = filters.os_name;
+  }
+  setSearchParams(params);
+}, [filters, setSearchParams]);
 
-  // Обновление фильтров после debounce
   useEffect(() => {
-    setFilters((prev) => ({
-      ...prev,
-      hostname: debouncedHostname,
-      os_version: debouncedOsVersion,
-      page: 1, // Сбрасываем страницу при изменении фильтров
-    }));
-  }, [debouncedHostname, debouncedOsVersion]);
+    if (
+      debouncedHostname.length > 2 ||
+      (debouncedOsName && debouncedOsName.length > 2) ||
+      debouncedHostname === '' ||
+      (debouncedOsName === '' || debouncedOsName === undefined)
+    ) {
+      setFilters((prev) => ({
+        ...prev,
+        hostname: debouncedHostname,
+        os_name: debouncedOsName,
+        page: 1,
+      }));
+    }
+  }, [debouncedHostname, debouncedOsName]);
 
-  const { data, error, isLoading } = useQuery<ComputersResponse, Error>({
-    queryKey: ['computers', filters],
-    queryFn: () => getComputers(filters),
-    refetchOnWindowFocus: false, 
-    refetchOnReconnect: false,
-    staleTime: 0,
-  });
-
-// Функция для экспорта в CSV
   const handleExportCSV = async () => {
     try {
+      const params = {
+        hostname: filters.hostname || undefined,
+        os_name: filters.os_name || undefined,
+        check_status: filters.check_status || undefined,
+        sort_by: filters.sort_by,
+        sort_order: filters.sort_order,
+        server_filter: filters.os_name === 'Other Servers' ? 'server' : undefined,
+      };
       const response = await axios.get(`${API_URL}/computers/export/csv`, {
-        params: {
-          hostname: filters.hostname || undefined,
-          os_version: filters.os_version || undefined,
-          check_status: filters.check_status || undefined,
-          sort_by: filters.sort_by,
-          sort_order: filters.sort_order,
-        },
+        params,
         responseType: 'blob',
       });
 
-      const currentDate = new Date().toISOString().split('T')[0]; // Формат YYYY-MM-DD
+      const currentDate = new Date().toISOString().split('T')[0];
       const filename = `computers_${currentDate}.csv`;
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -116,19 +141,17 @@ const ComputerList: React.FC = () => {
     }
   };
 
-  // Обработка сортировки и пагинации через onChange
-  const handleTableChange: TableProps<Computer>['onChange'] = (pagination, _, sorter) => {
+  const handleTableChange: TableProps<ComputerList>['onChange'] = (pagination, _, sorter) => {
     const sorterResult = sorter as Sorter;
     setFilters({
       ...filters,
       page: pagination.current || 1,
       limit: pagination.pageSize || ITEMS_PER_PAGE,
-      sort_by: sorterResult.field ? (sorterResult.field as keyof Computer) : 'hostname',
+      sort_by: sorterResult.field || 'hostname',
       sort_order: sorterResult.order === 'descend' ? 'desc' : 'asc',
     });
   };
 
-  // Обработка изменения фильтров
   const handleFilterChange = (key: keyof Filters, value: string) => {
     setFilters({
       ...filters,
@@ -137,14 +160,35 @@ const ComputerList: React.FC = () => {
     });
   };
 
-  const columns: TableProps<Computer>['columns'] = [
+  const clearFilter = (key: keyof Filters) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: '',
+      page: 1,
+    }));
+  };
+
+  const clearAllFilters = () => {
+    setFilters({
+      hostname: '',
+      os_name: '',
+      check_status: '',
+      sort_by: 'hostname',
+      sort_order: 'asc',
+      page: 1,
+      limit: ITEMS_PER_PAGE,
+    });
+    refetch();
+  };
+
+  const columns: TableProps<ComputerList>['columns'] = [
     {
       title: 'Hostname',
       dataIndex: 'hostname',
       key: 'hostname',
       sorter: true,
-      sortOrder: filters.sort_by === 'hostname' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      render: (text: string, record: Computer) => (
+      sortOrder: filters.sort_by === 'hostname' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      render: (text: string, record: ComputerList) => (
         <Link to={`/computer/${record.id}`} className={styles.link}>
           {text}
         </Link>
@@ -152,10 +196,10 @@ const ComputerList: React.FC = () => {
     },
     {
       title: 'OS Version',
-      dataIndex: 'os_version',
-      key: 'os_version',
+      dataIndex: 'os_name',
+      key: 'os_name',
       sorter: true,
-      sortOrder: filters.sort_by === 'os_version' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: filters.sort_by === 'os_name' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       render: (text: string) => text ?? '-',
     },
     {
@@ -163,34 +207,54 @@ const ComputerList: React.FC = () => {
       dataIndex: 'check_status',
       key: 'check_status',
       sorter: true,
-      sortOrder: filters.sort_by === 'check_status' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: filters.sort_by === 'check_status' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       render: (text: string) => text ?? '-',
     },
   ];
 
-  if (isLoading) {
+  if (isComputersLoading || isStatsLoading) {
     return <Skeleton active paragraph={{ rows: 10 }} />;
   }
-  if (error) {
-    return <div className={styles.error}>Ошибка: {error.message}</div>;
+  if (computersError || statsError) {
+    return <div className={styles.error}>Ошибка: {(computersError || statsError)?.message}</div>;
   }
 
   return (
     <div className={styles.container}>
-      <h2 className={styles.title}>Список компьютеров</h2>
+      <h2 className={styles.title}>
+        Список компьютеров ({computersData?.total || 0})
+        <Button
+          type="primary"
+          onClick={handleExportCSV}
+          style={{ float: 'right', marginLeft: 8 }}
+        >
+          Экспорт в CSV
+        </Button>
+      </h2>
       <div className={styles.filters}>
         <Input
           placeholder="Фильтр по Hostname"
           value={filters.hostname}
           onChange={(e) => handleFilterChange('hostname', e.target.value)}
           className={styles.filterInput}
+          allowClear
         />
-        <Input
-          placeholder="Фильтр по OS Version"
-          value={filters.os_version}
-          onChange={(e) => handleFilterChange('os_version', e.target.value)}
-          className={styles.filterInput}
-        />
+        <Select
+          value={filters.os_name}
+          onChange={(value) => handleFilterChange('os_name', value)}
+          className={styles.filterSelect}
+          placeholder="Выберите ОС"
+          loading={isStatsLoading}
+        >
+          <Select.Option value="">Все ОС</Select.Option>
+          <Select.Option value="Unknown">Unknown</Select.Option>
+          <Select.Option value="Other Servers">Other Servers</Select.Option>
+          {statsData && statsData.os_names && statsData.os_names.map((os: string) => (
+            <Select.Option key={os} value={os}>
+              {os}
+            </Select.Option>
+          ))}
+        </Select>
         <Select
           value={filters.check_status}
           onChange={(value) => handleFilterChange('check_status', value)}
@@ -202,18 +266,18 @@ const ComputerList: React.FC = () => {
           <Select.Option value="failed">Failed</Select.Option>
           <Select.Option value="unreachable">Unreachable</Select.Option>
         </Select>
-        <Button type="primary" onClick={handleExportCSV} style={{ marginLeft: 8 }}>
-          Экспорт в CSV
+        <Button onClick={clearAllFilters} style={{ marginLeft: 8 }}>
+          Очистить все фильтры
         </Button>
       </div>
       <Table
         columns={columns}
-        dataSource={data?.data || []}
+        dataSource={computersData?.data || []}
         rowKey="id"
         pagination={{
           current: filters.page,
           pageSize: filters.limit,
-          total: data?.total || 0,
+          total: computersData?.total || 0,
           showSizeChanger: false,
           showQuickJumper: false,
         }}
@@ -225,4 +289,4 @@ const ComputerList: React.FC = () => {
   );
 };
 
-export default ComputerList;
+export default ComputerListComponent;

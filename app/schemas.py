@@ -147,6 +147,7 @@ class DashboardStats(BaseModel):
     os_stats: OsStats
     disk_stats: DiskStats
     scan_stats: ScanStats
+    os_names: List[str] = []
     model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
 
 class ErrorResponse(BaseModel):

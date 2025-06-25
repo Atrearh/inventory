@@ -229,7 +229,6 @@ async def export_computers_to_csv(
             # Получаем все компьютеры без пагинации
             computers, _ = await repo.get_computers(
                 hostname=hostname,
-                os_version=os_version,
                 os_name=os_name,
                 check_status=check_status,
                 sort_by=sort_by,
@@ -385,41 +384,31 @@ async def get_statistics(
 
 @router.get("/computers", response_model=schemas.ComputersResponse, operation_id="get_computers")
 async def get_computers(
-    db: AsyncSession = Depends(get_db),
-    sort_by: str = Query("hostname", description="Поле для сортировки"),
-    sort_order: str = Query("asc", description="Порядок: asc или desc"),
-    hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
-    os_version: Optional[str] = Query(None, description="Фильтр по версии ОС"),
-    os_name: Optional[str] = Query(None, description="Фильтр по имени ОС"),
-    check_status: Optional[schemas.CheckStatus] = Query(
-        None,
-        description="Фильтр по check_status",
-        alias="check_status",
-        regex=r"^(success|failed|unreachable)?$"
-    ),
+    hostname: Optional[str] = Query(None),
+    os_name: Optional[str] = Query(None),
+    check_status: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("hostname", description="Поле для сортировки"),
+    sort_order: Optional[str] = Query("asc", description="Порядок сортировки: asc или desc"),
     page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(50, ge=1, le=100, description="Количество на странице"),
-    id: Optional[int] = Query(None, description="ID компьютера")
+    limit: int = Query(10, ge=1, le=100, description="Количество записей на странице"),
+    server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Получает список компьютеров с фильтрацией и пагинацией."""
+    """Получение списка компьютеров с фильтрацией и пагинацией."""
+    logger.info(f"Запрос списка компьютеров с параметрами: hostname={hostname}, os_name={os_name}, server_filter={server_filter}")
     try:
-        logger.info(f"Запрос компьютеров: id={id}, hostname={hostname}, os_name={os_name}, page={page}")
-        if check_status == "":
-            check_status = None
         async with db as session:
             repo = ComputerRepository(session)
             computers, total = await repo.get_computers(
-                sort_by=sort_by,
-                sort_order=sort_order,
                 hostname=hostname,
-                os_version=os_version,
                 os_name=os_name,
                 check_status=check_status,
+                sort_by=sort_by,
+                sort_order=sort_order,
                 page=page,
                 limit=limit,
-                id=id
+                server_filter=server_filter,
             )
-            logger.debug(f"Возвращено {len(computers)} компьютеров, всего: {total}, IDs: {[c.id for c in computers]}")
             return schemas.ComputersResponse(data=computers, total=total)
     except Exception as e:
         logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=True)

@@ -140,6 +140,11 @@ class ComputerService:
             ip_address = validate_ip_address(None, comp_data.get('ip_address'))
             mac_address = validate_mac_address(None, comp_data.get('mac_address'))
 
+            # Нормализация os_name
+            os_name = comp_data.get('os_name', 'Unknown')
+            if not os_name or os_name.strip() == '':
+                os_name = 'Unknown'
+
             # Преобразование ролей в формат словарей, если они пришли как строки
             raw_roles = comp_data.get('roles', [])
             roles_data = [
@@ -171,7 +176,7 @@ class ComputerService:
             computer_data = ComputerCreate(
                 hostname=validated_hostname,
                 ip=ip_address,
-                os_name=comp_data.get('os_name'),
+                os_name=os_name,
                 os_version=comp_data.get('os_version'),
                 cpu=comp_data.get('cpu'),
                 ram=comp_data.get('ram'),
@@ -184,7 +189,7 @@ class ComputerService:
                 software=software,
                 disks=disks 
             )
-            logger.info(f"Данные компьютера {hostname} подготовлены successfully")
+            logger.info(f"Данные компьютера {hostname} подготовлены успешно")
             return computer_data
         except Exception as e:
             logger.error(f"Ошибка подготовки данных для {hostname}: {str(e)}")

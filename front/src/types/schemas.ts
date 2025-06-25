@@ -127,6 +127,7 @@ export interface DashboardStats {
   os_stats: OsStats;
   disk_stats: DiskStats;
   scan_stats: ScanStats;
+  os_names?: string[];
 }
 export interface OsStats {
   client_os: OsDistribution[];

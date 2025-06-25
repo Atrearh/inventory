@@ -2,7 +2,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update, func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 import logging
@@ -399,64 +399,85 @@ class ComputerRepository:
 
     async def get_computers(
         self,
-        id: Optional[int] = None,
         hostname: Optional[str] = None,
-        os_version: Optional[str] = None,
         os_name: Optional[str] = None,
         check_status: Optional[str] = None,
+        sort_by: str = "hostname",
+        sort_order: str = "asc",
         page: int = 1,
         limit: int = 10,
-        sort_by: str = "hostname",
-        sort_order: str = "asc"
-    ) -> Tuple[List[Computer], int]:
-        """Получает список компьютеров с пагинацией и фильтрацией без загрузки связанных данных."""
-        logger.debug(f"Запрос компьютеров: id={id}, hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}, page={page}")
+        server_filter: Optional[str] = None,
+    ) -> Tuple[List[schemas.ComputerList], int]:
+        """Получение списка компьютеров с фильтрацией и пагинацией."""
+        logger.debug(f"Запрос компьютеров с фильтрами: hostname={hostname}, os_name={os_name}, server_filter={server_filter}")
+
         try:
-            stmt = select(Computer)
+            query = select(models.Computer).options(
+                selectinload(models.Computer.disks),
+                selectinload(models.Computer.software),
+                selectinload(models.Computer.roles)
+            )
 
-            if id:
-                stmt = stmt.filter(Computer.id == id)
             if hostname:
-                stmt = stmt.filter(Computer.hostname.ilike(f"%{hostname}%"))
-            if os_version:
-                stmt = stmt.filter(Computer.os_version.ilike(f"%{os_version}%"))
+                query = query.filter(models.Computer.hostname.ilike(f"%{hostname}%"))
             if os_name:
-                stmt = stmt.filter(Computer.os_name.ilike(f"%{os_name}%"))
+                query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))
             if check_status:
-                stmt = stmt.filter(Computer.check_status == check_status)
+                query = query.filter(models.Computer.check_status == check_status)
+            if server_filter == 'server':
+                query = query.filter(
+                    models.Computer.os_name.ilike('%Server%') | models.Computer.os_name.ilike('%Hyper-V%')
+                )
 
-            count_stmt = select(func.count()).select_from(Computer)
-            if id:
-                count_stmt = count_stmt.filter(Computer.id == id)
-            if hostname:
-                count_stmt = count_stmt.filter(Computer.hostname.ilike(f"%{hostname}%"))
-            if os_version:
-                count_stmt = count_stmt.filter(Computer.os_version.ilike(f"%{os_version}%"))
-            if os_name:
-                count_stmt = count_stmt.filter(Computer.os_name.ilike(f"%{os_name}%"))
-            if check_status:
-                count_stmt = count_stmt.filter(Computer.check_status == check_status)
+            # Подсчет общего количества записей
+            count_query = select(func.count()).select_from(query.subquery())
+            count_result = await self.db.execute(count_query)
+            total = count_result.scalar_one()
 
-            total_result = await self.db.execute(count_stmt)
-            total = total_result.scalar_one()
+            # Сортировка
+            if sort_by in models.Computer.__table__.columns:
+                sort_column = getattr(models.Computer, sort_by)
+                if sort_order.lower() == "desc":
+                    sort_column = sort_column.desc()
+                query = query.order_by(sort_column)
+            else:
+                query = query.order_by(models.Computer.hostname)
 
-            sort_column = getattr(Computer, sort_by, Computer.hostname)
-            if sort_order.lower() == "desc":
-                sort_column = sort_column.desc()
-            stmt = stmt.order_by(sort_column)
+            # Пагинация
+            query = query.offset((page - 1) * limit).limit(limit)
+            result = await self.db.execute(query)
+            computers = result.unique().scalars().all()  # Добавляем .unique()
 
-            stmt = stmt.offset((page - 1) * limit).limit(limit)
+            computer_list = [
+                schemas.ComputerList(
+                    id=computer.id,
+                    hostname=computer.hostname,
+                    ip=computer.ip,
+                    os_name=computer.os_name,
+                    os_version=computer.os_version,
+                    cpu=computer.cpu,
+                    ram=computer.ram,
+                    mac=computer.mac,
+                    motherboard=computer.motherboard,
+                    last_boot=computer.last_boot,
+                    is_virtual=computer.is_virtual,
+                    check_status=computer.check_status.value if computer.check_status else None,
+                    last_updated=computer.last_updated.isoformat(),
+                    disks=[schemas.Disk(DeviceID=disk.device_id, TotalSpace=disk.total_space, FreeSpace=disk.free_space) 
+                           for disk in computer.disks],
+                    software=[schemas.Software(DisplayName=soft.name, DisplayVersion=soft.version,
+                                            InstallDate=soft.install_date.isoformat() if soft.install_date else None,
+                                            Action=soft.action, is_deleted=soft.is_deleted)
+                            for soft in computer.software],
+                    roles=[schemas.Role(Name=role.name) for role in computer.roles]
+                )
+                for computer in computers
+            ]
 
-            result = await self.db.execute(stmt)
-            computers = result.scalars().all()
-            logger.debug(f"Возвращено {len(computers)} компьютеров, всего: {total}")
-
-            return computers, total
-        except SQLAlchemyError as e:
-            logger.error(f"Ошибка базы данных при получении компьютеров: {str(e)}")
-            raise
+            logger.debug(f"Найдено {len(computer_list)} компьютеров, общее количество: {total}")
+            return computer_list, total
         except Exception as e:
-            logger.error(f"Неизвестная ошибка при получении компьютеров: {str(e)}")
+            logger.error(f"Ошибка при получении компьютеров: {str(e)}")
             raise
 
     async def async_get_computer_by_id(self, computer_id: int) -> Optional[Computer]:

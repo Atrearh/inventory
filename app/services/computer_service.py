@@ -144,6 +144,7 @@ class ComputerService:
             os_name = comp_data.get('os_name', 'Unknown')
             if not os_name or os_name.strip() == '':
                 os_name = 'Unknown'
+            os_name = os_name.replace('Майкрософт ', '').replace('Microsoft ', '')
 
             # Преобразование ролей в формат словарей, если они пришли как строки
             raw_roles = comp_data.get('roles', [])
@@ -152,25 +153,10 @@ class ComputerService:
                 for role in raw_roles
             ]
 
-            # Обработка списков ролей, программ и дисков
-            roles = self.process_list(
-                roles_data,
-                key="Name",
-                schema=Role,
-                required_fields=["Name"]
-            )
-            software = self.process_list(
-                comp_data.get('software', []),
-                key="DisplayName",
-                schema=Software,
-                required_fields=["DisplayName"]
-            )
-            disks = self.process_list(
-                comp_data.get('disks', []),
-                key="DeviceID",
-                schema=Disk,
-                required_fields=["total_space"]
-            )
+            # Обработка списков
+            roles = self.process_list(roles_data, key="Name", schema=Role, required_fields=["Name"])
+            software = self.process_list(comp_data.get('software', []), key="DisplayName", schema=Software, required_fields=["DisplayName"])
+            disks = self.process_list(comp_data.get('disks', []), key="DeviceID", schema=Disk, required_fields=["total_space"])
 
             # Формирование объекта ComputerCreate
             computer_data = ComputerCreate(

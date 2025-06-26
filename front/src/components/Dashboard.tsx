@@ -127,7 +127,7 @@ const Dashboard: React.FC = () => {
     'Windows Server 2019': 'Windows Server 2019%',
     'Windows Server 2016': 'Windows Server 2016%',
     'Windows Server 2008': 'Windows Server 2008%',
-    'Microsoft Hyper-V Server 2016': 'Microsoft Hyper-V%',
+    'Hyper-V Server': 'Hyper-V%',
     'Other Clients': '',
   };
 

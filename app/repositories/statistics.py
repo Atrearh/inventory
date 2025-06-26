@@ -26,7 +26,7 @@ class StatisticsRepository:
             raise
 
     async def get_os_names(self) -> List[str]:
-        """Возвращает список уникальных имен ОС."""
+        """Возвращает список уникальных имен ОС, включая серверные."""
         logger.debug("Запрос уникальных имен ОС")
         try:
             result = await self.db.execute(
@@ -35,8 +35,12 @@ class StatisticsRepository:
                 .distinct()
             )
             os_names = [row.os_name for row in result.scalars().all() if row.os_name]
-            logger.debug(f"Найдено {len(os_names)} уникальных имен ОС")
-            return sorted(os_names)  # Сортируем для предсказуемого порядка
+            # Добавляем серверные ОС из os_distribution
+            os_dist = await self.get_os_distribution()
+            server_os_names = [os.category for os in os_dist.server_os]
+            all_os_names = sorted(set(os_names + server_os_names))
+            logger.debug(f"Найдено {len(all_os_names)} уникальных имен ОС")
+            return sorted(set(all_os_names)) 
         except Exception as e:
             logger.error(f"Ошибка при получении списка ОС: {str(e)}")
             raise
@@ -81,7 +85,7 @@ class StatisticsRepository:
                 "Windows Server 2019": r"server 2019",
                 "Windows Server 2016": r"server 2016",
                 "Windows Server 2008": r"server 2008",
-                "Microsoft Hyper-V Server 2016": r"hyper-v",
+                "Hyper-V Server": r"hyper-v",
             }
 
             client_os_counts = {key: 0 for key in client_os_map}

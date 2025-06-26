@@ -1,6 +1,5 @@
-// src/components/ComputerList.tsx
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getComputers, getStatistics} from '../api/api';
+import { getComputers, getStatistics } from '../api/api';
 import { ComputersResponse, DashboardStats, ComputerList } from '../types/schemas';
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
@@ -16,7 +15,7 @@ interface Filters {
   hostname: string;
   os_name: string | undefined;
   check_status: string;
-  sort_by: string; // Изменено на string вместо keyof ComputerList
+  sort_by: string;
   sort_order: 'asc' | 'desc';
   page: number;
   limit: number;
@@ -43,16 +42,23 @@ const ComputerListComponent: React.FC = () => {
   const debouncedHostname = useDebounce(filters.hostname, 800);
   const debouncedOsName = useDebounce(filters.os_name, 800);
 
-   const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<ComputersResponse, Error>({
+  const isServerOs = (osName: string) => {
+    const serverOsPatterns = [/server/i, /hyper-v/i];
+    return serverOsPatterns.some(pattern => pattern.test(osName.toLowerCase()));
+  };
+
+  const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<ComputersResponse, Error>({
     queryKey: ['computers', { ...filters, hostname: debouncedHostname, os_name: debouncedOsName }],
     queryFn: () => {
-      const params = { ...filters, hostname: debouncedHostname, os_name: debouncedOsName };
+      const params: Filters = { ...filters, hostname: debouncedHostname, os_name: debouncedOsName };
       if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
         params.os_name = 'unknown';
-      } else if (params.os_name === 'Other Servers') {
-        params.os_name = undefined;
+      } else if (params.os_name && isServerOs(params.os_name)) {
         params.server_filter = 'server';
+      } else {
+        params.server_filter = undefined;
       }
+      console.log('Query Params:', params);
       return getComputers(params);
     },
     refetchOnWindowFocus: false,
@@ -64,14 +70,16 @@ const ComputerListComponent: React.FC = () => {
   const { data: statsData, error: statsError, isLoading: isStatsLoading } = useQuery<DashboardStats, Error>({
     queryKey: ['statistics'],
     queryFn: () => getStatistics({
-      metrics: ['os_names'], // Запрашиваем только os_names для оптимизации
+      metrics: ['os_distribution'],
     }),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 60 * 60 * 1000, // Кэшируем на 1 час
+    staleTime: 60 * 60 * 1000,
+    enabled: true,
   });
 
   useEffect(() => {
+    console.log('OS Names:', statsData?.os_names);
     const params: Record<string, string> = {
       hostname: filters.hostname,
       check_status: filters.check_status,
@@ -82,9 +90,12 @@ const ComputerListComponent: React.FC = () => {
     };
     if (filters.os_name) {
       params.os_name = filters.os_name;
-  }
-  setSearchParams(params);
-}, [filters, setSearchParams]);
+    }
+    if (filters.server_filter) {
+      params.server_filter = filters.server_filter;
+    }
+    setSearchParams(params);
+  }, [filters, setSearchParams, statsData]);
 
   useEffect(() => {
     if (
@@ -110,7 +121,7 @@ const ComputerListComponent: React.FC = () => {
         check_status: filters.check_status || undefined,
         sort_by: filters.sort_by,
         sort_order: filters.sort_order,
-        server_filter: filters.os_name === 'Other Servers' ? 'server' : undefined,
+        server_filter: filters.os_name && isServerOs(filters.os_name) ? 'server' : undefined,
       };
       const response = await axios.get(`${API_URL}/computers/export/csv`, {
         params,
@@ -157,6 +168,7 @@ const ComputerListComponent: React.FC = () => {
       ...filters,
       [key]: value,
       page: 1,
+      server_filter: value && isServerOs(value) ? 'server' : undefined,
     });
   };
 
@@ -165,6 +177,7 @@ const ComputerListComponent: React.FC = () => {
       ...prev,
       [key]: '',
       page: 1,
+      server_filter: undefined,
     }));
   };
 
@@ -177,6 +190,7 @@ const ComputerListComponent: React.FC = () => {
       sort_order: 'asc',
       page: 1,
       limit: ITEMS_PER_PAGE,
+      server_filter: undefined,
     });
     refetch();
   };
@@ -245,11 +259,11 @@ const ComputerListComponent: React.FC = () => {
           className={styles.filterSelect}
           placeholder="Выберите ОС"
           loading={isStatsLoading}
+          showSearch
+          optionFilterProp="children"
         >
           <Select.Option value="">Все ОС</Select.Option>
-          <Select.Option value="Unknown">Unknown</Select.Option>
-          <Select.Option value="Other Servers">Other Servers</Select.Option>
-          {statsData && statsData.os_names && statsData.os_names.map((os: string) => (
+          {statsData?.os_names && [...new Set([...statsData.os_stats.client_os.map((item) => item.category),...statsData.os_stats.server_os.map((item) => item.category),])].map((os: string) => (
             <Select.Option key={os} value={os}>
               {os}
             </Select.Option>
@@ -277,7 +291,7 @@ const ComputerListComponent: React.FC = () => {
         pagination={{
           current: filters.page,
           pageSize: filters.limit,
-          total: computersData?.total || 0,
+          total: computersData?.total || 0, // Используем total из ответа сервера
           showSizeChanger: false,
           showQuickJumper: false,
         }}

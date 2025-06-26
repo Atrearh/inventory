@@ -421,12 +421,15 @@ class ComputerRepository:
             if hostname:
                 query = query.filter(models.Computer.hostname.ilike(f"%{hostname}%"))
             if os_name:
-                query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))
+                if os_name.lower() == 'unknown':
+                    query = query.filter(models.Computer.os_name.is_(None))
+                else:
+                    query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))  # Сохраняем ilike для частичного соответствия
             if check_status:
                 query = query.filter(models.Computer.check_status == check_status)
-            if server_filter == 'server':
+            if server_filter == 'server' or (os_name and any(keyword in os_name.lower() for keyword in ['server', 'hyper-v'])):
                 query = query.filter(
-                    models.Computer.os_name.ilike('%Server%') | models.Computer.os_name.ilike('%Hyper-V%')
+                    models.Computer.os_name.ilike('%server%') | models.Computer.os_name.ilike('%hyper-v%')
                 )
 
             # Подсчет общего количества записей
@@ -446,7 +449,7 @@ class ComputerRepository:
             # Пагинация
             query = query.offset((page - 1) * limit).limit(limit)
             result = await self.db.execute(query)
-            computers = result.unique().scalars().all()  # Добавляем .unique()
+            computers = result.unique().scalars().all()
 
             computer_list = [
                 schemas.ComputerList(
@@ -464,7 +467,7 @@ class ComputerRepository:
                     check_status=computer.check_status.value if computer.check_status else None,
                     last_updated=computer.last_updated.isoformat(),
                     disks=[schemas.Disk(DeviceID=disk.device_id, TotalSpace=disk.total_space, FreeSpace=disk.free_space) 
-                           for disk in computer.disks],
+                        for disk in computer.disks],
                     software=[schemas.Software(DisplayName=soft.name, DisplayVersion=soft.version,
                                             InstallDate=soft.install_date.isoformat() if soft.install_date else None,
                                             Action=soft.action, is_deleted=soft.is_deleted)
@@ -474,7 +477,7 @@ class ComputerRepository:
                 for computer in computers
             ]
 
-            logger.debug(f"Найдено {len(computer_list)} компьютеров, общее количество: {total}")
+            logger.debug(f"Найдено {len(computer_list)} компьютеров, общее количество: {total}, SQL: {str(query)}")
             return computer_list, total
         except Exception as e:
             logger.error(f"Ошибка при получении компьютеров: {str(e)}")

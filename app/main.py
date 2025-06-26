@@ -104,6 +104,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
     logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
 
+    # Определяем статус код и сообщение об ошибке
     match exc:
         case HTTPException(status_code=status_code, detail=detail):
             status_code = status_code
@@ -119,7 +120,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             error_message = str(exc)
         case _:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_file = "Внутренняя ошибка сервера"
+            error_message = "Внутренняя ошибка сервера"  # Исправляем 'error_file' на 'error_message'
 
     response = ErrorResponse(
         error=error_message,
@@ -127,10 +128,18 @@ async def global_exception_handler(request: Request, exc: Exception):
         correlation_id=correlation_id
     )
 
+    # Явно добавляем CORS заголовок для всех ответов
+    headers = {
+        "Access-Control-Allow-Origin": request.headers.get("Origin", "*"),
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+    }
+
     return JSONResponse(
         status_code=status_code,
         content=response.model_dump(exclude_none=True),
-        headers={"Access-Control-Allow-Origin": "*"}
+        headers=headers
     )
 
 @router.get("/settings", response_model=AppSettingUpdate)
@@ -448,13 +457,12 @@ async def clean_deleted_software(
         logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
-@router.get("/computers/{computer_id}", response_model=schemas.Computer, operation_id="get_computer_by_id")
+@router.get("/computers/{computer_id}", response_model=schemas.ComputerList, operation_id="get_computer_by_id")
 async def get_computer_by_id(
     computer_id: int,
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Получает данные компьютера по ID."""
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Получение данных компьютера с ID: {computer_id}")
     try:

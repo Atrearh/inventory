@@ -40,11 +40,14 @@ export interface ChangeLog {
 export interface Computer {
   hostname: string;
   ip?: string | null;
+  ip_addresses?: string[] | null;
   os_name?: string | null;
   os_version?: string | null;
+  processors?: Processor[];
   cpu?: string | null;
   ram?: number | null;
   mac?: string | null;
+  mac_addresses?: string[] | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
@@ -54,11 +57,18 @@ export interface Computer {
   disks?: Disk[];
   roles?: Role[];
   software?: Software[];
+  video_cards?: VideoCard[];
+}
+export interface Processor {
+  name: string;
+  number_of_cores: number;
+  number_of_logical_processors: number;
 }
 export interface Disk {
-  DeviceID?: string | null;
-  TotalSpace: number;
-  FreeSpace?: number | null;
+  device_id?: string | null;
+  model?: string | null;
+  total_space: number;
+  free_space?: number | null;
 }
 export interface Role {
   Name: string;
@@ -70,14 +80,21 @@ export interface Software {
   Action?: string | null;
   is_deleted?: boolean;
 }
+export interface VideoCard {
+  name: string;
+  driver_version?: string | null;
+}
 export interface ComputerBase {
   hostname: string;
   ip?: string | null;
+  ip_addresses?: string[] | null;
   os_name?: string | null;
   os_version?: string | null;
+  processors?: Processor[] | null;
   cpu?: string | null;
   ram?: number | null;
   mac?: string | null;
+  mac_addresses?: string[] | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
@@ -86,11 +103,14 @@ export interface ComputerBase {
 export interface ComputerCreate {
   hostname: string;
   ip?: string | null;
+  ip_addresses?: IPAddress[];
   os_name?: string | null;
   os_version?: string | null;
+  processors?: Processor[];
   cpu?: string | null;
   ram?: number | null;
   mac?: string | null;
+  mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
@@ -98,21 +118,35 @@ export interface ComputerCreate {
   roles?: Role[];
   software?: Software[];
   disks?: Disk[];
+  video_cards?: VideoCard[];
+}
+export interface IPAddress {
+  address: string;
+}
+export interface MACAddress {
+  address: string;
 }
 export interface ComputerList {
   hostname: string;
   ip?: string | null;
+  ip_addresses?: string[] | null;
   os_name?: string | null;
   os_version?: string | null;
+  processors?: Processor[];
   cpu?: string | null;
   ram?: number | null;
   mac?: string | null;
+  mac_addresses?: string[] | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
   id: number;
   last_updated: string;
+  disks?: Disk[];
+  software?: Software[];
+  roles?: Role[];
+  video_cards?: VideoCard[];
 }
 export interface ComputerUpdateCheckStatus {
   hostname: string;

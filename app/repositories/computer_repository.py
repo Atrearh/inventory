@@ -1,182 +1,155 @@
-# app/repositories/computer_repository.py
+
+from typing import TypeVar, List, Type, Any, Optional, Tuple
+from datetime import datetime
+from sqlalchemy import select, delete, update, func, Table
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, update, func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import joinedload, selectinload
-from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
 import logging
 from .. import models, schemas
-from ..models import Computer
+from sqlalchemy.orm import selectinload,joinedload
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")  # Для типизации моделей SQLAlchemy
+U = TypeVar("U", bound=schemas.BaseModel)  # Для типизации Pydantic-схем
 
 class ComputerRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def async_log_change(self, computer_id: int, field: str, old_value: str, new_value: str) -> None:
-        """Логирует изменение данных компьютера."""
-        try:
-            change_log = models.ChangeLog(
-                computer_id=computer_id,
-                field=field,
-                old_value=str(old_value)[:255],
-                new_value=str(new_value)[:255],
-                changed_at=datetime.utcnow()
-            )
-            self.db.add(change_log)
-            logger.debug(f"Логировано изменение: computer_id={computer_id}, field={field}")
-        except Exception as e:
-            logger.error(f"Ошибка логирования: {str(e)}")
-            raise
+    async def _get_or_create_computer(self, computer_data: dict, hostname: str) -> models.Computer:
+        """
+        Получает существующий компьютер по hostname или создает новый.
 
-    async def _get_or_create_computer(self, computer_data: dict, hostname: str) -> Computer:
-        """Получает существующий компьютер или создает новый."""
+        :param computer_data: Данные компьютера для создания/обновления
+        :param hostname: Имя хоста компьютера
+        :return: Объект компьютера из базы данных
+        """
         try:
             result = await self.db.execute(
-                select(Computer).where(Computer.hostname == hostname)
+                select(models.Computer).where(models.Computer.hostname == hostname)
             )
-            existing_computer = result.scalars().first()
+            db_computer = result.scalars().first()
 
-            # Обновляем last_full_scan для полного сканирования
-            computer_data["last_updated"] = datetime.utcnow()
-            if computer_data.get("check_status") == "success":
-                computer_data["last_full_scan"] = datetime.utcnow()
-
-            if existing_computer:
+            if db_computer:
                 for key, value in computer_data.items():
-                    setattr(existing_computer, key, value)  
-                logger.info(f"Обновлены основные данные компьютера: {hostname}")
-                return existing_computer
+                    setattr(db_computer, key, value)
             else:
-                new_computer = Computer(**computer_data)
-                self.db.add(new_computer)
-                await self.db.flush()
-                logger.info(f"Создан новый компьютер: {hostname}") 
-                return new_computer
+                db_computer = models.Computer(**computer_data)
+                self.db.add(db_computer)
+
+            await self.db.flush()
+            return db_computer
         except Exception as e:
             logger.error(f"Ошибка при получении/создании компьютера {hostname}: {str(e)}")
             raise
 
-    async def _update_roles_async(self, db_computer: models.Computer, new_roles: List[schemas.Role]) -> None:
-        """Обновляет роли компьютера с использованием массовых операций."""
+    async def _update_related_entities_async(
+        self,
+        db_computer: models.Computer,
+        new_entities: List[U],
+        model_class: Type[T],
+        table: Table,
+        unique_field: str,
+        update_fields: List[str],
+    ) -> None:
+        """
+        Универсальный метод для обновления связанных сущностей (роли, диски, видеокарты, процессоры, IP, MAC).
+
+        :param db_computer: Объект компьютера в БД
+        :param new_entities: Список новых данных (Pydantic-схемы)
+        :param model_class: Класс SQLAlchemy модели (например, models.Role)
+        :param table: SQLAlchemy таблица (например, models.Role.__table__)
+        :param unique_field: Поле для идентификации (например, 'name' или 'device_id')
+        :param update_fields: Поля для обновления (например, ['driver_version'])
+        """
         try:
-            new_role_names = {r.name for r in new_roles}
+            # Получаем новые уникальные идентификаторы
+            new_identifiers = {getattr(entity, unique_field) for entity in new_entities}
+            new_entities_dict = {getattr(entity, unique_field): entity for entity in new_entities}
 
+            # Загружаем существующие записи
             result = await self.db.execute(
-                select(models.Role).where(models.Role.computer_id == db_computer.id)
+                select(model_class).where(model_class.computer_id == db_computer.id)
             )
-            existing_role_names = {r.name for r in result.scalars().all()}
+            existing_entities_dict = {getattr(e, unique_field): e for e in result.scalars().all()}
 
-            roles_to_delete = existing_role_names - new_role_names
-            if roles_to_delete:
+            # Определяем, что удалить
+            entities_to_delete = set(existing_entities_dict.keys()) - new_identifiers
+            if entities_to_delete:
                 await self.db.execute(
-                    delete(models.Role)
-                    .where(
-                        models.Role.computer_id == db_computer.id,
-                        models.Role.name.in_(roles_to_delete)
+                    delete(table).where(
+                        table.c.computer_id == db_computer.id,
+                        table.c[unique_field].in_(entities_to_delete)
                     )
                 )
-                logger.debug(f"Удалено {len(roles_to_delete)} ролей для {db_computer.hostname}")
+                logger.debug(f"Удалено {len(entities_to_delete)} {table.name} для {db_computer.hostname}")
 
-            roles_to_add = new_role_names - existing_role_names
-            if roles_to_add:
-                new_role_objects = [
-                    models.Role(computer_id=db_computer.id, name=role_name)
-                    for role_name in roles_to_add
-                ]
-                self.db.add_all(new_role_objects)
-                logger.debug(f"Добавлено {len(roles_to_add)} новых ролей для {db_computer.hostname}")
-
-            await self.db.flush()
-        except Exception as e:
-            logger.error(f"Ошибка при обновлении ролей для {db_computer.hostname}: {str(e)}")
-            raise
-
-    async def _update_disks_async(self, db_computer: models.Computer, new_disks: List[schemas.Disk]) -> None:
-        """Обновляет диски компьютера с использованием массовых операций."""
-        try:
-            new_disk_ids = {d.device_id for d in new_disks}
-            new_disks_dict = {d.device_id: d for d in new_disks}
-
-            result = await self.db.execute(
-                select(models.Disk).where(models.Disk.computer_id == db_computer.id)
-            )
-            existing_disks_dict = {d.device_id: d for d in result.scalars().all()}
-
-            disks_to_delete = set(existing_disks_dict.keys()) - new_disk_ids
-            if disks_to_delete:
-                await self.db.execute(
-                    delete(models.Disk)
-                    .where(
-                        models.Disk.computer_id == db_computer.id,
-                        models.Disk.device_id.in_(disks_to_delete)
-                    )
-                )
-                logger.debug(f"Удалено {len(disks_to_delete)} дисков для {db_computer.hostname}")
-
-            new_disk_objects = []
+            # Подготовка новых записей и обновлений
+            new_objects = []
             updates = []
-            for device_id in new_disk_ids:
-                if device_id not in existing_disks_dict:
-                    new_disk_objects.append(
-                        models.Disk(
+            for identifier in new_identifiers:
+                new_entity = new_entities_dict[identifier]
+                if identifier not in existing_entities_dict:
+                    # Создаем новую запись
+                    new_objects.append(
+                        model_class(
                             computer_id=db_computer.id,
-                            device_id=device_id,
-                            total_space=new_disks_dict[device_id].total_space,
-                            free_space=new_disks_dict[device_id].free_space
+                            **{field: getattr(new_entity, field) for field in update_fields + [unique_field]}
                         )
                     )
-                    logger.debug(f"Добавлен новый диск {device_id} для {db_computer.hostname}")
+                    logger.debug(f"Добавлена новая запись {identifier} в {table.name} для {db_computer.hostname}")
                 else:
-                    existing_disk = existing_disks_dict[device_id]
-                    new_disk = new_disks_dict[device_id]
-                    if (
-                        existing_disk.total_space != new_disk.total_space or
-                        existing_disk.free_space != new_disk.free_space
-                    ):
-                        updates.append({
-                            "id": existing_disk.id,
-                            "total_space": new_disk.total_space,
-                            "free_space": new_disk.free_space
-                        })
-                        logger.debug(f"Обновлен диск {device_id} для {db_computer.hostname}")
+                    # Проверяем, нужно ли обновить существующую запись
+                    existing_entity = existing_entities_dict[identifier]
+                    update_data = {}
+                    for field in update_fields:
+                        new_value = getattr(new_entity, field)
+                        old_value = getattr(existing_entity, field)
+                        if new_value != old_value:
+                            update_data[field] = new_value
+                    if update_data:
+                        update_data["id"] = existing_entity.id
+                        updates.append(update_data)
+                        logger.debug(f"Обновлена запись {identifier} в {table.name} для {db_computer.hostname}")
 
-            if new_disk_objects:
-                self.db.add_all(new_disk_objects)
-                logger.debug(f"Добавлено {len(new_disk_objects)} новых дисков для {db_computer.hostname}")
+            # Добавляем новые записи
+            if new_objects:
+                self.db.add_all(new_objects)
+                logger.debug(f"Добавлено {len(new_objects)} новых записей в {table.name} для {db_computer.hostname}")
 
+            # Выполняем массовое обновление
             if updates:
                 for update_data in updates:
                     await self.db.execute(
-                        update(models.Disk)
-                        .where(models.Disk.id == update_data["id"])
-                        .values(
-                            total_space=update_data["total_space"],
-                            free_space=update_data["free_space"]
+                        update(table).where(table.c.id == update_data["id"]).values(
+                            {k: v for k, v in update_data.items() if k != "id"}
                         )
                     )
-                logger.debug(f"Обновлено {len(updates)} дисков для {db_computer.hostname}")
+                logger.debug(f"Обновлено {len(updates)} записей в {table.name} для {db_computer.hostname}")
 
             await self.db.flush()
         except Exception as e:
-            logger.error(f"Ошибка при обновлении дисков для {db_computer.hostname}: {str(e)}")
+            logger.error(f"Ошибка при обновлении {table.name} для {db_computer.hostname}: {str(e)}")
             raise
 
     async def _update_software_async(self, db_computer: models.Computer, new_software: List[schemas.Software], mode: str = "Full") -> None:
-        """Обновляет программное обеспечение компьютера с учетом режима."""
+        """
+        Обновляет программное обеспечение для компьютера, поддерживая режимы Full/Incremental.
+
+        :param db_computer: Объект компьютера
+        :param new_software: Список нового ПО
+        :param mode: Режим обновления (Full или Incremental)
+        """
         if not new_software:
             logger.debug(f"Данные о ПО отсутствуют для {db_computer.hostname}, обновление ПО пропущено")
             return
 
         try:
-            # Получаем все существующие записи ПО для компьютера одним запросом
             result = await self.db.execute(
                 select(models.Software).where(models.Software.computer_id == db_computer.id)
             )
             existing_software = result.scalars().all()
-            # Создаем словарь для быстрого доступа: ключ — (name, version), значение — объект Software
             existing_software_dict = {
                 (s.name.lower(), s.version.lower() if s.version else ''): s
                 for s in existing_software
@@ -184,6 +157,7 @@ class ComputerRepository:
 
             new_entries = []
             updates = []
+            change_logs = []
 
             for soft in new_software:
                 key = (soft.name.lower(), soft.version.lower() if soft.version else '')
@@ -196,11 +170,14 @@ class ComputerRepository:
                             existing.install_date != soft.install_date or
                             existing.is_deleted
                         ):
-                            await self.async_log_change(
-                                db_computer.id,
-                                f"software_{soft.name}",
-                                f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
-                                f"version: {soft.version}, install_date: {soft.install_date}, is_deleted: False"
+                            change_logs.append(
+                                models.ChangeLog(
+                                    computer_id=db_computer.id,
+                                    field=f"software_{soft.name}",
+                                    old_value=f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
+                                    new_value=f"version: {soft.version}, install_date: {soft.install_date}, is_deleted: False",
+                                    changed_at=datetime.utcnow()
+                                )
                             )
                             updates.append({
                                 "id": existing.id,
@@ -209,51 +186,59 @@ class ComputerRepository:
                                 "action": soft.action,
                                 "is_deleted": False
                             })
-                            logger.debug(f"Обновлено ПО {soft.name} для {db_computer.hostname}")
                     else:
-                        new_soft = models.Software(
-                            computer_id=db_computer.id,
-                            name=soft.name,
-                            version=soft.version,
-                            install_date=soft.install_date,
-                            action=soft.action,
-                            is_deleted=False
+                        new_entries.append(
+                            models.Software(
+                                computer_id=db_computer.id,
+                                name=soft.name,
+                                version=soft.version,
+                                install_date=soft.install_date,
+                                action=soft.action,
+                                is_deleted=False
+                            )
                         )
-                        new_entries.append(new_soft)
-                        logger.debug(f"Добавлено ПО {soft.name} для {db_computer.hostname}")
                 elif soft.action == "Uninstalled":
                     if existing and not existing.is_deleted:
-                        await self.async_log_change(
-                            db_computer.id,
-                            f"software_{soft.name}",
-                            f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
-                            "is_deleted: True"
+                        change_logs.append(
+                            models.ChangeLog(
+                                computer_id=db_computer.id,
+                                field=f"software_{soft.name}",
+                                old_value=f"version: {existing.version}, install_date: {existing.install_date}, is_deleted: {existing.is_deleted}",
+                                new_value="is_deleted: True",
+                                changed_at=datetime.utcnow()
+                            )
                         )
                         updates.append({
                             "id": existing.id,
                             "action": soft.action,
                             "is_deleted": True
                         })
-                        logger.debug(f"Пометка удаления ПО {soft.name} для {db_computer.hostname}")
+
+            # Пакетное добавление логов изменений
+            if change_logs:
+                self.db.add_all(change_logs)
+                logger.debug(f"Добавлено {len(change_logs)} записей в change_log для {db_computer.hostname}")
 
             # Добавляем новые записи
             if new_entries:
                 self.db.add_all(new_entries)
                 logger.debug(f"Добавлено {len(new_entries)} новых ПО для {db_computer.hostname}")
 
-            # Выполняем массовое обновление существующих записей
+            # Массовая операция обновления
             if updates:
-                for update_data in updates:
-                    await self.db.execute(
-                        update(models.Software)
-                        .where(models.Software.id == update_data["id"])
-                        .values(
-                            version=update_data.get("version"),
-                            install_date=update_data.get("install_date"),
-                            action=update_data.get("action"),
-                            is_deleted=update_data["is_deleted"]
-                        )
+                await self.db.execute(
+                    update(models.Software).where(models.Software.id.in_([u["id"] for u in updates])).values(
+                        [
+                            {
+                                "version": u.get("version"),
+                                "install_date": u.get("install_date"),
+                                "action": u.get("action"),
+                                "is_deleted": u["is_deleted"]
+                            }
+                            for u in updates
+                        ]
                     )
+                )
                 logger.debug(f"Обновлено {len(updates)} ПО для {db_computer.hostname}")
 
             await self.db.flush()
@@ -261,39 +246,59 @@ class ComputerRepository:
             logger.error(f"Ошибка при обновлении ПО для {db_computer.hostname}: {str(e)}")
             raise
 
-    async def clean_old_deleted_software(self) -> int:
-        """Удаляет записи о ПО с is_deleted=True, старше 6 месяцев."""
-        try:
-            threshold = datetime.utcnow() - timedelta(days=180)
-            result = await self.db.execute(
-                delete(models.Software)
-                .where(
-                    models.Software.is_deleted == True,
-                    models.Software.install_date < threshold
-                )
-                .returning(models.Software.id)
-            )
-            deleted_count = len(result.fetchall())
-            logger.info(f"Удалено {deleted_count} записей о ПО с is_deleted=True, старше 6 месяцев")
-            return deleted_count
-        except Exception as e:
-            logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
-            raise
-
     async def async_upsert_computer(self, computer: schemas.ComputerCreate, hostname: str, mode: str = "Full") -> int:
-        """Добавляет или обновляет компьютер и связанные данные."""
+        """
+        Создает или обновляет компьютер и его связанные сущности.
+
+        :param computer: Pydantic-схема с данными компьютера
+        :param hostname: Имя хоста компьютера
+        :param mode: Режим обновления (Full или Incremental)
+        :return: ID компьютера
+        """
         try:
-            computer_data = computer.model_dump(exclude_unset=True, exclude={"roles", "disks", "software"})
+            computer_data = computer.model_dump(
+                include={
+                    "hostname", "ip", "os_name", "os_version", "cpu", "ram", "mac",
+                    "motherboard", "last_boot", "is_virtual", "check_status"
+                }
+            )
             computer_data["last_updated"] = datetime.utcnow()
+
             db_computer = await self._get_or_create_computer(computer_data, hostname)
             computer_id = db_computer.id
 
+            # Обновление связанных сущностей
             if computer.roles:
-                await self._update_roles_async(db_computer, computer.roles)
+                await self._update_related_entities_async(
+                    db_computer, computer.roles, models.Role, models.Role.__table__, "name", ["name"]
+                )
             if computer.disks:
-                await self._update_disks_async(db_computer, computer.disks)
+                await self._update_related_entities_async(
+                    db_computer, computer.disks, models.Disk, models.Disk.__table__, "device_id",
+                    ["total_space", "free_space", "model"]
+                )
             if computer.software:
                 await self._update_software_async(db_computer, computer.software, mode=mode)
+            if computer.video_cards:
+                await self._update_related_entities_async(
+                    db_computer, computer.video_cards, models.VideoCard, models.VideoCard.__table__, "name",
+                    ["driver_version"]
+                )
+            if computer.processors:
+                await self._update_related_entities_async(
+                    db_computer, computer.processors, models.Processor, models.Processor.__table__, "name",
+                    ["number_of_cores", "number_of_logical_processors"]
+                )
+            if computer.ip_addresses:
+                await self._update_related_entities_async(
+                    db_computer, computer.ip_addresses, models.IPAddress, models.IPAddress.__table__, "address",
+                    ["address"]
+                )
+            if computer.mac_addresses:
+                await self._update_related_entities_async(
+                    db_computer, computer.mac_addresses, models.MACAddress, models.MACAddress.__table__, "address",
+                    ["address"]
+                )
 
             logger.info(f"Успешно сохранен компьютер: {hostname}")
             return computer_id
@@ -304,97 +309,64 @@ class ComputerRepository:
             logger.error(f"Ошибка сохранения компьютера {hostname}: {str(e)}", exc_info=True)
             raise
 
-    async def async_get_hosts_for_polling(self, days_threshold: int = 1) -> List[str]:
-        """Получение списка хостов для проверки."""
-        try:
-            threshold = datetime.utcnow() - timedelta(days=days_threshold)
-            query = (
-                select(models.ADComputer.hostname)
-                .outerjoin(models.Computer, models.ADComputer.hostname == models.Computer.hostname)
-                .filter(
-                    models.ADComputer.enabled == True,
-                    (models.Computer.last_updated < threshold) | (models.Computer.last_updated == None)
-                )
-            )
-            result = await self.db.execute(query)
-            hosts = [row.hostname for row in result.all()]
-            logger.info(f"Найдено {len(hosts)} хостов для проверки")
-            return hosts
-        except Exception as e:
-            logger.error(f"Ошибка получения хостов для проверки: {str(e)}")
-            raise
+    async def _computer_to_pydantic(self, computer: models.Computer) -> schemas.ComputerList:
+        """
+        Преобразует ORM-модель компьютера в Pydantic-схему.
 
-    async def async_update_computer_check_status(self, hostname: str, check_status: str) -> Optional[models.Computer]:
-        """Обновляет check_status для компьютера."""
+        :param computer: ORM-модель компьютера
+        :return: Pydantic-схема ComputerList
+        """
+        logger.debug(f"Преобразование компьютера {computer.id} в Pydantic-схему")
         try:
-            result = await self.db.execute(
-                select(models.Computer).filter(models.Computer.hostname == hostname)
+            # Логируем данные перед преобразованием
+            logger.debug(f"Raw data: roles={len(computer.roles)}, software={len(computer.software)}, disks={len(computer.disks)}")
+            
+            result = schemas.ComputerList(
+                id=computer.id,
+                hostname=computer.hostname,
+                ip=computer.ip,
+                ip_addresses=[ip.address for ip in computer.ip_addresses] if computer.ip_addresses else [],
+                os_name=computer.os_name,
+                os_version=computer.os_version,
+                cpu=computer.cpu,
+                ram=computer.ram,
+                mac=computer.mac,
+                mac_addresses=[mac.address for mac in computer.mac_addresses] if computer.mac_addresses else [],
+                motherboard=computer.motherboard,
+                last_boot=computer.last_boot,
+                is_virtual=computer.is_virtual,
+                check_status=computer.check_status.value if computer.check_status else None,
+                last_updated=computer.last_updated.isoformat() if computer.last_updated else None,
+                disks=[schemas.Disk(
+                    device_id=disk.device_id,
+                    model=disk.model or "Unknown",
+                    total_space=disk.total_space,  # Байты, как в базе
+                    free_space=disk.free_space  # Байты, как в базе
+                ) for disk in computer.disks] if computer.disks else [],
+                software=[schemas.Software(
+                    name=soft.name,
+                    version=soft.version or "Unknown",
+                    install_date=soft.install_date.isoformat() if soft.install_date else None,
+                    action=soft.action or "Installed",
+                    is_deleted=soft.is_deleted
+                ) for soft in computer.software] if computer.software else [],
+                roles=[schemas.Role(name=role.name) for role in computer.roles] if computer.roles else [],
+                video_cards=[schemas.VideoCard(
+                    name=card.name,
+                    driver_version=card.driver_version
+                ) for card in computer.video_cards] if computer.video_cards else [],
+                processors=[schemas.Processor(
+                    name=proc.name,
+                    number_of_cores=proc.number_of_cores,
+                    number_of_logical_processors=proc.number_of_logical_processors
+                ) for proc in computer.processors] if computer.processors else []
             )
-            db_computer = result.scalar_one_or_none()
-            if db_computer:
-                old_status = db_computer.check_status
-                try:
-                    new_check_status = models.CheckStatus(check_status)
-                except ValueError:
-                    logger.error(f"Недопустимое значение check_status: {check_status}")
-                    return None
-                if old_status != new_check_status:
-                    db_computer.check_status = new_check_status
-                    db_computer.last_updated = datetime.utcnow()
-                    await self.async_log_change(db_computer.id, "check_status", str(old_status), str(new_check_status))
-                    logger.info(f"Обновлен check_status для {hostname}: {new_check_status}")
-                return db_computer
-            return None
+            logger.debug(f"Transformed data: roles={len(result.roles or [])}, software={len(result.software or [])}, "
+                        f"disks={len(result.disks or [])}, "
+                        f"disks_data={[{'device_id': d.device_id, 'total_space_gb': d.total_space_gb, 'free_space_gb': d.free_space_gb} for d in result.disks]}")
+            return result
         except Exception as e:
-            logger.error(f"Ошибка обновления check_status для {hostname}: {str(e)}", exc_info=True)
-            raise
-
-    async def async_get_change_log(self, computer_id: int) -> List[models.ChangeLog]:
-        """Получает историю изменений."""
-        logger.debug(f"Запрос истории для computer_id: {computer_id}")
-        try:
-            result = await self.db.execute(
-                select(models.ChangeLog)
-                .filter(models.ChangeLog.computer_id == computer_id)
-                .order_by(models.ChangeLog.changed_at.desc())
-            )
-            logs = result.scalars().all()
-            return [schemas.ChangeLog(**log.__dict__) for log in logs]
-        except Exception as e:
-            logger.error(f"Ошибка при получении истории изменений: {str(e)}")
-            raise
-
-    async def async_upsert_ad_computer(self, computer_data: dict) -> models.Computer:
-        """Добавляет или обновляет запись о компьютере из AD."""
-        try:
-            result = await self.db.execute(
-                select(models.ADComputer).filter(models.ADComputer.hostname == computer_data["hostname"])
-            )
-            db_comp = result.scalar_one_or_none()
-            current_time = datetime.utcnow()
-            if db_comp:
-                db_comp.os_name = computer_data["os_name"]
-                db_comp.object_guid = computer_data["object_guid"]
-                db_comp.when_created = computer_data["when_created"]
-                db_comp.when_changed = computer_data["when_changed"]
-                db_comp.enabled = computer_data["enabled"]
-                db_comp.last_updated = current_time
-            else:
-                db_comp = models.ADComputer(
-                    hostname=computer_data["hostname"],
-                    os_name=computer_data["os_name"],
-                    object_guid=computer_data["object_guid"],
-                    when_created=computer_data["when_created"],
-                    when_changed=computer_data["when_changed"],
-                    enabled=computer_data["enabled"],
-                    last_updated=current_time
-                )
-                self.db.add(db_comp)
-
-            logger.info(f"{'Обновлен' if db_comp.id else 'Создан'} AD компьютер: {computer_data['hostname']}")
-            return db_comp
-        except Exception as e:
-            logger.error(f"Ошибка при обновлении AD компьютера {computer_data['hostname']}: {str(e)}")
+            logger.error(f"Ошибка преобразования компьютера {computer.id} в Pydantic-схему: {str(e)}")
             raise
 
     async def get_computers(
@@ -408,106 +380,140 @@ class ComputerRepository:
         limit: int = 10,
         server_filter: Optional[str] = None,
     ) -> Tuple[List[schemas.ComputerList], int]:
-        """Получение списка компьютеров с фильтрацией и пагинацией."""
+        """
+        Получает список компьютеров с фильтрацией, сортировкой и пагинацией.
+
+        :param hostname: Фильтр по имени хоста
+        :param os_name: Фильтр по имени ОС
+        :param check_status: Фильтр по статусу проверки
+        :param sort_by: Поле для сортировки
+        :param sort_order: Порядок сортировки (asc/desc)
+        :param page: Номер страницы
+        :param limit: Количество записей на страницу
+        :param server_filter: Фильтр по типу ОС (server/client)
+        :return: Кортеж из списка компьютеров и общего количества
+        """
         logger.debug(f"Запрос компьютеров с фильтрами: hostname={hostname}, os_name={os_name}, server_filter={server_filter}")
 
         try:
             query = select(models.Computer).options(
                 selectinload(models.Computer.disks),
                 selectinload(models.Computer.software),
-                selectinload(models.Computer.roles)
+                selectinload(models.Computer.roles),
+                selectinload(models.Computer.video_cards),
+                selectinload(models.Computer.processors),
+                selectinload(models.Computer.ip_addresses),
+                selectinload(models.Computer.mac_addresses)
             )
 
             if hostname:
                 query = query.filter(models.Computer.hostname.ilike(f"%{hostname}%"))
             if os_name:
-                if os_name.lower() == 'unknown':
-                    query = query.filter(models.Computer.os_name.is_(None))
-                else:
-                    query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))  # Сохраняем ilike для частичного соответствия
+                query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))
             if check_status:
                 query = query.filter(models.Computer.check_status == check_status)
-            if server_filter == 'server' or (os_name and any(keyword in os_name.lower() for keyword in ['server', 'hyper-v'])):
-                query = query.filter(
-                    models.Computer.os_name.ilike('%server%') | models.Computer.os_name.ilike('%hyper-v%')
-                )
+            if server_filter == "server":
+                query = query.filter(models.Computer.os_name.ilike("%server%"))
+            elif server_filter == "client":
+                query = query.filter(~models.Computer.os_name.ilike("%server%"))
 
-            # Подсчет общего количества записей
-            count_query = select(func.count()).select_from(query.subquery())
-            count_result = await self.db.execute(count_query)
-            total = count_result.scalar_one()
-
-            # Сортировка
-            if sort_by in models.Computer.__table__.columns:
-                sort_column = getattr(models.Computer, sort_by)
+            if sort_by in ["hostname", "os_name", "last_updated"]:
+                order_column = getattr(models.Computer, sort_by)
                 if sort_order.lower() == "desc":
-                    sort_column = sort_column.desc()
-                query = query.order_by(sort_column)
+                    order_column = order_column.desc()
+                query = query.order_by(order_column)
             else:
                 query = query.order_by(models.Computer.hostname)
 
-            # Пагинация
+            count_query = select(func.count()).select_from(query.subquery())
+            result = await self.db.execute(count_query)
+            total = result.scalar()
+
             query = query.offset((page - 1) * limit).limit(limit)
             result = await self.db.execute(query)
-            computers = result.unique().scalars().all()
+            computers_result = result.scalars().all()
 
-            computer_list = [
-                schemas.ComputerList(
-                    id=computer.id,
-                    hostname=computer.hostname,
-                    ip=computer.ip,
-                    os_name=computer.os_name,
-                    os_version=computer.os_version,
-                    cpu=computer.cpu,
-                    ram=computer.ram,
-                    mac=computer.mac,
-                    motherboard=computer.motherboard,
-                    last_boot=computer.last_boot,
-                    is_virtual=computer.is_virtual,
-                    check_status=computer.check_status.value if computer.check_status else None,
-                    last_updated=computer.last_updated.isoformat(),
-                    disks=[schemas.Disk(DeviceID=disk.device_id, TotalSpace=disk.total_space, FreeSpace=disk.free_space) 
-                        for disk in computer.disks],
-                    software=[schemas.Software(DisplayName=soft.name, DisplayVersion=soft.version,
-                                            InstallDate=soft.install_date.isoformat() if soft.install_date else None,
-                                            Action=soft.action, is_deleted=soft.is_deleted)
-                            for soft in computer.software],
-                    roles=[schemas.Role(Name=role.name) for role in computer.roles]
-                )
-                for computer in computers
-            ]
-
+            computer_list = [await self._computer_to_pydantic(computer) for computer in computers_result]
             logger.debug(f"Найдено {len(computer_list)} компьютеров, общее количество: {total}, SQL: {str(query)}")
             return computer_list, total
         except Exception as e:
             logger.error(f"Ошибка при получении компьютеров: {str(e)}")
             raise
 
-    async def async_get_computer_by_id(self, computer_id: int) -> Optional[Computer]:
-        """Получает данные компьютера по ID с загрузкой связанных сущностей."""
+    async def async_log_change(self, computer_id: int, field: str, old_value: str, new_value: str) -> None:
+        """
+        Логирует изменение поля компьютера.
+
+        :param computer_id: ID компьютера
+        :param field: Измененное поле
+        :param old_value: Старое значение
+        :param new_value: Новое значение
+        """
+        try:
+            change_log = models.ChangeLog(
+                computer_id=computer_id,
+                field=field,
+                old_value=old_value,
+                new_value=new_value,
+                changed_at=datetime.utcnow()
+            )
+            self.db.add(change_log)
+            await self.db.flush()
+        except Exception as e:
+            logger.error(f"Ошибка при логировании изменения для computer_id {computer_id}: {str(e)}")
+            raise
+
+    async def async_get_computer_by_id(self, computer_id: int) -> Optional[schemas.ComputerList]:
+        """
+        Получает данные компьютера по ID с загрузкой всех связанных сущностей.
+
+        :param computer_id: ID компьютера
+        :return: Pydantic-схема ComputerList или None, если компьютер не найден
+        """
         logger.debug(f"Запрос компьютера по ID: {computer_id}")
         try:
-            stmt = select(Computer).options(
-                joinedload(Computer.roles),
-                joinedload(Computer.disks),
-                joinedload(Computer.software)
-            ).filter(Computer.id == computer_id)
+            stmt = select(models.Computer).options(
+                selectinload(models.Computer.roles),
+                selectinload(models.Computer.disks),
+                selectinload(models.Computer.software),
+                selectinload(models.Computer.ip_addresses),
+                selectinload(models.Computer.processors),
+                selectinload(models.Computer.mac_addresses),
+                selectinload(models.Computer.video_cards)
+            ).filter(models.Computer.id == computer_id)
 
             result = await self.db.execute(stmt)
-            computer = result.unique().scalars().first()
+            computer = result.scalars().first()  # Удаляем .unique(), так как selectinload не требует его
 
             if computer:
                 logger.debug(
                     f"Компьютер {computer.id}: roles={len(computer.roles)}, "
-                    f"software={len(computer.software)}, disks={len(computer.disks)}"
+                    f"software={len(computer.software)}, disks={len(computer.disks)}, "
+                    f"ip_addresses={len(computer.ip_addresses)}, processors={len(computer.processors)}, "
+                    f"mac_addresses={len(computer.mac_addresses)}, video_cards={len(computer.video_cards)}"
                 )
+                return await self._computer_to_pydantic(computer)
             else:
                 logger.warning(f"Компьютер с ID {computer_id} не найден")
-
-            return computer
+                return None
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при получении компьютера ID {computer_id}: {str(e)}")
             raise
         except Exception as e:
             logger.error(f"Неизвестная ошибка при получении компьютера ID {computer_id}: {str(e)}")
-            raise   
+            raise
+
+    async def async_get_change_log(self, computer_id: int) -> List[models.ChangeLog]:
+            """Получает историю изменений."""
+            logger.debug(f"Запрос истории для computer_id: {computer_id}")
+            try:
+                result = await self.db.execute(
+                    select(models.ChangeLog)
+                    .filter(models.ChangeLog.computer_id == computer_id)
+                    .order_by(models.ChangeLog.changed_at.desc())
+                )
+                logs = result.scalars().all()
+                return [schemas.ChangeLog(**log.__dict__) for log in logs]
+            except Exception as e:
+                logger.error(f"Ошибка при получении истории изменений: {str(e)}")
+                raise

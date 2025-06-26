@@ -27,17 +27,53 @@ class ADComputer(Base):
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
 
+class Processor(Base):
+    __tablename__ = "processors"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    number_of_cores: Mapped[int] = mapped_column(Integer, nullable=False)
+    number_of_logical_processors: Mapped[int] = mapped_column(Integer, nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="processors")
+    __table_args__ = (
+        Index('idx_computer_processor', 'computer_id', 'name', unique=True),
+        Index('idx_processor_computer_id', 'computer_id'),
+    )
+
+class IPAddress(Base):
+    __tablename__ = "ip_addresses"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    address: Mapped[str] = mapped_column(String(45), nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="ip_addresses")
+    __table_args__ = (
+        Index('idx_computer_ip', 'computer_id', 'address', unique=True),
+    )
+
+class MACAddress(Base):
+    __tablename__ = "mac_addresses"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    address: Mapped[str] = mapped_column(String(17), nullable=False)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="mac_addresses")
+    __table_args__ = (
+        Index('idx_computer_mac', 'computer_id', 'address', unique=True),
+    )
+
 class Computer(Base):
     __tablename__ = "computers"
+    processors: Mapped[List["Processor"]] = relationship("Processor", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     ip: Mapped[Optional[str]] = mapped_column(String)
     os_name: Mapped[Optional[str]] = mapped_column(String)
     os_version: Mapped[Optional[str]] = mapped_column(String)
     cpu: Mapped[Optional[str]] = mapped_column(String)
     ram: Mapped[Optional[int]] = mapped_column(Integer)
     mac: Mapped[Optional[str]] = mapped_column(String)
-    motherboard: Mapped[Optional[str]] = mapped_column(String) 
+    motherboard: Mapped[Optional[str]] = mapped_column(String)
     last_boot: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)
@@ -47,6 +83,7 @@ class Computer(Base):
     roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     software: Mapped[List["Software"]] = relationship("Software", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     disks: Mapped[List["Disk"]] = relationship("Disk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    video_cards: Mapped[List["VideoCard"]] = relationship("VideoCard", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     change_logs: Mapped[List["ChangeLog"]] = relationship("ChangeLog", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
 
     __table_args__ = (
@@ -85,12 +122,25 @@ class Disk(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
     device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Новое поле для модели диска
     total_space: Mapped[float] = mapped_column(Float, nullable=False)
     free_space: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="disks")
     __table_args__ = (
         Index('idx_computer_disk', 'computer_id', 'device_id', unique=True),
         Index('idx_disk_computer_id', 'computer_id'),
+    )
+
+class VideoCard(Base):
+    __tablename__ = "video_cards"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    driver_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="video_cards")
+    __table_args__ = (
+        Index('idx_computer_video_card', 'computer_id', 'name', unique=True),
+        Index('idx_video_card_computer_id', 'computer_id'),
     )
 
 class ChangeLog(Base):

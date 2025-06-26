@@ -13,33 +13,61 @@ class Role(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class Software(BaseModel):
-    name: NonEmptyStr = Field(..., alias="DisplayName")
-    version: Optional[str] = Field(None, alias="DisplayVersion")
+    name: str = Field(..., alias="DisplayName", min_length=1)
+    version: Optional[str] = Field("Unknown", alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
-    action: Optional[str] = Field(None, alias="Action")
+    action: Optional[str] = Field("Installed", alias="Action")
     is_deleted: bool = Field(default=False)
+
     @field_validator('action')
     @classmethod
     def validate_action(cls, v):
         if v and v not in ["Installed", "Uninstalled"]:
             raise ValueError("Action должно быть 'Installed' или 'Uninstalled'")
         return v
+
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class Disk(BaseModel):
-    device_id: Optional[NonEmptyStr] = Field(None, alias="DeviceID")
-    total_space: float = Field(ge=0, alias="TotalSpace")
-    free_space: Optional[int] = Field(None, ge=0, alias="FreeSpace")
+    device_id: Optional[str] = Field(None, alias="device_id", min_length=1)
+    model: Optional[str] = Field(None, alias="model", min_length=1)
+    total_space: float = Field(ge=0, alias="total_space")
+    free_space: Optional[int] = Field(None, ge=0, alias="free_space")
+
+    @property
+    def total_space_gb(self) -> float:
+        """Возвращает общий объём диска в гигабайтах."""
+        return self.total_space / (1024 ** 3) if self.total_space else 0.0
+
+    @property
+    def free_space_gb(self) -> Optional[float]:
+        """Возвращает свободное место на диске в гигабайтах."""
+        return self.free_space / (1024 ** 3) if self.free_space else None
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class VideoCard(BaseModel):
+    name: NonEmptyStr = Field(..., alias="name")
+    driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class Processor(BaseModel):
+    name: NonEmptyStr = Field(..., alias="name")
+    number_of_cores: int = Field(..., alias="number_of_cores")
+    number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class ComputerBase(BaseModel):
     hostname: NonEmptyStr
     ip: Optional[str] = None
+    ip_addresses: Optional[List[str]] = None  # Поддержка списка IP-адресов
     os_name: Optional[str] = None
     os_version: Optional[str] = None
+    processors: Optional[List[Processor]] = None
     cpu: Optional[str] = None
     ram: Optional[int] = None
     mac: Optional[str] = None
+    mac_addresses: Optional[List[str]] = None  # Поддержка списка MAC-адресов
     motherboard: Optional[str] = None
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = None
@@ -48,34 +76,57 @@ class ComputerBase(BaseModel):
     @classmethod
     def validate_hostname_field(cls, v):
         return validate_hostname(cls, v)
-    @field_validator('mac')
+    @field_validator('mac', 'mac_addresses')
     @classmethod
-    def validate_mac(cls, v):
+    def validate_mac(cls, v, info):
+        if isinstance(v, list):
+            return [validate_mac_address(cls, x, f"MAC address in {info.field_name}") for x in v if x]
         return validate_mac_address(cls, v)
-    @field_validator('ip')
+    @field_validator('ip', 'ip_addresses')
     @classmethod
-    def validate_ip(cls, v):
+    def validate_ip(cls, v, info):
+        if isinstance(v, list):
+            return [validate_ip_address(cls, x, f"IP address in {info.field_name}") for x in v if x]
         return validate_ip_address(cls, v)
     model_config = ConfigDict(from_attributes=True)
 
 class ComputerList(ComputerBase):
     id: int
     last_updated: datetime
+    disks: List[Disk] = []
+    software: List[Software] = []
+    roles: List[Role] = []
+    video_cards: List[VideoCard] = []
+    processors: List[Processor] = []
     model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
 
 class Computer(ComputerBase):
     id: int
+    processors: List[Processor] = []
     last_updated: datetime
     disks: List[Disk] = []
     roles: List[Role] = []
     software: List[Software] = []
+    video_cards: List[VideoCard] = []  # Новое поле
     model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
+
+class IPAddress(BaseModel):
+    address: NonEmptyStr
+    model_config = ConfigDict(from_attributes=True)
+
+class MACAddress(BaseModel):
+    address: NonEmptyStr
+    model_config = ConfigDict(from_attributes=True)
 
 class ComputerCreate(ComputerBase):
     roles: List[Role] = []
+    processors: List[Processor] = []
     software: List[Software] = []
     disks: List[Disk] = []
+    video_cards: List[VideoCard] = []  # Новое поле
     model_config = ConfigDict(from_attributes=True)
+    ip_addresses: List[IPAddress] = []
+    mac_addresses: List[MACAddress] = []
 
 class ComputerUpdateCheckStatus(BaseModel):
     hostname: NonEmptyStr
@@ -155,6 +206,8 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = None
     correlation_id: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
+
+
 
 class AppSettingUpdate(BaseModel):
     ad_server_url: Optional[str] = None

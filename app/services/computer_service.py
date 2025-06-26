@@ -1,4 +1,3 @@
-# app/computer_service.py
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -6,12 +5,12 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..settings import settings
-from ..data_collector import get_pc_info
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
 from ..database import get_db
 from ..utils import validate_hostname, validate_ip_address, validate_mac_address
-from ..schemas import ComputerCreate, Role, Software, Disk, CheckStatus, Computer
+from ..schemas import ComputerCreate, Role, Software, Disk, CheckStatus, Computer, VideoCard, Processor
+from ..data_collector import WinRMDataCollector
 
 logger = logging.getLogger(__name__)
 
@@ -45,91 +44,6 @@ class ComputerService:
             logger.error(f"Ошибка получения хостов из БД: {str(e)}")
             raise
 
-
-    async def process_disks(self, disks: List[dict], hostname: str) -> List[dict]:
-        """Обрабатывает список дисков для хоста."""
-        logger.debug(f"Входные данные дисков для {hostname}: {disks}")
-        valid_disks = []
-        for disk in disks:
-            try:
-                disk_data = {
-                    "device_id": disk.get("device_id") or disk.get("DeviceID"),
-                    "total_space": float(disk.get("total_space") or disk.get("TotalSpace")),
-                    "free_space": int(disk.get("free_space") or disk.get("FreeSpace")) if disk.get("free_space") or disk.get("FreeSpace") else None
-                }
-                if disk_data["device_id"] and disk_data["total_space"] is not None:
-                    valid_disks.append(disk_data)
-                    logger.debug(f"Валидный диск для {hostname}: {disk_data}")
-                else:
-                    logger.warning(f"Пропущен диск для {hostname}: недостаточно данных {disk_data}")
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ошибка обработки диска для {hostname}: {str(e)}")
-        return valid_disks
-    
-    def process_list(self, input_list: List[Dict], key: str, schema: Any, required_fields: Optional[List[str]] = None) -> List[Any]:
-            if not input_list:
-                return []
-            result = []
-            required = required_fields or []
-            key_lower = key.lower()
-            
-            for item in input_list:
-                try:
-                    if not isinstance(item, dict):
-                        logger.warning(f"Некорректный формат элемента: {item}")
-                        continue
-                    
-                    # Нормализуем ключи в нижний регистр
-                    normalized_item = {k.lower(): v for k, v in item.items()}
-                    
-                    # Проверяем наличие ключа (в любом регистре)
-                    found_key = None
-                    for k in normalized_item:
-                        if k == key_lower:
-                            found_key = k
-                            break
-                    if not found_key:
-                        logger.warning(f"Отсутствует ключ {key} в элементе: {item}")
-                        continue
-                    
-                    # Проверяем обязательные поля с учетом алиасов
-                    missing_fields = []
-                    formatted_item = {key: normalized_item[found_key]}
-                    for f in required:
-                        found = False
-                        for k in normalized_item:
-                            if k == f.lower():
-                                normalized_item[f] = normalized_item[k]
-                                formatted_item[f] = normalized_item[k]
-                                found = True
-                                break
-                        if not found:
-                            missing_fields.append(f)
-                    if missing_fields:
-                        logger.warning(f"Отсутствуют обязательные поля {missing_fields} в элементе: {item}")
-                        continue
-                    
-                    # Приводим ключи к ожидаемому формату для схемы
-                    if schema == Disk:
-                        # Специальная обработка для Disk с учетом алиасов
-                        formatted_item = {
-                            "DeviceID": normalized_item.get("deviceid", normalized_item.get("device_id")),
-                            "TotalSpace": normalized_item.get("totalspace", normalized_item.get("total_space")),
-                            "FreeSpace": normalized_item.get("freespace", normalized_item.get("free_space"))
-                        }
-                    else:
-                        for f in required:
-                            if f.lower() in normalized_item:
-                                formatted_item[f] = normalized_item[f.lower()]
-                    
-                    # Создаем объект схемы
-                    result.append(schema(**formatted_item))
-                    logger.debug(f"Успешно обработан элемент: {formatted_item}")
-                    
-                except Exception as e:
-                    logger.error(f"Ошибка обработки элемента {item}: {str(e)}")
-            return result
-
     async def prepare_computer_data_for_db(self, comp_data: Dict[str, Any], hostname: str, mode: str = "Full") -> ComputerCreate:
         """Подготовка данных компьютера для сохранения в БД."""
         logger.debug(f"Подготовка данных для компьютера: {hostname}")
@@ -137,8 +51,10 @@ class ComputerService:
         try:
             # Валидация основных полей
             validated_hostname = validate_hostname(None, hostname)
-            ip_address = validate_ip_address(None, comp_data.get('ip_address'))
-            mac_address = validate_mac_address(None, comp_data.get('mac_address'))
+            ip_addresses = comp_data.get('ip_addresses', [comp_data.get('ip_address', '')]) or ['']
+            mac_addresses = comp_data.get('mac_addresses', [comp_data.get('mac_address', '')]) or ['']
+            ip_address = validate_ip_address(None, ip_addresses[0]) if ip_addresses[0] else None
+            mac_address = validate_mac_address(None, mac_addresses[0]) if mac_addresses[0] else None
 
             # Нормализация os_name
             os_name = comp_data.get('os_name', 'Unknown')
@@ -146,34 +62,33 @@ class ComputerService:
                 os_name = 'Unknown'
             os_name = os_name.replace('Майкрософт ', '').replace('Microsoft ', '')
 
-            # Преобразование ролей в формат словарей, если они пришли как строки
-            raw_roles = comp_data.get('roles', [])
-            roles_data = [
-                {"Name": role} if isinstance(role, str) else role
-                for role in raw_roles
-            ]
-
             # Обработка списков
-            roles = self.process_list(roles_data, key="Name", schema=Role, required_fields=["Name"])
-            software = self.process_list(comp_data.get('software', []), key="DisplayName", schema=Software, required_fields=["DisplayName"])
-            disks = self.process_list(comp_data.get('disks', []), key="DeviceID", schema=Disk, required_fields=["total_space"])
+            roles = [Role(name=role) for role in comp_data.get('roles', [])]
+            software = [Software(**soft) for soft in comp_data.get('software', [])]
+            disks = [Disk(**disk) for disk in comp_data.get('disks', [])]
+            video_cards = [VideoCard(**card) for card in comp_data.get('video_cards', [])]
+            processors = [Processor(**proc) for proc in comp_data.get('processors', [])]
 
             # Формирование объекта ComputerCreate
             computer_data = ComputerCreate(
                 hostname=validated_hostname,
                 ip=ip_address,
+                ip_addresses=ip_addresses,
                 os_name=os_name,
                 os_version=comp_data.get('os_version'),
                 cpu=comp_data.get('cpu'),
                 ram=comp_data.get('ram'),
                 mac=mac_address,
+                mac_addresses=mac_addresses,
                 motherboard=comp_data.get('motherboard'),
-                last_boot=comp_data.get('last_boot'),
+                last_boot=datetime.fromisoformat(comp_data['last_boot']) if comp_data.get('last_boot') else None,
                 is_virtual=comp_data.get('is_virtual', False),
                 check_status=comp_data.get('check_status', CheckStatus.success),
                 roles=roles,
                 software=software,
-                disks=disks 
+                disks=disks,
+                video_cards=video_cards,
+                processors=processors
             )
             logger.info(f"Данные компьютера {hostname} подготовлены успешно")
             return computer_data
@@ -182,18 +97,18 @@ class ComputerService:
             raise
 
     async def upsert_computer_from_schema(self, comp_data: ComputerCreate, hostname: str) -> Computer:
-            """Оновлення або створення комп'ютера з використанням схеми."""
-            try:
-                computer_id = await self.repo.async_upsert_computer(comp_data, hostname)
-                db_computer = await self.repo.async_get_computer_by_id(computer_id)
-                if not db_computer:
-                    logger.error(f"Комп'ютер {hostname} не знайдено після збереження")
-                    raise ValueError("Комп'ютер не знайдено після збереження")
-                logger.info(f"Комп'ютер {hostname} успішно збережено з ID {computer_id}")
-                return db_computer
-            except Exception as e:
-                logger.error(f"Помилка збереження комп'ютера {hostname}: {str(e)}")
-                raise
+        """Обновление или создание компьютера с использованием схемы."""
+        try:
+            computer_id = await self.repo.async_upsert_computer(comp_data, hostname)
+            db_computer = await self.repo.async_get_computer_by_id(computer_id)
+            if not db_computer:
+                logger.error(f"Компьютер {hostname} не найден после сохранения")
+                raise ValueError("Компьютер не найден после сохранения")
+            logger.info(f"Компьютер {hostname} успешно сохранен с ID {computer_id}")
+            return Computer.from_orm(db_computer)
+        except Exception as e:
+            logger.error(f"Ошибка сохранения компьютера {hostname}: {str(e)}")
+            raise
 
     async def create_scan_task(self, task_id: str) -> models.ScanTask:
         async with get_db() as db:
@@ -271,13 +186,25 @@ class ComputerService:
                 db_computer = db_computer_result.scalars().first()
 
                 mode = self._determine_scan_mode(db_computer)
-                
-                result_data = await get_pc_info(
-                    hostname=host,
-                    user=settings.ad_username,
-                    password=settings.ad_password,
+
+                # Проверяем, является ли хост сервером
+                is_server = False
+                if db_computer and db_computer.os_name and "server" in db_computer.os_name.lower():
+                    is_server = True
+                else:
+                    result = await db.execute(
+                        select(models.ADComputer).filter(models.ADComputer.hostname == host)
+                    )
+                    ad_computer = result.scalars().first()
+                    is_server = ad_computer and ad_computer.os_name and "server" in ad_computer.os_name.lower()
+
+                # Создаем коллектор и собираем данные
+                collector = WinRMDataCollector(hostname=host, username=settings.ad_username, password=settings.ad_password)
+                result_data = await collector.get_all_pc_info(
+                    mode=mode,
                     last_updated=db_computer.last_updated if db_computer else None,
                     last_full_scan=db_computer.last_full_scan if db_computer else None,
+                    is_server=is_server
                 )
 
                 if result_data and result_data.get("check_status") not in ("unreachable", "failed"):

@@ -9,6 +9,9 @@ import asyncio
 import requests
 from contextlib import contextmanager
 from .settings import settings
+from sqlalchemy import select
+from .database import get_db
+from . import models
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +132,9 @@ class WinRMDataCollector:
                 logger.error(f"Неожиданная ошибка при выполнении {script_name} для {self.hostname}: {str(e)}", exc_info=True)
                 raise
 
-    async def get_system_info(self) -> dict:
-        return await self._run_script("system_info.ps1")
+    async def get_system_info(self, is_server: bool = False) -> dict:
+            script_name = "server_info.ps1" if is_server else "system_info.ps1"
+            return await self._run_script(script_name)
 
     async def get_software_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> list:
         data = await self._run_script("software_info.ps1", mode=mode, last_updated=last_updated)
@@ -139,47 +143,75 @@ class WinRMDataCollector:
             return []
         return data
 
-    async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> dict:
-        result = {
-            "hostname": self.hostname,
-            "check_status": "partial",
-            "error": None
-        }
-        try:
-            system_data = await self.get_system_info()
-            result.update(system_data)
-            logger.info( f"Собраны данные для {self.hostname} raw data: {system_data}")
-            result["check_status"] = "success"
-        except Exception as e:
-            result["error"] = f"System info error: {str(e)}"
-            result["check_status"] = "failed"
-        try:
-            software_data = await self.get_software_info(mode=mode, last_updated=last_updated)
-            result["software"] = software_data
-            if result["check_status"] != "failed":
+    async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None, is_server: bool = False) -> dict:
+            result = {
+                "hostname": self.hostname,
+                "check_status": "partial",
+                "error": None
+            }
+            try:
+                system_data = await self.get_system_info(is_server=is_server)
+                result.update(system_data)
+                logger.info(f"Собраны данные для {self.hostname} raw data: {system_data}")
                 result["check_status"] = "success"
-        except Exception as e:
-            error_msg = f"Software info error: {str(e)}"
-            result["error"] = f"{result['error']}; {error_msg}" if result["error"] else error_msg
-            if result["check_status"] == "success":
-                result["check_status"] = "partial"
-        logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
-        return result
+            except Exception as e:
+                result["error"] = f"System info error: {str(e)}"
+                result["check_status"] = "failed"
+            try:
+                software_data = await self.get_software_info(mode=mode, last_updated=last_updated)
+                result["software"] = software_data
+                if result["check_status"] != "failed":
+                    result["check_status"] = "success"
+            except Exception as e:
+                error_msg = f"Software info error: {str(e)}"
+                result["error"] = f"{result['error']}; {error_msg}" if result["error"] else error_msg
+                if result["check_status"] == "success":
+                    result["check_status"] = "partial"
+            logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
+            return result 
+    
+    async def get_pc_info(hostname: str, user: str, password: str, retries: int = 3, last_updated: Optional[datetime] = None, last_full_scan: Optional[datetime] = None) -> Optional[Dict]:
+        """Collects PC information and checks if the host is a server using AD or OS name data."""
+        collector = WinRMDataCollector(hostname, user, password)
+        for attempt in range(1, retries + 1):
+            try:
+                async with get_db() as session:
+                    # Check if host is a server
+                    is_server = False
+                    result = await session.execute(
+                        select(models.Computer).filter(models.Computer.hostname == hostname)
+                    )
+                    computer = result.scalars().first()
+                    if computer and computer.os_name and "server" in computer.os_name.lower():
+                        is_server = True
+                    else:
+                        result = await session.execute(
+                            select(models.ADComputer).filter(models.ADComputer.hostname == hostname)
+                        )
+                        ad_computer = result.scalars().first()
+                        is_server = ad_computer and ad_computer.os_name and "server" in ad_computer.os_name.lower()
 
-async def get_pc_info(hostname: str, user: str, password: str, retries: int = 3, last_updated: Optional[datetime] = None, last_full_scan: Optional[datetime] = None) -> Optional[Dict]:
-    collector = WinRMDataCollector(hostname, user, password)
-    for attempt in range(1, retries + 1):
-        try:
-            mode = "Full" if last_updated is None or (
-                last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
-            ) else "Changes"
-            return await collector.get_all_pc_info(mode=mode, last_updated=last_updated)
-        except ConnectionError as e:
-            logger.warning(f"Попытка {attempt}/{retries} не удалась для {hostname}: {str(e)}")
-            if attempt == retries:
+                    # Determine scan mode
+                    mode = "Full" if last_updated is None or (
+                        last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
+                    ) else "Changes"
+
+                    # Collect PC info
+                    return await collector.get_all_pc_info(mode=mode, last_updated=last_updated, is_server=is_server)
+            except ConnectionError as e:
+                logger.warning(f"Попытка {attempt}/{retries} не удалась для {hostname}: {str(e)}")
+                if attempt == retries:
+                    return {
+                        "hostname": hostname,
+                        "check_status": "unreachable",
+                        "error": str(e)
+                    }
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Ошибка проверки серверного статуса или сбора данных для {hostname}: {str(e)}")
                 return {
                     "hostname": hostname,
-                    "check_status": "unreachable",
+                    "check_status": "error",
                     "error": str(e)
                 }
-            await asyncio.sleep(1)
+

@@ -167,29 +167,29 @@ const ComputerDetail: React.FC = () => {
   const diskColumns: TableProps<Disk>['columns'] = [
     {
       title: 'ID',
-      dataIndex: 'DeviceID',
-      key: 'DeviceID',
+      dataIndex: 'device_id',
+      key: 'device_id',
       sorter: true,
-      sortOrder: sort.key === 'DeviceID' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('DeviceID') }),
+      sortOrder: sort.key === 'device_id' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('device_id') }),
     },
     {
       title: 'Обсяг',
-      dataIndex: 'TotalSpace',
-      key: 'TotalSpace',
+      dataIndex: 'total_space',
+      key: 'total_space',
       render: (value) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ`,
       sorter: true,
-      sortOrder: sort.key === 'TotalSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('TotalSpace') }),
+      sortOrder: sort.key === 'total_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('total_space') }),
     },
     {
       title: 'Вільно',
-      dataIndex: 'FreeSpace',
-      key: 'FreeSpace',
-      render: (value, record) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ (${value && record.TotalSpace ? ((value / record.TotalSpace) * 100).toFixed(2) : '0'}%)`,
+      dataIndex: 'free_space',
+      key: 'free_space',
+      render: (value, record) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ (${value && record.total_space ? ((value / record.total_space) * 100).toFixed(2) : '0'}%)`,
       sorter: true,
-      sortOrder: sort.key === 'FreeSpace' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('FreeSpace') }),
+      sortOrder: sort.key === 'free_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({ onClick: () => handleSort('free_space') }),
     },
   ];
   const historyColumns: TableProps<ChangeLog>['columns'] = [
@@ -243,7 +243,7 @@ const ComputerDetail: React.FC = () => {
         <Table
           dataSource={computer.disks || []}
           columns={diskColumns}
-          rowKey={(record) => record.DeviceID ?? 'unknown-disk'}
+          rowKey={(record) => record.device_id ?? 'unknown-disk'}
           pagination={false}
           locale={{ emptyText: 'Немає даних про диски' }}
           size="small"

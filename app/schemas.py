@@ -17,16 +17,8 @@ class Software(BaseModel):
     name: str = Field(..., alias="DisplayName", min_length=1)
     version: Optional[str] = Field("Unknown", alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
-    action: Optional[str] = Field("Installed", alias="Action")
-    is_deleted: bool = Field(default=False)
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v):
-        if v and v not in ["Installed", "Uninstalled"]:
-            raise ValueError("Action должно быть 'Installed' или 'Uninstalled'")
-        return v
-
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class Disk(BaseModel):
@@ -38,6 +30,8 @@ class Disk(BaseModel):
     interface: Optional[NonEmptyStr] = None
     media_type: Optional[NonEmptyStr] = None
     volume_label: Optional[str] = None
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
 
     @property
     def total_space_gb(self) -> float:
@@ -53,16 +47,22 @@ class VideoCard(BaseModel):
     name: NonEmptyStr = Field(..., alias="name")
     driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
 
 class Processor(BaseModel):
     name: NonEmptyStr = Field(..., alias="name")
     number_of_cores: int = Field(..., alias="number_of_cores")
     number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
 
 class IPAddress(BaseModel):
     address: NonEmptyStr
     model_config = ConfigDict(from_attributes=True)
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
 
     @field_validator('address')
     @classmethod
@@ -72,6 +72,8 @@ class IPAddress(BaseModel):
 class MACAddress(BaseModel):
     address: NonEmptyStr
     model_config = ConfigDict(from_attributes=True)
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
 
     @field_validator('address')
     @classmethod
@@ -149,15 +151,6 @@ class ComputerUpdateCheckStatus(BaseModel):
     hostname: NonEmptyStr
     check_status: CheckStatus
     model_config = ConfigDict(from_attributes=True)
-
-class ChangeLog(BaseModel):
-    id: int
-    computer_id: int
-    field: str
-    old_value: Optional[str] = None
-    new_value: Optional[str] = None
-    changed_at: datetime
-    model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
 
 class ScanTask(BaseModel):
     id: NonEmptyStr

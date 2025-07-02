@@ -1,3 +1,4 @@
+# app/services/computer_service.py
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
+from ..repositories.related_entity_repository import RelatedEntityRepository
 from .. import models
 from ..database import get_db
 from ..schemas import ComputerCreate, Role, Software, Disk, CheckStatus, Computer, VideoCard, Processor, IPAddress, MACAddress
@@ -14,9 +16,10 @@ from ..data_collector import WinRMDataCollector, winrm_session
 logger = logging.getLogger(__name__)
 
 class ComputerService:
-    def __init__(self, db: AsyncSession, repo: ComputerRepository):
+    def __init__(self, db: AsyncSession, computer_repo: ComputerRepository, related_entity_repo: RelatedEntityRepository):
         self.db = db
-        self.repo = repo
+        self.computer_repo = computer_repo
+        self.related_entity_repo = related_entity_repo
 
     async def get_hosts_to_scan(self) -> List[str]:
         if settings.test_hosts and settings.test_hosts.strip():
@@ -94,11 +97,12 @@ class ComputerService:
 
     async def upsert_computer_from_schema(self, comp_data: ComputerCreate, hostname: str) -> Computer:
         try:
-            computer_id = await self.repo.async_upsert_computer(comp_data, hostname)
-            db_computer = await self.repo.async_get_computer_by_id(computer_id)
+            computer_id = await self.computer_repo.async_upsert_computer(comp_data, hostname)
+            db_computer = await self.computer_repo.async_get_computer_by_id(computer_id)
             if not db_computer:
                 logger.error(f"Компьютер {hostname} не найден после сохранения")
                 raise ValueError("Компьютер не найден после сохранения")
+            await self.related_entity_repo.update_related_entities(db_computer, comp_data)
             logger.info(f"Компьютер {hostname} успешно сохранен с ID {computer_id}")
             return Computer.from_orm(db_computer)
         except Exception as e:
@@ -165,11 +169,10 @@ class ComputerService:
 
     async def _update_host_status(self, hostname: str, status: models.CheckStatus = None, error_msg: Optional[str] = None):
         async with get_db() as db:
-            repo = ComputerRepository(db)
             try:
                 if error_msg:
                     logger.error(f"Ошибка для хоста {hostname}: {error_msg}")
-                await repo.async_update_computer_check_status(
+                await self.change_log_repo.async_update_computer_check_status(
                     hostname=hostname,
                     check_status=status.value if status else models.CheckStatus.unreachable.value,
                 )
@@ -179,10 +182,8 @@ class ComputerService:
                 logger.error(f"Ошибка обновления статуса хоста {hostname}: {str(e)}")
                 raise
 
-
     async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         async with get_db() as db:
-            repo = ComputerRepository(db)
             try:
                 db_computer_result = await db.execute(select(models.Computer).filter(models.Computer.hostname == host))
                 db_computer = db_computer_result.scalars().first()
@@ -193,88 +194,32 @@ class ComputerService:
                 collector = WinRMDataCollector(hostname=host, username=settings.ad_username, password=settings.ad_password)
                 
                 with winrm_session(host, settings.ad_username, settings.ad_password) as session:
-                    if mode == "Full":
-                        # Передаем сессию явно в методы get_*, чтобы избежать создания новых сессий
-                        basic_info_task = collector._execute_script(session, "system_info.ps1")
-                        software_info_task = collector._execute_script(session, "software_info_full.ps1")
-                        disk_info_task = collector._execute_script(session, "disk_info.ps1")
-                        hardware_info_task = collector._execute_script(session, "hardware_info.ps1")
-
-                        results = await asyncio.gather(
-                            basic_info_task,
-                            software_info_task,
-                            disk_info_task,
-                            hardware_info_task,
-                            return_exceptions=True
-                        )
-                        basic_info, software_info, disk_info, hardware_info = results
-                        
-                        logger_adapter.debug(f"Данные disk_info для {host}: {disk_info}")
-                        
-                        errors = []
-                        for info, name in [(basic_info, "basic_info"), (hardware_info, "hardware_info")]:
-                            if isinstance(info, Exception):
-                                errors.append(f"{name} error: {str(info)}")
-                            elif isinstance(info, dict) and info.get("check_status") in ("unreachable", "failed"):
-                                errors.append(info.get("error", f"{name} failed"))
-                        
-                        if isinstance(software_info, Exception):
-                            errors.append(f"software_info error: {str(software_info)}")
-                        
-                        if isinstance(disk_info, Exception):
-                            errors.append(f"disk_info error: {str(disk_info)}")
-                        
-                        if errors:
-                            error_msg = "; ".join(errors)
-                            status = models.CheckStatus.unreachable if any("unreachable" in e for e in errors) else models.CheckStatus.failed
-                            await repo.async_update_computer_check_status(host, status.value)
-                            await db.commit()
-                            logger_adapter.error(f"Сбор данных для {host} не удался: {error_msg}")
-                            return False
-
-                        result_data = {
-                            "check_status": "success",
-                            "ip_addresses": basic_info.get("ip_addresses", []),
-                            "mac_addresses": basic_info.get("mac_addresses", []),
-                            "os_name": basic_info.get("os_name", "Unknown"),
-                            "os_version": basic_info.get("os_version"),
-                            "ram": basic_info.get("ram"),
-                            "motherboard": basic_info.get("motherboard"),
-                            "last_boot": basic_info.get("last_boot"),
-                            "is_virtual": basic_info.get("is_virtual", False),
-                            "roles": basic_info.get("roles", []),
-                            "software": software_info if isinstance(software_info, list) else [],
-                            "disks": disk_info if isinstance(disk_info, list) else [],
-                            "video_cards": hardware_info.get("video_cards", []),
-                            "processors": hardware_info.get("processors", [])
-                        }
-                    else:
-                        software_info = await collector._execute_script(session, "software_info_changes.ps1")
-                        if isinstance(software_info, dict) and software_info.get("check_status") in ("unreachable", "failed"):
-                            error_msg = software_info.get("error", "Неизвестная ошибка сбора данных")
-                            status = models.CheckStatus.unreachable if software_info.get("check_status") == "unreachable" else models.CheckStatus.failed
-                            await repo.async_update_computer_check_status(host, status.value)
-                            await db.commit()
-                            logger_adapter.error(f"Сбор данных для {host} не удался: {error_msg}")
-                            return False
-                        result_data = {
-                            "check_status": "success",
-                            "software": software_info if isinstance(software_info, list) else []
-                        }
+                    result_data = await collector.get_all_pc_info(session, mode=mode, last_updated=db_computer.last_updated if db_computer else None)
+                    
+                    logger_adapter.debug(f"Дані для {host}: {result_data}")
+                    
+                    if result_data.get("check_status") in ("unreachable", "failed"):
+                        error_msg = result_data.get("error", "Невідома помилка збору даних")
+                        status = models.CheckStatus.unreachable if result_data.get("check_status") == "unreachable" else models.CheckStatus.failed
+                        await self.computer_repo.async_update_computer_check_status(host, status.value)
+                        await db.commit()
+                        logger_adapter.error(f"Збір даних для {host} не вдався: {error_msg}")
+                        return False
 
                     computer_to_create = await self.prepare_computer_data_for_db(result_data, host, mode)
-                    await repo.async_upsert_computer(computer_to_create, host, mode)
+                    await self.computer_repo.async_upsert_computer(computer_to_create, host, mode)
+                    await self.related_entity_repo.update_related_entities(db_computer, computer_to_create)
                     await db.commit()
-                    logger_adapter.info(f"Хост {host} успешно обработан.")
+                    logger_adapter.info(f"Хост {host} успішно оброблено.")
                     return True
 
             except asyncio.CancelledError:
-                logger_adapter.error(f"Задача для хоста {host} была отменена")
+                logger_adapter.error(f"Задача для хоста {host} була скасована")
                 raise
             except Exception as e:
                 await db.rollback()
-                logger_adapter.error(f"Критическая ошибка при обработке хоста {host}: {str(e)}", exc_info=True)
-                await repo.async_update_computer_check_status(host, models.CheckStatus.unreachable.value)
+                logger_adapter.error(f"Критична помилка при обробці хоста {host}: {str(e)}", exc_info=True)
+                await self.computer_repo.async_update_computer_check_status(host, models.CheckStatus.unreachable.value)
                 await db.commit()
                 return False
 

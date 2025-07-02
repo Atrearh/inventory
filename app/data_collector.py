@@ -1,3 +1,4 @@
+# app/data_collector.py
 import logging
 import json
 import winrm
@@ -115,104 +116,87 @@ class WinRMDataCollector:
                 logger.error(f"Пустой вывод от {script_name} для {self.hostname}")
                 raise RuntimeError(f"Скрипт вернул пустой вывод")
             logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
-            data = json.loads(output)
-            # Нормализация вывода disk_info: оборачиваем словарь в список
-            if script_name == "disk_info.ps1" and isinstance(data, dict):
-                data = [data]
-            return data
-        except asyncio.TimeoutError:
-            logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}", exc_info=True)
-            raise
+            try:
+                data = json.loads(output)
+                logger.debug(f"Успешно распарсен JSON из {script_name}: {data}")
+                # Нормализация вывода disk_info: оборачиваем словарь в список
+                if script_name == "disk_info.ps1" and isinstance(data, dict):
+                    data = [data]
+                return data
+            except json.JSONDecodeError as e:
+                logger.error(f"Ошибка парсинга JSON в {script_name}: {str(e)}. Сырой вывод: {output}")
+                raise
         except Exception as e:
             logger.error(f"Неожиданная ошибка при выполнении {script_name} для {self.hostname}: {str(e)}", exc_info=True)
             raise
 
-    async def get_system_info(self, session: winrm.Session) -> Dict[str, Any]:
-        return await self._execute_script(session, "system_info.ps1")
-
-    async def get_software_info(self, session: winrm.Session, mode: str = "Full", last_updated: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Собирает информацию о программном обеспечении."""
-        script_name = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
-        data = await self._execute_script(session, script_name, last_updated=last_updated)
-        if not isinstance(data, list):
-            logger.warning(f"{script_name} вернул не массив: {data}")
-            return []
-        return data
-
-    async def get_disk_info(self, session: winrm.Session) -> List[Dict[str, Any]]:
-        """Собирает информацию о дисках."""
-        data = await self._execute_script(session, "disk_info.ps1")
-        if not isinstance(data, list):
-            logger.warning(f"disk_info.ps1 вернул не массив: {data}")
-            return []
-        return data
-
-    async def get_hardware_info(self, session: winrm.Session) -> Dict[str, Any]:
-        """Собирает информацию об оборудовании."""
-        return await self._execute_script(session, "hardware_info.ps1")
+    async def _is_server(self, session: winrm.Session) -> bool:
+        """Проверяет, является ли хост сервером, по версии ОС."""
+        try:
+            os_data = await self._execute_script(session, "hardware_info.ps1")
+            os_name = os_data.get("os_name", "").lower()
+            return "server" in os_name
+        except Exception as e:
+            logger.error(f"Ошибка проверки версии ОС для {self.hostname}: {str(e)}")
+            return False
 
     async def get_all_pc_info(self, session: winrm.Session, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
         """Собирает полную информацию о компьютере, используя одну WinRM-сессию."""
         result = {
             "hostname": self.hostname,
             "check_status": "partial",
-            "error": None
+            "error": None,
+            "ip_addresses": [],
+            "mac_addresses": [],
+            "processors": [],
+            "video_cards": [],
+            "disks": [],
+            "software": [],
+            "roles": []
         }
 
         try:
+            # Проверяем, является ли хост сервером
+            is_server = await self._is_server(session)
+            script_name = "server_info.ps1" if is_server else "hardware_info.ps1"
+            
+            # Выполняем основной скрипт
+            hardware_data = await self._execute_script(session, script_name)
+            result.update({
+                "os_name": hardware_data.get("os_name", "Unknown"),
+                "os_version": hardware_data.get("os_version"),
+                "ram": hardware_data.get("ram"),
+                "motherboard": hardware_data.get("motherboard"),
+                "last_boot": hardware_data.get("last_boot"),
+                "is_virtual": hardware_data.get("is_virtual", False),
+                "ip_addresses": hardware_data.get("ip_addresses", []),
+                "mac_addresses": hardware_data.get("mac_addresses", []),
+                "processors": hardware_data.get("processors", []),
+                "video_cards": hardware_data.get("video_cards", []),
+                "roles": hardware_data.get("roles", []) if is_server else []
+            })
+
+            # Сбор данных о дисках
+            disk_data = await self._execute_script(session, "disk_info.ps1")
+            result["disks"] = disk_data if isinstance(disk_data, list) else [disk_data] if disk_data else []
+
+            # Сбор данных о софте
             if mode == "Full":
-                # Запускаем все задачи по сбору данных параллельно в одной сессии
-                system_data_task = self._execute_script(session, "system_info.ps1")
-                software_data_task = self._execute_script(session, "software_info_full.ps1")
-                disk_data_task = self._execute_script(session, "disk_info.ps1")
-                hardware_data_task = self._execute_script(session, "hardware_info.ps1")
-
-                results = await asyncio.gather(
-                    system_data_task, software_data_task, disk_data_task, hardware_data_task,
-                    return_exceptions=True
-                )
-                system_data, software_data, disk_data, hardware_data = results
-
-                # Обработка результатов
-                if isinstance(system_data, Exception):
-                    result["error"] = f"System info error: {str(system_data)}"
-                    result["check_status"] = "failed"
-                    # Если не удалось получить базовую инфо, дальнейшая обработка не имеет смысла
-                    return result
-                else:
-                    result.update(system_data)
-                    result["check_status"] = "success"
-
-                if isinstance(software_data, Exception):
-                    error_msg = f"Software info error: {str(software_data)}"
-                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
-                    result["check_status"] = "partial"
-                else:
-                    result["software"] = software_data if isinstance(software_data, list) else []
-
-                if isinstance(disk_data, Exception):
-                    error_msg = f"Disk info error: {str(disk_data)}"
-                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
-                    result["check_status"] = "partial"
-                else:
-                    result["disks"] = disk_data if isinstance(disk_data, list) else []
-
-                if isinstance(hardware_data, Exception):
-                    error_msg = f"Hardware info error: {str(hardware_data)}"
-                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
-                    result["check_status"] = "partial"
-                else:
-                    result["video_cards"] = hardware_data.get("video_cards", [])
-                    result["processors"] = hardware_data.get("processors", [])
-            else: # Режим 'Changes'
+                software_data = await self._execute_script(session, "software_info_full.ps1")
+            else:  # Режим 'Changes'
                 software_data = await self._execute_script(session, "software_info_changes.ps1", last_updated=last_updated)
-                result["software"] = software_data if isinstance(software_data, list) else []
-                result["check_status"] = "success"
+            # Фильтруем install_date из software_data
+            result["software"] = [
+                {k: v for k, v in soft.items() if k != "install_date"}
+                for soft in (software_data if isinstance(software_data, list) else [])
+            ]
 
+            result["check_status"] = "success"
         except Exception as e:
-            result["error"] = f"General error during data collection: {str(e)}"
+            result["error"] = f"Ошибка сбора данных: {str(e)}"
             result["check_status"] = "failed"
             logger.error(f"Ошибка сбора данных для {self.hostname}: {str(e)}", exc_info=True)
 
         logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
-        return result
+        logger.debug(f"Подробные данные для {self.hostname}: {result}")
+        return result 

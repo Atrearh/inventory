@@ -4,29 +4,28 @@ import asyncio
 import uuid
 import logging
 import uvicorn
+import io
+import csv
+import ipaddress
 from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List, Optional
-import io
-import csv
 from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
 from .database import engine, get_db, init_db, shutdown_db
 from . import models, schemas
-from .settings import settings, Settings
+from .settings import settings
 from .services.computer_service import ComputerService
-from .repositories.computer_repository import ComputerRepository
 from .services.ad_service import ADService
 from .repositories.statistics import StatisticsRepository
 from .schemas import ErrorResponse, AppSettingUpdate
 from .logging_config import setup_logging
-import ipaddress
-from datetime import datetime
-
+from .repositories.computer_repository import ComputerRepository
+from .repositories.related_entity_repository import RelatedEntityRepository
+from typing import List, Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 setup_logging(log_level=settings.log_level)
@@ -221,8 +220,9 @@ async def create_computer(
     logger_adapter.info(f"Получен отчет для hostname: {comp_data.hostname}")
     try:
         async with db as session:
-            repo = ComputerRepository(session)
-            computer_service = ComputerService(db=session, repo=repo)
+            computer_repo = ComputerRepository(session)
+            related_entity_repo = RelatedEntityRepository(session)
+            computer_service = ComputerService(db=session, computer_repo=computer_repo, related_entity_repo=related_entity_repo)
             return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname)
     except Exception as e:
         logger_adapter.error(f"Ошибка создания/обновления компьютера {comp_data.hostname}: {str(e)}")
@@ -249,19 +249,125 @@ async def update_check_status(
         logger_adapter.error(f"Ошибка обновления check_status для {data.hostname}: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
-@router.get("/history/{computer_id}", response_model=List[schemas.ChangeLog])
-async def get_history(
+
+@router.get("/computers/{computer_id}/history", response_model=List[Dict[str, Any]])
+async def get_component_history(
     computer_id: int,
     db: AsyncSession = Depends(get_db),
+    request: Request = None,
 ):
+    logger_adapter = request.state.logger if request else logger
+    logger_adapter.info(f"Отримання історії компонентів для комп’ютера з ID: {computer_id}")
     try:
         async with db as session:
-            repo = ComputerRepository(session)
-            history = await repo.async_get_change_log(computer_id)
+            history = []
+
+            # Отримуємо історію для дисків
+            result = await session.execute(
+                select(models.Disk)
+                .filter(models.Disk.computer_id == computer_id)
+                .order_by(models.Disk.detected_on)
+            )
+            disks = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "disk",
+                    "data": schemas.Disk.from_orm(disk).model_dump(),
+                    "detected_on": disk.detected_on.isoformat() if disk.detected_on else None,
+                    "removed_on": disk.removed_on.isoformat() if disk.removed_on else None
+                }
+                for disk in disks
+            ])
+
+            # Отримуємо історію для процесорів
+            result = await session.execute(
+                select(models.Processor)
+                .filter(models.Processor.computer_id == computer_id)
+                .order_by(models.Processor.detected_on)
+            )
+            processors = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "processor",
+                    "data": schemas.Processor.from_orm(proc).model_dump(),
+                    "detected_on": proc.detected_on.isoformat() if proc.detected_on else None,
+                    "removed_on": proc.removed_on.isoformat() if proc.removed_on else None
+                }
+                for proc in processors
+            ])
+
+            # Отримуємо історію для відеокарт
+            result = await session.execute(
+                select(models.VideoCard)
+                .filter(models.VideoCard.computer_id == computer_id)
+                .order_by(models.VideoCard.detected_on)
+            )
+            video_cards = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "video_card",
+                    "data": schemas.VideoCard.from_orm(vc).model_dump(),
+                    "detected_on": vc.detected_on.isoformat() if vc.detected_on else None,
+                    "removed_on": vc.removed_on.isoformat() if vc.removed_on else None
+                }
+                for vc in video_cards
+            ])
+
+            # Отримуємо історію для IP-адрес
+            result = await session.execute(
+                select(models.IPAddress)
+                .filter(models.IPAddress.computer_id == computer_id)
+                .order_by(models.IPAddress.detected_on)
+            )
+            ip_addresses = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "ip_address",
+                    "data": schemas.IPAddress.from_orm(ip).model_dump(),
+                    "detected_on": ip.detected_on.isoformat() if ip.detected_on else None,
+                    "removed_on": ip.removed_on.isoformat() if ip.removed_on else None
+                }
+                for ip in ip_addresses
+            ])
+
+            # Отримуємо історію для MAC-адрес
+            result = await session.execute(
+                select(models.MACAddress)
+                .filter(models.MACAddress.computer_id == computer_id)
+                .order_by(models.MACAddress.detected_on)
+            )
+            mac_addresses = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "mac_address",
+                    "data": schemas.MACAddress.from_orm(mac).model_dump(),
+                    "detected_on": mac.detected_on.isoformat() if mac.detected_on else None,
+                    "removed_on": mac.removed_on.isoformat() if mac.removed_on else None
+                }
+                for mac in mac_addresses
+            ])
+
+            # Отримуємо історію для програмного забезпечення
+            result = await session.execute(
+                select(models.Software)
+                .filter(models.Software.computer_id == computer_id)
+                .order_by(models.Software.detected_on)
+            )
+            software = result.scalars().all()
+            history.extend([
+                {
+                    "component_type": "software",
+                    "data": schemas.Software.from_orm(soft).model_dump(),
+                    "detected_on": soft.detected_on.isoformat() if soft.detected_on else None,
+                    "removed_on": soft.removed_on.isoformat() if soft.removed_on else None
+                }
+                for soft in software
+            ])
+
             return history
     except Exception as e:
-        logger.error(f"Ошибка получения истории изменений: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
+        logger_adapter.error(f"Помилка отримання історії компонентів для ID {computer_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Помилка сервера")
 
 @router.post("/scan", response_model=dict, operation_id="start_scan")
 async def start_scan(
@@ -274,8 +380,9 @@ async def start_scan(
     logger_adapter.info(f"Запуск фонового сканирования с task_id: {task_id}")
     try:
         async with db as session:
-            repo = ComputerRepository(session)
-            computer_service = ComputerService(db=session, repo=repo)
+            computer_repo = ComputerRepository(session)
+            related_entity_repo = RelatedEntityRepository(session)
+            computer_service = ComputerService(db=session, computer_repo=computer_repo, related_entity_repo=related_entity_repo)
             background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter)
             return {"task_id": task_id}
     except Exception as e:
@@ -407,4 +514,4 @@ if __name__ == "__main__":
     logger.info("Запуск приложения")
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    uvicorn.run(app, host="0.0.0.0", port=settings.server_port) 
+    uvicorn.run(app, host="0.0.0.0", port=settings.server_port)

@@ -39,15 +39,12 @@ export interface ChangeLog {
 }
 export interface Computer {
   hostname: string;
-  ip?: string | null;
-  ip_addresses?: string[] | null;
+  ip_addresses?: IPAddress[];
   os_name?: string | null;
   os_version?: string | null;
-  processors?: Processor[];
-  cpu?: string | null;
+  processors?: Processor[] | null;
   ram?: number | null;
-  mac?: string | null;
-  mac_addresses?: string[] | null;
+  mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
@@ -59,10 +56,16 @@ export interface Computer {
   software?: Software[];
   video_cards?: VideoCard[];
 }
+export interface IPAddress {
+  address: string;
+}
 export interface Processor {
   name: string;
   number_of_cores: number;
   number_of_logical_processors: number;
+}
+export interface MACAddress {
+  address: string;
 }
 export interface Disk {
   device_id?: string | null;
@@ -86,15 +89,12 @@ export interface VideoCard {
 }
 export interface ComputerBase {
   hostname: string;
-  ip?: string | null;
-  ip_addresses?: string[] | null;
+  ip_addresses?: IPAddress[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[] | null;
-  cpu?: string | null;
   ram?: number | null;
-  mac?: string | null;
-  mac_addresses?: string[] | null;
+  mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
@@ -102,14 +102,11 @@ export interface ComputerBase {
 }
 export interface ComputerCreate {
   hostname: string;
-  ip?: string | null;
   ip_addresses?: IPAddress[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[];
-  cpu?: string | null;
   ram?: number | null;
-  mac?: string | null;
   mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
@@ -120,23 +117,14 @@ export interface ComputerCreate {
   disks?: Disk[];
   video_cards?: VideoCard[];
 }
-export interface IPAddress {
-  address: string;
-}
-export interface MACAddress {
-  address: string;
-}
 export interface ComputerList {
   hostname: string;
-  ip?: string | null;
-  ip_addresses?: string[] | null;
+  ip_addresses?: IPAddress[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[];
-  cpu?: string | null;
   ram?: number | null;
-  mac?: string | null;
-  mac_addresses?: string[] | null;
+  mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;

@@ -83,15 +83,20 @@ const ComputerDetail: React.FC = () => {
   }
 
   const isServerOS = computer.os_name?.toLowerCase().includes('server');
-  const currentDate = new Date('2025-06-20T09:08:00+03:00'); // Текущая дата и время
+  const currentDate = new Date('2025-06-27T15:46:00+03:00'); // Обновленная текущая дата и время
+
+  // Время последней проверки
+  const lastCheckDate = computer.last_updated ? new Date(computer.last_updated) : null;
+  const daysDiff = lastCheckDate ? differenceInDays(currentDate, lastCheckDate) : Infinity;
+  let lastCheckColor = '';
+  if (daysDiff <= 7) lastCheckColor = '#52c41a'; // Зеленый
+  else if (daysDiff <= 30) lastCheckColor = '#faad14'; // Желтый
+  else lastCheckColor = '#ff4d4f'; // Красный
 
   // Статистика
   const roleCount = computer.roles?.length || 0;
   const softwareCount = computer.software?.length || 0;
   const historyCount = history.length;
-  const lastCheck = history.length > 0
-    ? new Date(Math.max(...history.map((h) => new Date(h.changed_at).getTime()))).toLocaleString('uk-UA')
-    : 'Немає даних';
 
   // Групування ролей
   const groupedRoles = computer.roles?.reduce((acc, role) => {
@@ -192,6 +197,7 @@ const ComputerDetail: React.FC = () => {
       onHeaderCell: () => ({ onClick: () => handleSort('free_space') }),
     },
   ];
+
   const historyColumns: TableProps<ChangeLog>['columns'] = [
     {
       title: 'Поле',
@@ -237,7 +243,7 @@ const ComputerDetail: React.FC = () => {
   return (
     <div className={styles.container}>
       <Title level={2} className={styles.title}>{computer.hostname}</Title>
-      <GeneralInfo computer={computer} />
+      <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
       <div>
         <Title level={3} className={styles.subtitle}>Диски</Title>
         <Table
@@ -297,7 +303,7 @@ const ComputerDetail: React.FC = () => {
         <Button onClick={() => toggleSection('history')} style={{ marginBottom: 8 }}>
           {collapsedSections.history ? 'Показати всю історію' : 'Сховати історію'}
         </Button>
-        <Text>Кількість змін: {historyCount}, Остання перевірка: {lastCheck}</Text>
+        <Text>Кількість змін: {historyCount}, Остання перевірка: {lastCheckDate ? lastCheckDate.toLocaleString('uk-UA') : 'Немає даних'}</Text>
         {!collapsedSections.history && (
           <>
             {history.length > 0 ? (

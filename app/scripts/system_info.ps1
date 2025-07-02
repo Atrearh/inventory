@@ -7,7 +7,6 @@ try {
     $cs = Get-CimInstance Win32_ComputerSystem
     $bios = Get-CimInstance Win32_BIOS
     $baseboard = Get-CimInstance Win32_BaseBoard  
-    $disks = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 -and $_.Size -gt 0 }
     $nics = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled }
     $isServerOS = $os.Caption -match 'Server'
     $roles = @()
@@ -19,13 +18,6 @@ try {
         }
     }
     
-    $diskInfo = @($disks | ForEach-Object {
-        @{
-            DeviceID    = Clean-String $_.DeviceID
-            total_space = [int64]$_.Size
-            free_space  = [int64]$_.FreeSpace
-        }
-    })
 
     $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
     $cpuName = Clean-String ($processor.Name) if $processor else ""
@@ -46,7 +38,6 @@ try {
         status        = "online"
         check_status  = "success"
         ip_address    = $ipAddress
-        disks         = $diskInfo
         roles         = $roles
     } | ConvertTo-Json -Depth 4 -Compress
 } catch {

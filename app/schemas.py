@@ -6,6 +6,7 @@ from .models import CheckStatus, ScanStatus
 from .utils import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
 import logging
 import ipaddress
+
 logger = logging.getLogger(__name__)
 
 class Role(BaseModel):
@@ -31,17 +32,19 @@ class Software(BaseModel):
 class Disk(BaseModel):
     device_id: Optional[str] = Field(None, alias="device_id", min_length=1)
     model: Optional[str] = Field(None, alias="model", min_length=1)
-    total_space: float = Field(ge=0, alias="total_space")
+    total_space: int = Field(ge=0, alias="total_space")
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
+    serial:  Optional[str] = None
+    interface: Optional[NonEmptyStr] = None
+    media_type: Optional[NonEmptyStr] = None
+    volume_label: Optional[str] = None
 
     @property
     def total_space_gb(self) -> float:
-        """Возвращает общий объём диска в гигабайтах."""
         return self.total_space / (1024 ** 3) if self.total_space else 0.0
 
     @property
     def free_space_gb(self) -> Optional[float]:
-        """Возвращает свободное место на диске в гигабайтах."""
         return self.free_space / (1024 ** 3) if self.free_space else None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
@@ -57,37 +60,62 @@ class Processor(BaseModel):
     number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
+class IPAddress(BaseModel):
+    address: NonEmptyStr
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('address')
+    @classmethod
+    def validate_ip(cls, v):
+        return validate_ip_address(cls, v, "IP address")
+
+class MACAddress(BaseModel):
+    address: NonEmptyStr
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('address')
+    @classmethod
+    def validate_mac(cls, v):
+        return validate_mac_address(cls, v, "MAC address")
+
 class ComputerBase(BaseModel):
     hostname: NonEmptyStr
-    ip: Optional[str] = None
-    ip_addresses: Optional[List[str]] = None  # Поддержка списка IP-адресов
+    ip_addresses: List[IPAddress] = []
     os_name: Optional[str] = None
     os_version: Optional[str] = None
     processors: Optional[List[Processor]] = None
-    cpu: Optional[str] = None
     ram: Optional[int] = None
-    mac: Optional[str] = None
-    mac_addresses: Optional[List[str]] = None  # Поддержка списка MAC-адресов
+    mac_addresses: List[MACAddress] = []
     motherboard: Optional[str] = None
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = None
     check_status: Optional[CheckStatus] = None
+
     @field_validator('hostname')
     @classmethod
     def validate_hostname_field(cls, v):
         return validate_hostname(cls, v)
-    @field_validator('mac', 'mac_addresses')
+
+    @field_validator('os_name')
     @classmethod
-    def validate_mac(cls, v, info):
-        if isinstance(v, list):
-            return [validate_mac_address(cls, x, f"MAC address in {info.field_name}") for x in v if x]
-        return validate_mac_address(cls, v)
-    @field_validator('ip', 'ip_addresses')
+    def normalize_os_name(cls, v):
+        if not v or v.strip() == '':
+            return 'Unknown'
+        return v.replace('Майкрософт ', '').replace('Microsoft ', '')
+
+    @field_validator('ram')
     @classmethod
-    def validate_ip(cls, v, info):
-        if isinstance(v, list):
-            return [validate_ip_address(cls, x, f"IP address in {info.field_name}") for x in v if x]
-        return validate_ip_address(cls, v)
+    def normalize_ram(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, (int, float)):
+            logger.warning(f"Некорректный тип RAM: {type(v)}, ожидается int или float")
+            return None
+        if v > 4294967295:
+            logger.warning(f"Значение RAM ({v} МБ) превышает допустимый диапазон, обрезается до 4294967295")
+            return 4294967295
+        return int(v) 
+
     model_config = ConfigDict(from_attributes=True)
 
 class ComputerList(ComputerBase):
@@ -102,31 +130,20 @@ class ComputerList(ComputerBase):
 
 class Computer(ComputerBase):
     id: int
-    processors: List[Processor] = []
     last_updated: datetime
     disks: List[Disk] = []
     roles: List[Role] = []
     software: List[Software] = []
-    video_cards: List[VideoCard] = []  # Новое поле
+    video_cards: List[VideoCard] = []
     model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
-
-class IPAddress(BaseModel):
-    address: NonEmptyStr
-    model_config = ConfigDict(from_attributes=True)
-
-class MACAddress(BaseModel):
-    address: NonEmptyStr
-    model_config = ConfigDict(from_attributes=True)
 
 class ComputerCreate(ComputerBase):
     roles: List[Role] = []
-    processors: List[Processor] = []
     software: List[Software] = []
     disks: List[Disk] = []
-    video_cards: List[VideoCard] = []  # Новое поле
+    video_cards: List[VideoCard] = []
+    processors: List[Processor] = []
     model_config = ConfigDict(from_attributes=True)
-    ip_addresses: List[IPAddress] = []
-    mac_addresses: List[MACAddress] = []
 
 class ComputerUpdateCheckStatus(BaseModel):
     hostname: NonEmptyStr
@@ -180,8 +197,8 @@ class StatusStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OsStats(BaseModel):
-    client_os: List[OsDistribution]  # Распределение клиентских ОС
-    server_os: List[ServerDistribution]  # Распределение серверных ОС
+    client_os: List[OsDistribution]
+    server_os: List[ServerDistribution]
     model_config = ConfigDict(from_attributes=True)
 
 class DiskStats(BaseModel):
@@ -206,8 +223,6 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = None
     correlation_id: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
-
-
 
 class AppSettingUpdate(BaseModel):
     ad_server_url: Optional[str] = None

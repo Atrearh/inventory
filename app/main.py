@@ -1,3 +1,4 @@
+# app/main.py
 import signal
 import asyncio
 import uuid
@@ -24,7 +25,6 @@ from .repositories.statistics import StatisticsRepository
 from .schemas import ErrorResponse, AppSettingUpdate
 from .logging_config import setup_logging
 import ipaddress
-import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,6 @@ shutdown_event = asyncio.Event()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Управляет жизненным циклом приложения."""
     logger.info("Инициализация приложения...")
     try:
         await init_db()
@@ -56,13 +55,11 @@ app.add_middleware(
 )
 
 def signal_handler(sig, frame):
-    """Обработчик сигналов завершения."""
     logger.info(f"Получен сигнал {sig}, завершение...")
     shutdown_event.set()
 
 @app.middleware("http")
 async def check_ip_allowed(request: Request, call_next):
-    """Проверяет, разрешен ли IP клиента."""
     client_ip = request.client.host
     request.state.logger.debug(f"Проверка IP: {client_ip}")
     allowed = False
@@ -88,7 +85,6 @@ async def check_ip_allowed(request: Request, call_next):
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
-    """Добавляет correlation_id к запросу."""
     correlation_id = str(uuid.uuid4())
     request_logger = logging.LoggerAdapter(logger, {"correlation_id": correlation_id})
     request.state.logger = request_logger
@@ -99,12 +95,10 @@ async def add_correlation_id(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Глобальный обработчик исключений."""
     correlation_id = getattr(request.state, 'correlation_id', "unknown")
     logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
     logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
 
-    # Определяем статус код и сообщение об ошибке
     match exc:
         case HTTPException(status_code=status_code, detail=detail):
             status_code = status_code
@@ -120,7 +114,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             error_message = str(exc)
         case _:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Внутренняя ошибка сервера"  # Исправляем 'error_file' на 'error_message'
+            error_message = "Внутренняя ошибка сервера"
 
     response = ErrorResponse(
         error=error_message,
@@ -128,7 +122,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         correlation_id=correlation_id
     )
 
-    # Явно добавляем CORS заголовок для всех ответов
     headers = {
         "Access-Control-Allow-Origin": request.headers.get("Origin", "*"),
         "Access-Control-Allow-Credentials": "true",
@@ -144,7 +137,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @router.get("/settings", response_model=AppSettingUpdate)
 async def get_settings():
-    """Получает текущие настройки приложения."""
     logger.info("Получение текущих настроек")
     return AppSettingUpdate(
         ad_server_url=settings.ad_server_url,
@@ -168,58 +160,6 @@ async def get_settings():
         allowed_ips=settings.allowed_ips,
     )
 
-@router.post("/settings", response_model=dict)
-async def update_settings(settings_data: AppSettingUpdate, request: Request):
-    """Обновляет настройки приложения."""
-    logger_adapter = request.state.logger
-    logger_adapter.info("Обновление настроек приложения")
-    try:
-        env_file = r"app\.env"
-        env_vars = {}
-        
-        # Читаем текущий .env
-        if os.path.exists(env_file):
-            try:
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            key, value = line.split('=', 1)
-                            env_vars[key.strip()] = value.strip()
-            except Exception as e:
-                logger_adapter.error(f"Ошибка чтения .env: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Ошибка чтения .env: {str(e)}")
-        else:
-            logger_adapter.warning(".env не найден, будет создан новый")
-
-        # Обновляем настройки
-        settings_dict = settings_data.model_dump(exclude_unset=True)
-        if not settings_dict:
-            logger_adapter.error("Не предоставлены данные для обновления настроек")
-            raise HTTPException(status_code=400, detail="Не предоставлены данные для обновления")
-
-        for key, value in settings_dict.items():
-            if value is not None:
-                env_vars[key.upper()] = str(value)
-
-        # Записываем обновленные настройки
-        try:
-            with open(env_file, 'w', encoding='utf-8') as f:
-                for key, value in env_vars.items():
-                    f.write(f"{key}={value}\n")
-        except Exception as e:
-            logger_adapter.error(f"Ошибка записи .env: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Ошибка записи .env: {str(e)}")
-
-        global settings
-        settings = Settings()
-        logger_adapter.info("Настройки успешно обновлены")
-        return {"message": "Настройки обновлены"}
-
-    except Exception as e:
-        logger_adapter.error(f"Ошибка обновления настроек: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
 @router.get("/computers/export/csv", response_model=None)
 async def export_computers_to_csv(
     db: AsyncSession = Depends(get_db),
@@ -230,12 +170,10 @@ async def export_computers_to_csv(
     sort_by: str = Query("hostname", description="Поле для сортировки"),
     sort_order: str = Query("asc", description="Порядок: asc или desc"),
 ):
-    """Экспортирует список компьютеров в CSV."""
     logger.info(f"Экспорт компьютеров в CSV с параметрами: hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}")
     try:
         async with db as session:
             repo = ComputerRepository(session)
-            # Получаем все компьютеры без пагинации
             computers, _ = await repo.get_computers(
                 hostname=hostname,
                 os_name=os_name,
@@ -243,32 +181,25 @@ async def export_computers_to_csv(
                 sort_by=sort_by,
                 sort_order=sort_order,
                 page=1,
-                limit=10000  # Большое значение, чтобы получить все данные
+                limit=10000
             )
 
-            # Подготовка CSV с учетом BOM для UTF-8 и явным разделителем ';'
             output = io.StringIO()
             writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
-            # Добавляем BOM для корректного отображения кириллицы в Excel
             output.write('\ufeff')
-            # Заголовки
-            writer.writerow(['IP', 'Назва', 'Процесор', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС', 'Время последней проверки'])
-            # Данные, фильтруем пустые записи
+            writer.writerow(['IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС', 'Время последней проверки'])
             for computer in computers:
-                # Проверяем, есть ли хоть одно заполненное поле
-                if any([computer.ip, computer.hostname, computer.cpu, computer.ram, computer.mac, computer.motherboard, computer.os_name, computer.last_updated]):
+                if any([computer.ip_addresses, computer.hostname, computer.ram, computer.mac_addresses, computer.motherboard, computer.os_name, computer.last_updated]):
                     writer.writerow([
-                        computer.ip or '',
+                        computer.ip_addresses[0] if computer.ip_addresses else '',
                         computer.hostname or '',
-                        computer.cpu or '',
                         str(computer.ram) if computer.ram is not None else '',
-                        computer.mac or '',
+                        computer.mac_addresses[0] if computer.mac_addresses else '',
                         computer.motherboard or '',
                         computer.os_name or '',
                         computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else ''
                     ])
 
-            # Создаем StreamingResponse
             output.seek(0)
             headers = {
                 'Content-Disposition': 'attachment; filename="computers.csv"',
@@ -286,7 +217,6 @@ async def create_computer(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Создает или обновляет отчет о компьютере."""
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Получен отчет для hostname: {comp_data.hostname}")
     try:
@@ -304,7 +234,6 @@ async def update_check_status(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Обновляет статус проверки компьютера."""
     logger_adapter = request.state.logger if request else logger
     logger_adapter.info(f"Обновление check_status для {data.hostname}")
     try:
@@ -325,7 +254,6 @@ async def get_history(
     computer_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Получает историю изменений для компьютера."""
     try:
         async with db as session:
             repo = ComputerRepository(session)
@@ -341,7 +269,6 @@ async def start_scan(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Запускает фоновое сканирование компьютеров."""
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования с task_id: {task_id}")
@@ -361,7 +288,6 @@ async def scan_status(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Получает статус задачи сканирования."""
     logger_adapter = request.state.logger if request else logger
     try:
         async with db as session:
@@ -380,7 +306,6 @@ async def get_statistics(
     metrics: List[str] = Query(None, description="Список метрик для получения статистики"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Получает статистику для дашборда."""
     try:
         async with db as session:
             repo = StatisticsRepository(session)
@@ -403,7 +328,6 @@ async def get_computers(
     server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Получение списка компьютеров с фильтрацией и пагинацией."""
     logger.info(f"Запрос списка компьютеров с параметрами: hostname={hostname}, os_name={os_name}, server_filter={server_filter}")
     try:
         async with db as session:
@@ -429,7 +353,6 @@ async def start_ad_scan(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    """Запускает фоновое сканирование Active Directory."""
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования AD с task_id: {task_id}")
@@ -447,7 +370,6 @@ async def start_ad_scan(
 async def clean_deleted_software(
     db: AsyncSession = Depends(get_db),
 ):
-    """Очищает старые записи о программном обеспечении."""
     try:
         async with db as session:
             repo = ComputerRepository(session)
@@ -457,7 +379,7 @@ async def clean_deleted_software(
         logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
-@router.get("/computers/{computer_id}", response_model=schemas.ComputerList, operation_id="get_computer_by_id")
+@router.get("/computers/{computer_id}", response_model=schemas.Computer, operation_id="get_computer_by_id")
 async def get_computer_by_id(
     computer_id: int,
     db: AsyncSession = Depends(get_db),
@@ -485,4 +407,4 @@ if __name__ == "__main__":
     logger.info("Запуск приложения")
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    uvicorn.run(app, host="0.0.0.0", port=settings.server_port)
+    uvicorn.run(app, host="0.0.0.0", port=settings.server_port) 

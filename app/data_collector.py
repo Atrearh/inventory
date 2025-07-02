@@ -2,16 +2,13 @@ import logging
 import json
 import winrm
 from winrm.exceptions import WinRMError
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncio
 import requests
 from contextlib import contextmanager
 from .settings import settings
-from sqlalchemy import select
-from .database import get_db
-from . import models
 
 logger = logging.getLogger(__name__)
 
@@ -90,128 +87,132 @@ class WinRMDataCollector:
         self.username = username
         self.password = password
 
-    async def _run_script(self, script_name: str, mode: str = "Full", last_updated: Optional[datetime] = None) -> dict:
-        """Выполняет PowerShell-скрипт на удалённом хосте."""
-        script_name = (
-            "software_info_full.ps1" if script_name == "software_info.ps1" and mode == "Full"
-            else "software_info_changes.ps1" if script_name == "software_info.ps1"
-            else script_name
-        )
+    async def _execute_script(self, session: winrm.Session, script_name: str, last_updated: Optional[datetime] = None) -> Any:
+        """Выполняет PowerShell-скрипт на удалённом хосте, используя существующую сессию."""
         script_content = script_cache.get(script_name)
 
-        async def run_ps_with_timeout(session):
+        async def run_ps_with_timeout():
             command = script_content
             if script_name == "software_info_changes.ps1" and last_updated:
                 command = f"& {{ {script_content} }} -LastUpdated '{last_updated.isoformat()}'"
-            logger.debug(f"Выполняется команда для {script_name}, длина: {len(command)}")
+            logger.debug(f"Выполняется команда для {script_name} в сессии {self.hostname}, длина: {len(command)}")
             if len(command) > 6000:
                 logger.warning(f"Команда для {script_name} превышает 6000 символов")
             result = await asyncio.to_thread(lambda: session.run_ps(command))
             return result
 
-        with winrm_session(self.hostname, self.username, self.password) as session:
-            try:
-                result = await asyncio.wait_for(
-                    run_ps_with_timeout(session),
-                    timeout=settings.winrm_operation_timeout + settings.winrm_read_timeout
-                )
-                if result.status_code != 0:
-                    error_message = decode_output(result.std_err)
-                    logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {error_message}", exc_info=True)
-                    raise RuntimeError(f"Ошибка выполнения скрипта: {error_message}")
-                output = decode_output(result.std_out)
-                if not output.strip():
-                    logger.error(f"Пустой вывод от {script_name} для {self.hostname}")
-                    raise RuntimeError(f"Скрипт вернул пустой вывод")
-                logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
-                return json.loads(output)
-            except asyncio.TimeoutError:
-                logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}", exc_info=True)
-                raise
-            except Exception as e:
-                logger.error(f"Неожиданная ошибка при выполнении {script_name} для {self.hostname}: {str(e)}", exc_info=True)
-                raise
+        try:
+            result = await asyncio.wait_for(
+                run_ps_with_timeout(),
+                timeout=settings.winrm_operation_timeout + settings.winrm_read_timeout
+            )
+            if result.status_code != 0:
+                error_message = decode_output(result.std_err)
+                logger.error(f"Ошибка выполнения {script_name} для {self.hostname}: {error_message}", exc_info=True)
+                raise RuntimeError(f"Ошибка выполнения скрипта: {error_message}")
+            output = decode_output(result.std_out)
+            if not output.strip():
+                logger.error(f"Пустой вывод от {script_name} для {self.hostname}")
+                raise RuntimeError(f"Скрипт вернул пустой вывод")
+            logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
+            data = json.loads(output)
+            # Нормализация вывода disk_info: оборачиваем словарь в список
+            if script_name == "disk_info.ps1" and isinstance(data, dict):
+                data = [data]
+            return data
+        except asyncio.TimeoutError:
+            logger.error(f"Тайм-аут выполнения скрипта {script_name} для {self.hostname}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при выполнении {script_name} для {self.hostname}: {str(e)}", exc_info=True)
+            raise
 
-    async def get_system_info(self, is_server: bool = False) -> dict:
-            script_name = "server_info.ps1" if is_server else "system_info.ps1"
-            return await self._run_script(script_name)
+    async def get_system_info(self, session: winrm.Session) -> Dict[str, Any]:
+        return await self._execute_script(session, "system_info.ps1")
 
-    async def get_software_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> list:
-        data = await self._run_script("software_info.ps1", mode=mode, last_updated=last_updated)
+    async def get_software_info(self, session: winrm.Session, mode: str = "Full", last_updated: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """Собирает информацию о программном обеспечении."""
+        script_name = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
+        data = await self._execute_script(session, script_name, last_updated=last_updated)
         if not isinstance(data, list):
-            logger.warning(f"software_info.ps1 вернул не массив: {data}")
+            logger.warning(f"{script_name} вернул не массив: {data}")
             return []
         return data
 
-    async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None, is_server: bool = False) -> dict:
-            result = {
-                "hostname": self.hostname,
-                "check_status": "partial",
-                "error": None
-            }
-            try:
-                system_data = await self.get_system_info(is_server=is_server)
-                result.update(system_data)
-                logger.info(f"Собраны данные для {self.hostname} raw data: {system_data}")
-                result["check_status"] = "success"
-            except Exception as e:
-                result["error"] = f"System info error: {str(e)}"
-                result["check_status"] = "failed"
-            try:
-                software_data = await self.get_software_info(mode=mode, last_updated=last_updated)
-                result["software"] = software_data
-                if result["check_status"] != "failed":
+    async def get_disk_info(self, session: winrm.Session) -> List[Dict[str, Any]]:
+        """Собирает информацию о дисках."""
+        data = await self._execute_script(session, "disk_info.ps1")
+        if not isinstance(data, list):
+            logger.warning(f"disk_info.ps1 вернул не массив: {data}")
+            return []
+        return data
+
+    async def get_hardware_info(self, session: winrm.Session) -> Dict[str, Any]:
+        """Собирает информацию об оборудовании."""
+        return await self._execute_script(session, "hardware_info.ps1")
+
+    async def get_all_pc_info(self, session: winrm.Session, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
+        """Собирает полную информацию о компьютере, используя одну WinRM-сессию."""
+        result = {
+            "hostname": self.hostname,
+            "check_status": "partial",
+            "error": None
+        }
+
+        try:
+            if mode == "Full":
+                # Запускаем все задачи по сбору данных параллельно в одной сессии
+                system_data_task = self._execute_script(session, "system_info.ps1")
+                software_data_task = self._execute_script(session, "software_info_full.ps1")
+                disk_data_task = self._execute_script(session, "disk_info.ps1")
+                hardware_data_task = self._execute_script(session, "hardware_info.ps1")
+
+                results = await asyncio.gather(
+                    system_data_task, software_data_task, disk_data_task, hardware_data_task,
+                    return_exceptions=True
+                )
+                system_data, software_data, disk_data, hardware_data = results
+
+                # Обработка результатов
+                if isinstance(system_data, Exception):
+                    result["error"] = f"System info error: {str(system_data)}"
+                    result["check_status"] = "failed"
+                    # Если не удалось получить базовую инфо, дальнейшая обработка не имеет смысла
+                    return result
+                else:
+                    result.update(system_data)
                     result["check_status"] = "success"
-            except Exception as e:
-                error_msg = f"Software info error: {str(e)}"
-                result["error"] = f"{result['error']}; {error_msg}" if result["error"] else error_msg
-                if result["check_status"] == "success":
+
+                if isinstance(software_data, Exception):
+                    error_msg = f"Software info error: {str(software_data)}"
+                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
                     result["check_status"] = "partial"
-            logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
-            return result 
-    
-    async def get_pc_info(hostname: str, user: str, password: str, retries: int = 3, last_updated: Optional[datetime] = None, last_full_scan: Optional[datetime] = None) -> Optional[Dict]:
-        """Collects PC information and checks if the host is a server using AD or OS name data."""
-        collector = WinRMDataCollector(hostname, user, password)
-        for attempt in range(1, retries + 1):
-            try:
-                async with get_db() as session:
-                    # Check if host is a server
-                    is_server = False
-                    result = await session.execute(
-                        select(models.Computer).filter(models.Computer.hostname == hostname)
-                    )
-                    computer = result.scalars().first()
-                    if computer and computer.os_name and "server" in computer.os_name.lower():
-                        is_server = True
-                    else:
-                        result = await session.execute(
-                            select(models.ADComputer).filter(models.ADComputer.hostname == hostname)
-                        )
-                        ad_computer = result.scalars().first()
-                        is_server = ad_computer and ad_computer.os_name and "server" in ad_computer.os_name.lower()
+                else:
+                    result["software"] = software_data if isinstance(software_data, list) else []
 
-                    # Determine scan mode
-                    mode = "Full" if last_updated is None or (
-                        last_full_scan is None or last_full_scan < datetime.utcnow() - timedelta(days=30)
-                    ) else "Changes"
+                if isinstance(disk_data, Exception):
+                    error_msg = f"Disk info error: {str(disk_data)}"
+                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
+                    result["check_status"] = "partial"
+                else:
+                    result["disks"] = disk_data if isinstance(disk_data, list) else []
 
-                    # Collect PC info
-                    return await collector.get_all_pc_info(mode=mode, last_updated=last_updated, is_server=is_server)
-            except ConnectionError as e:
-                logger.warning(f"Попытка {attempt}/{retries} не удалась для {hostname}: {str(e)}")
-                if attempt == retries:
-                    return {
-                        "hostname": hostname,
-                        "check_status": "unreachable",
-                        "error": str(e)
-                    }
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Ошибка проверки серверного статуса или сбора данных для {hostname}: {str(e)}")
-                return {
-                    "hostname": hostname,
-                    "check_status": "error",
-                    "error": str(e)
-                }
+                if isinstance(hardware_data, Exception):
+                    error_msg = f"Hardware info error: {str(hardware_data)}"
+                    result["error"] = f"{result.get('error', '')}; {error_msg}".strip('; ')
+                    result["check_status"] = "partial"
+                else:
+                    result["video_cards"] = hardware_data.get("video_cards", [])
+                    result["processors"] = hardware_data.get("processors", [])
+            else: # Режим 'Changes'
+                software_data = await self._execute_script(session, "software_info_changes.ps1", last_updated=last_updated)
+                result["software"] = software_data if isinstance(software_data, list) else []
+                result["check_status"] = "success"
 
+        except Exception as e:
+            result["error"] = f"General error during data collection: {str(e)}"
+            result["check_status"] = "failed"
+            logger.error(f"Ошибка сбора данных для {self.hostname}: {str(e)}", exc_info=True)
+
+        logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
+        return result

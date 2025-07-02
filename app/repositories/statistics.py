@@ -209,14 +209,13 @@ class StatisticsRepository:
     async def get_statistics(self, metrics: List[str] = None) -> schemas.DashboardStats:
         """Возвращает статистику для дашборда, включая список уникальных имен ОС."""
         if metrics is None:
-            metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats", "os_names"]
+            metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats"]
         
         total_computers = 0
         os_stats = schemas.OsStats(client_os=[], server_os=[])
         low_disk_space = []
         last_scan_time = None
         status_stats = []
-        os_names = []
         
         try:
             if "total_computers" in metrics:
@@ -229,8 +228,6 @@ class StatisticsRepository:
                 last_scan_time = await self.get_last_scan_time()
             if "status_stats" in metrics:
                 status_stats = await self.get_status_stats()
-            if "os_names" in metrics:
-                os_names = await self.get_os_names()
             
             logger.debug("Статистика собрана успешно")
         
@@ -246,7 +243,6 @@ class StatisticsRepository:
                 last_scan_time=last_scan_time,
                 status_stats=status_stats
             ),
-            os_names=os_names
         )
         logger.debug(f"Возвращаемые данные статистики: {result.model_dump()}")
         return result

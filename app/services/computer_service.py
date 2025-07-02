@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
-from ..repositories.related_entity_repository import RelatedEntityRepository
 from .. import models
 from ..database import get_db
 from ..schemas import ComputerCreate, Role, Software, Disk, CheckStatus, Computer, VideoCard, Processor, IPAddress, MACAddress
@@ -16,10 +15,9 @@ from ..data_collector import WinRMDataCollector, winrm_session
 logger = logging.getLogger(__name__)
 
 class ComputerService:
-    def __init__(self, db: AsyncSession, computer_repo: ComputerRepository, related_entity_repo: RelatedEntityRepository):
+    def __init__(self, db: AsyncSession, computer_repo: ComputerRepository):
         self.db = db
         self.computer_repo = computer_repo
-        self.related_entity_repo = related_entity_repo
 
     async def get_hosts_to_scan(self) -> List[str]:
         if settings.test_hosts and settings.test_hosts.strip():
@@ -102,9 +100,9 @@ class ComputerService:
             if not db_computer:
                 logger.error(f"Компьютер {hostname} не найден после сохранения")
                 raise ValueError("Компьютер не найден после сохранения")
-            await self.related_entity_repo.update_related_entities(db_computer, comp_data)
+            await self.computer_repo.update_related_entities(db_computer, comp_data)
             logger.info(f"Компьютер {hostname} успешно сохранен с ID {computer_id}")
-            return Computer.from_orm(db_computer)
+            return Computer.model_validate(db_computer, from_attributes=True)
         except Exception as e:
             logger.error(f"Ошибка сохранения компьютера {hostname}: {str(e)}")
             raise

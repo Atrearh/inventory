@@ -186,11 +186,7 @@ class WinRMDataCollector:
             else:  # Режим 'Changes'
                 software_data = await self._execute_script(session, "software_info_changes.ps1", last_updated=last_updated)
             # Фильтруем install_date из software_data
-            result["software"] = [
-                {k: v for k, v in soft.items() if k != "install_date"}
-                for soft in (software_data if isinstance(software_data, list) else [])
-            ]
-
+            result["software"] = software_data if isinstance(software_data, list) else []
             result["check_status"] = "success"
         except Exception as e:
             result["error"] = f"Ошибка сбора данных: {str(e)}"

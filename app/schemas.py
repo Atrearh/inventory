@@ -21,6 +21,20 @@ class Software(BaseModel):
     removed_on: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
+    @field_validator('install_date', mode='before')
+    @classmethod
+    def validate_install_date(cls, v):
+        if v is None or v == '':
+            return None
+        try:
+            # Спробуємо розпарсити дату у форматі ISO 8601 або інших поширених форматах
+            if isinstance(v, str):
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            return v
+        except ValueError:
+            logger.warning(f"Некоректний формат install_date: {v}, повертаємо None")
+            return None
+
 class Disk(BaseModel):
     device_id: Optional[str] = Field(None, alias="device_id", min_length=1)
     model: Optional[str] = Field(None, alias="model", min_length=1)

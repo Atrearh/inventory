@@ -1,14 +1,7 @@
-param(
-    [string]$LastUpdated = "None"
-)
+param([string]$LastUpdated = "None")
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = $OutputEncoding = [Text.Encoding]::UTF8
-
-function Clean-String($s) {
-    if (!$s) { "" }
-    else { ($s -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\s+False$', '' }
-}
-
+function Clean-String($s) {if (!$s) { "" } else { ($s -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\s+False$', '' }}
 try {
     $softwareList = @{}
     foreach ($regPath in "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*") {
@@ -17,9 +10,9 @@ try {
             $installDate = if ($_.InstallDate) { try { [datetime]::ParseExact($_.InstallDate, "yyyyMMdd", $null) } catch { $null } } else { $null }
             if ($name) {
                 $softwareList[$name] = @{
-                    DisplayName   = $name
+                    DisplayName    = $name
                     DisplayVersion = Clean-String $_.DisplayVersion
-                    InstallDate   = if ($installDate) { $installDate.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
+                    InstallDate    = if ($installDate) { $installDate.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
                 }
             }
         }
@@ -40,7 +33,6 @@ try {
                 }
             }
         } catch {
-            Write-Warning "Ошибка доступа к журналу событий: $($_.Exception.Message), использую данные реестра"
             foreach ($name in $softwareList.Keys) {
                 $installDate = $softwareList[$name].InstallDate
                 if ($installDate -and [datetime]::Parse($installDate) -gt $lastUpdatedDate) {

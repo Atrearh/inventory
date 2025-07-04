@@ -2,14 +2,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { getComputerById, getHistory } from '../api/api';
-import { Computer, ChangeLog, Role, Software, Disk } from '../types/schemas';
 import { useState } from 'react';
 import { Skeleton, Typography, Table, Button, Collapse } from 'antd';
 import GeneralInfo from './GeneralInfo';
 import styles from './ComputerDetail.module.css';
 import type { TableProps } from 'antd';
 import { differenceInDays } from 'date-fns';
-
+import { Computer, ComponentHistory, Role, Software, PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress } from '../types/schemas';
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
 
@@ -40,7 +39,7 @@ const ComputerDetail: React.FC = () => {
     return <div className={styles.error}>Невірний ID комп'ютера</div>;
   }
 
-  const { data: computer, error: compError, isLoading: compLoading } = useQuery({
+const { data: computer, error: compError, isLoading: compLoading } = useQuery({
     queryKey: ['computer', computerIdNum],
     queryFn: () => getComputerById(computerIdNum),
     enabled: !!computerId,
@@ -49,7 +48,7 @@ const ComputerDetail: React.FC = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
+const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
     queryKey: ['history', computerIdNum],
     queryFn: () => getHistory(computerIdNum),
     enabled: !!computerId,
@@ -65,28 +64,11 @@ const ComputerDetail: React.FC = () => {
     }));
   };
 
-  const historyCsvData = history.map((item: ChangeLog) => ({
-    Field: item?.field ?? '',
-    OldValue: item?.old_value ?? '',
-    NewValue: item?.new_value ?? '',
-    ChangedAt: item?.changed_at ? new Date(item.changed_at).toLocaleString('uk-UA') : '',
-  }));
-
-  if (compLoading || histLoading) {
-    return <Skeleton active paragraph={{ rows: 10 }} />;
-  }
-  if (compError || histError) {
-    return <div className={styles.error}>Помилка: {(compError || histError)?.message}</div>;
-  }
-  if (!computer) {
-    return <div className={styles.empty}>Комп'ютер не знайдено</div>;
-  }
-
-  const isServerOS = computer.os_name?.toLowerCase().includes('server');
-  const currentDate = new Date('2025-06-27T15:46:00+03:00'); // Обновленная текущая дата и время
+  const isServerOS = computer?.os_name?.toLowerCase().includes('server');
+  const currentDate = new Date();
 
   // Время последней проверки
-  const lastCheckDate = computer.last_updated ? new Date(computer.last_updated) : null;
+  const lastCheckDate = computer?.last_updated ? new Date(computer.last_updated) : null;
   const daysDiff = lastCheckDate ? differenceInDays(currentDate, lastCheckDate) : Infinity;
   let lastCheckColor = '';
   if (daysDiff <= 7) lastCheckColor = '#52c41a'; // Зеленый
@@ -94,12 +76,12 @@ const ComputerDetail: React.FC = () => {
   else lastCheckColor = '#ff4d4f'; // Красный
 
   // Статистика
-  const roleCount = computer.roles?.length || 0;
-  const softwareCount = computer.software?.length || 0;
+  const roleCount = computer?.roles?.length || 0;
+  const softwareCount = computer?.software?.length || 0;
   const historyCount = history.length;
 
   // Групування ролей
-  const groupedRoles = computer.roles?.reduce((acc, role) => {
+  const groupedRoles = computer?.roles?.reduce((acc, role) => {
     const [roleType, ...components] = role.Name.split('-');
     if (!acc[roleType]) acc[roleType] = [];
     if (components.length > 0) acc[roleType].push(components.join('-'));
@@ -112,7 +94,7 @@ const ComputerDetail: React.FC = () => {
       dataIndex: 'Name',
       key: 'Name',
       sorter: true,
-      sortOrder: sort.key === 'Name' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'Name' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('Name') }),
     },
   ];
@@ -123,7 +105,7 @@ const ComputerDetail: React.FC = () => {
       dataIndex: 'DisplayName',
       key: 'DisplayName',
       sorter: true,
-      sortOrder: sort.key === 'DisplayName' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'DisplayName' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('DisplayName') }),
     },
     {
@@ -132,7 +114,7 @@ const ComputerDetail: React.FC = () => {
       key: 'DisplayVersion',
       render: (value) => value ?? '-',
       sorter: true,
-      sortOrder: sort.key === 'DisplayVersion' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'DisplayVersion' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('DisplayVersion') }),
     },
     {
@@ -141,7 +123,7 @@ const ComputerDetail: React.FC = () => {
       key: 'InstallDate',
       render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
       sorter: true,
-      sortOrder: sort.key === 'InstallDate' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'InstallDate' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('InstallDate') }),
     },
     {
@@ -156,27 +138,62 @@ const ComputerDetail: React.FC = () => {
         return '-';
       },
       sorter: true,
-      sortOrder: sort.key === 'isNew' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'isNew' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('isNew') }),
     },
     {
       title: 'Видалено',
       key: 'isDeleted',
-      render: (_: any, record: Software) => (record.is_deleted ? 'Так' : '-'),
+      render: (_: any, record: Software) => (record.removed_on ? 'Так' : '-'),
       sorter: true,
-      sortOrder: sort.key === 'isDeleted' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'isDeleted' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('isDeleted') }),
     },
   ];
 
-  const diskColumns: TableProps<Disk>['columns'] = [
+  const physicalDiskColumns: TableProps<PhysicalDisk>['columns'] = [
+    {
+      title: 'Модель',
+      dataIndex: 'model',
+      key: 'model',
+      sorter: true,
+      sortOrder: sort.key === 'model' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('model') }),
+    },
+    {
+      title: 'Серийный номер',
+      dataIndex: 'serial',
+      key: 'serial',
+      sorter: true,
+      sortOrder: sort.key === 'serial' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('serial') }),
+    },
+    {
+      title: 'Интерфейс',
+      dataIndex: 'interface',
+      key: 'interface',
+      sorter: true,
+      sortOrder: sort.key === 'interface' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('interface') }),
+    },
+  ];
+
+  const logicalDiskColumns: TableProps<LogicalDisk>['columns'] = [
     {
       title: 'ID',
       dataIndex: 'device_id',
       key: 'device_id',
       sorter: true,
-      sortOrder: sort.key === 'device_id' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'device_id' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('device_id') }),
+    },
+    {
+      title: 'Метка тома',
+      dataIndex: 'volume_label',
+      key: 'volume_label',
+      sorter: true,
+      sortOrder: sort.key === 'volume_label' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('volume_label') }),
     },
     {
       title: 'Обсяг',
@@ -184,7 +201,7 @@ const ComputerDetail: React.FC = () => {
       key: 'total_space',
       render: (value) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ`,
       sorter: true,
-      sortOrder: sort.key === 'total_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'total_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('total_space') }),
     },
     {
@@ -193,46 +210,96 @@ const ComputerDetail: React.FC = () => {
       key: 'free_space',
       render: (value, record) => `${value ? (value / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ (${value && record.total_space ? ((value / record.total_space) * 100).toFixed(2) : '0'}%)`,
       sorter: true,
-      sortOrder: sort.key === 'free_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sort.key === 'free_space' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
       onHeaderCell: () => ({ onClick: () => handleSort('free_space') }),
     },
   ];
 
-  const historyColumns: TableProps<ChangeLog>['columns'] = [
+const historyColumns: TableProps<ComponentHistory>['columns'] = [
     {
-      title: 'Поле',
-      dataIndex: 'field',
-      key: 'field',
+      title: 'Тип компонента',
+      dataIndex: 'component_type',
+      key: 'component_type',
       sorter: true,
-      sortOrder: sort.key === 'field' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('field') }),
+      sortOrder: sort.key === 'component_type' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('component_type') }),
+      render: (value) => {
+        const typeMap: Record<string, string> = {
+          physical_disk: 'Физический диск',
+          logical_disk: 'Логический диск',
+          processor: 'Процесор',
+          video_card: 'Відеокарта',
+          ip_address: 'IP-адреса',
+          mac_address: 'MAC-адреса',
+          software: 'Програмне забезпечення',
+        };
+        return typeMap[value] || value;
+      },
     },
     {
-      title: 'Старе',
-      dataIndex: 'old_value',
-      key: 'old_value',
-      render: (value) => value ?? '-',
+      title: 'Ідентифікатор',
+      key: 'identifier',
+      render: (_, record) => {
+        const data = record.data;
+        if (record.component_type === 'physical_disk') return (data as PhysicalDisk).serial || '-';
+        if (record.component_type === 'logical_disk') return (data as LogicalDisk).device_id || '-';
+        if (record.component_type === 'processor' || record.component_type === 'video_card') return (data as Processor | VideoCard).name || '-';
+        if (record.component_type === 'ip_address' || record.component_type === 'mac_address') return (data as IPAddress | MACAddress).address || '-';
+        if (record.component_type === 'software') return (data as Software).DisplayName || '-';
+        return '-';
+      },
       sorter: true,
-      sortOrder: sort.key === 'old_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('old_value') }),
+      sortOrder: sort.key === 'identifier' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('identifier') }),
     },
     {
-      title: 'Нове',
-      dataIndex: 'new_value',
-      key: 'new_value',
-      render: (value) => value ?? '-',
-      sorter: true,
-      sortOrder: sort.key === 'new_value' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('new_value') }),
+      title: 'Деталі',
+      key: 'details',
+      render: (_, record) => {
+        const data = record.data;
+        if (record.component_type === 'physical_disk') {
+          const disk = data as PhysicalDisk;
+          return `Модель: ${disk.model || '-'}, Интерфейс: ${disk.interface || '-'}`;
+        }
+        if (record.component_type === 'logical_disk') {
+          const disk = data as LogicalDisk;
+          return `Метка: ${disk.volume_label || '-'}, Обсяг: ${(disk.total_space / (1024 * 1024 * 1024)).toFixed(2)} ГБ, Вільно: ${disk.free_space ? (disk.free_space / (1024 * 1024 * 1024)).toFixed(2) : '-'} ГБ`;
+        }
+        if (record.component_type === 'processor') {
+          const processor = data as Processor;
+          return `Ядер: ${processor.number_of_cores}, Логічних процесорів: ${processor.number_of_logical_processors}`;
+        }
+        if (record.component_type === 'video_card') {
+          const videoCard = data as VideoCard;
+          return `Версія драйвера: ${videoCard.driver_version || '-'}`;
+        }
+        if (record.component_type === 'ip_address' || record.component_type === 'mac_address') {
+          return (data as IPAddress | MACAddress).address || '-';
+        }
+        if (record.component_type === 'software') {
+          const software = data as Software;
+          return `Версія: ${software.DisplayVersion || '-'}, Дата встановлення: ${software.InstallDate ? new Date(software.InstallDate).toLocaleString('uk-UA') : '-'}`;
+        }
+        return '-';
+      },
     },
     {
-      title: 'Дата',
-      dataIndex: 'changed_at',
-      key: 'changed_at',
+      title: 'Дата виявлення',
+      dataIndex: 'detected_on',
+      key: 'detected_on',
       render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
       sorter: true,
-      sortOrder: sort.key === 'changed_at' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : null,
-      onHeaderCell: () => ({ onClick: () => handleSort('changed_at') }),
+      sortOrder: sort.key === 'detected_on' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('detected_on') }),
+    },
+    {
+      title: 'Дата видалення',
+      dataIndex: 'removed_on',
+      key: 'removed_on',
+      render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
+      sorter: true,
+      sortOrder: sort.key === 'removed_on' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('removed_on') }),
     },
   ];
 
@@ -242,83 +309,112 @@ const ComputerDetail: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      <Title level={2} className={styles.title}>{computer.hostname}</Title>
-      <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
-      <div>
-        <Title level={3} className={styles.subtitle}>Диски</Title>
-        <Table
-          dataSource={computer.disks || []}
-          columns={diskColumns}
-          rowKey={(record) => record.device_id ?? 'unknown-disk'}
-          pagination={false}
-          locale={{ emptyText: 'Немає даних про диски' }}
-          size="small"
-        />
-      </div>
-      {isServerOS && (
-        <div>
-          <Title level={3} className={styles.subtitle}>Ролі</Title>
-          <Button onClick={() => toggleSection('roles')} style={{ marginBottom: 8 }}>
-            {collapsedSections.roles ? 'Показати всі ролі' : 'Сховати ролі'}
-          </Button>
-          <Text>Кількість ролей: {roleCount}</Text>
-          {!collapsedSections.roles && groupedRoles && (
-            <Collapse>
-              {Object.entries(groupedRoles).map(([roleType, components]) => (
-                <Panel header={roleType} key={roleType}>
-                  <ul>
-                    {components.map((component, index) => (
-                      <li key={`${roleType}-${component}-${index}`}>{component}</li>
-                    ))}
-                  </ul>
-                </Panel>
-              ))}
-            </Collapse>
+      {compLoading ? (
+        <Skeleton active />
+      ) : compError ? (
+        <div className={styles.error}>Помилка: {(compError as any)?.response?.data?.error || compError.message || 'Невідома помилка'}</div>
+      ) : !computer ? (
+        <div className={styles.error}>Комп'ютер не знайдено</div>
+      ) : (
+        <>
+          <Title level={2} className={styles.title}>{computer.hostname || 'Завантаження...'}</Title>
+          <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
+          <div>
+            <Title level={3} className={styles.subtitle}>Физические диски</Title>
+            <Table
+              dataSource={computer.physical_disks || []}
+              columns={physicalDiskColumns}
+              rowKey={(record) => record.serial ?? 'unknown-physical-disk'}
+              pagination={false}
+              locale={{ emptyText: 'Немає даних про физические диски' }}
+              size="small"
+            />
+          </div>
+          <div>
+            <Title level={3} className={styles.subtitle}>Логические диски</Title>
+            <Table
+              dataSource={computer.logical_disks || []}
+              columns={logicalDiskColumns}
+              rowKey={(record) => record.device_id ?? 'unknown-logical-disk'}
+              pagination={false}
+              locale={{ emptyText: 'Немає даних про логические диски' }}
+              size="small"
+            />
+          </div>
+          {isServerOS && (
+            <div>
+              <Title level={3} className={styles.subtitle}>Ролі</Title>
+              <Button onClick={() => toggleSection('roles')} style={{ marginBottom: 8 }}>
+                {collapsedSections.roles ? 'Показати всі ролі' : 'Сховати ролі'}
+              </Button>
+              <Text>Кількість ролей: {roleCount}</Text>
+              {!collapsedSections.roles && groupedRoles && (
+                <Collapse>
+                  {Object.entries(groupedRoles).map(([roleType, components]) => (
+                    <Panel header={roleType} key={roleType}>
+                      <ul>
+                        {components.map((component, index) => (
+                          <li key={`${roleType}-${component}-${index}`}>{component}</li>
+                        ))}
+                      </ul>
+                    </Panel>
+                  ))}
+                </Collapse>
+              )}
+            </div>
           )}
-        </div>
+          <div>
+            <Title level={3} className={styles.subtitle}>Програмне забезпечення</Title>
+            <Button onClick={() => toggleSection('software')} style={{ marginBottom: 8 }}>
+              {collapsedSections.software ? 'Показати все ПЗ' : 'Сховати ПЗ'}
+            </Button>
+            <Text>Кількість програм: {softwareCount}</Text>
+            {!collapsedSections.software && (
+              <>
+                {computer.software && computer.software.length > 0 ? (
+                  <Table
+                    dataSource={computer.software}
+                    columns={softwareColumns}
+                    rowKey={(record) => `${record.DisplayName}-${record.DisplayVersion || ''}-${record.InstallDate || ''}`}
+                    pagination={{ current: softwarePage, pageSize: 10, total: computer.software.length, onChange: setSoftwarePage, showSizeChanger: false, showQuickJumper: false }}
+                    locale={{ emptyText: 'Немає даних' }}
+                    size="small"
+                  />
+                ) : <div className={styles.empty}>Немає даних</div>}
+              </>
+            )}
+          </div>
+          <div>
+            <Title level={3} className={styles.subtitle}>Історія змін</Title>
+            <Button onClick={() => toggleSection('history')} style={{ marginBottom: 8 }}>
+              {collapsedSections.history ? 'Показати всю історію' : 'Сховати історію'}
+            </Button>
+            <Text>Кількість змін: {historyCount}, Остання перевірка: {lastCheckDate ? lastCheckDate.toLocaleString('uk-UA') : 'Немає даних'}</Text>
+            {!collapsedSections.history && (
+              <>
+                {history.length > 0 ? (
+                  <Table
+                    dataSource={history}
+                    columns={historyColumns}
+                    rowKey={(record) => {
+                      const data = record.data;
+                      if (record.component_type === 'physical_disk') return `${record.component_type}-${(data as PhysicalDisk).serial || 'unknown'}`;
+                      if (record.component_type === 'logical_disk') return `${record.component_type}-${(data as LogicalDisk).device_id || 'unknown'}`;
+                      if (record.component_type === 'processor' || record.component_type === 'video_card') return `${record.component_type}-${(data as Processor | VideoCard).name || 'unknown'}`;
+                      if (record.component_type === 'ip_address' || record.component_type === 'mac_address') return `${record.component_type}-${(data as IPAddress | MACAddress).address || 'unknown'}`;
+                      if (record.component_type === 'software') return `${record.component_type}-${(data as Software).DisplayName || 'unknown'}`;
+                      return `${record.component_type}-unknown`;
+                    }}
+                    pagination={{ current: historyPage, pageSize: 10, total: history.length, onChange: setHistoryPage, showSizeChanger: false, showQuickJumper: false }}
+                    locale={{ emptyText: 'Немає даних про історію' }}
+                    size="small"
+                  />
+                ) : <div className={styles.empty}>Немає даних про історію</div>}
+              </>
+            )}
+          </div>
+        </>
       )}
-      <div>
-        <Title level={3} className={styles.subtitle}>Програмне забезпечення</Title>
-        <Button onClick={() => toggleSection('software')} style={{ marginBottom: 8 }}>
-          {collapsedSections.software ? 'Показати все ПЗ' : 'Сховати ПЗ'}
-        </Button>
-        <Text>Кількість програм: {softwareCount}</Text>
-        {!collapsedSections.software && (
-          <>
-            {computer.software && computer.software.length > 0 ? (
-              <Table
-                dataSource={computer.software}
-                columns={softwareColumns}
-                rowKey={(record) => `${record.DisplayName}-${record.DisplayVersion}-${record.InstallDate || ''}`}
-                pagination={{ current: softwarePage, pageSize: 10, total: computer.software.length, onChange: setSoftwarePage, showSizeChanger: false, showQuickJumper: false }}
-                locale={{ emptyText: 'Немає даних' }}
-                size="small"
-              />
-            ) : <div className={styles.empty}>Немає даних</div>}
-          </>
-        )}
-      </div>
-      <div>
-        <Title level={3} className={styles.subtitle}>Історія змін</Title>
-        <Button onClick={() => toggleSection('history')} style={{ marginBottom: 8 }}>
-          {collapsedSections.history ? 'Показати всю історію' : 'Сховати історію'}
-        </Button>
-        <Text>Кількість змін: {historyCount}, Остання перевірка: {lastCheckDate ? lastCheckDate.toLocaleString('uk-UA') : 'Немає даних'}</Text>
-        {!collapsedSections.history && (
-          <>
-            {history.length > 0 ? (
-              <Table
-                dataSource={history}
-                columns={historyColumns}
-                rowKey="id"
-                pagination={{ current: historyPage, pageSize: 10, total: history.length, onChange: setHistoryPage, showSizeChanger: false, showQuickJumper: false }}
-                locale={{ emptyText: 'Немає даних про історію' }}
-                size="small"
-              />
-            ) : <div className={styles.empty}>Немає даних про історію</div>}
-          </>
-        )}
-      </div>
     </div>
   );
 };

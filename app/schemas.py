@@ -1,6 +1,6 @@
 # app/schemas.py
 from pydantic import BaseModel, field_validator, Field, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from .models import CheckStatus, ScanStatus
 from .utils import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
@@ -35,27 +35,98 @@ class Software(BaseModel):
             logger.warning(f"Некоректний формат install_date: {v}, повертаємо None")
             return None
 
-class Disk(BaseModel):
-    device_id: Optional[str] = Field(None, alias="device_id", min_length=1)
-    model: Optional[str] = Field(None, alias="model", min_length=1)
-    total_space: int = Field(ge=0, alias="total_space")
-    free_space: Optional[int] = Field(None, ge=0, alias="free_space")
-    serial:  Optional[str] = None
-    interface: Optional[NonEmptyStr] = None
-    media_type: Optional[NonEmptyStr] = None
-    volume_label: Optional[str] = None
+
+class PhysicalDisk(BaseModel):
+    id: Optional[int] = None
+    computer_id: Optional[int] = None
+    model: Optional[NonEmptyStr] = Field(None, alias="model", min_length=1, max_length=255)
+    serial: Optional[NonEmptyStr] = Field(None, alias="serial", max_length=100)
+    interface: Optional[NonEmptyStr] = Field(None, alias="interface", max_length=50)
+    media_type: Optional[NonEmptyStr] = Field(None, alias="media_type", max_length=50)
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
+    @field_validator('model')
+    @classmethod
+    def validate_model(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Model не может быть пустой строкой")
+        return v
+
+    @field_validator('serial')
+    @classmethod
+    def validate_serial(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Serial не может быть пустой строкой")
+        return v
+
+    @field_validator('interface')
+    @classmethod
+    def validate_interface(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Interface не может быть пустой строкой")
+        return v
+
+    @field_validator('media_type')
+    @classmethod
+    def validate_media_type(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Media type не может быть пустой строкой")
+        return v
+
+class LogicalDisk(BaseModel):
+    device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", min_length=1, max_length=255)
+    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
+    total_space: int = Field(ge=0, alias="total_space")
+    free_space: Optional[int] = Field(None, ge=0, alias="free_space")
+    physical_disk_id: Optional[int] = None
+    detected_on: Optional[datetime] = None
+    removed_on: Optional[datetime] = None
     @property
     def total_space_gb(self) -> float:
         return self.total_space / (1024 ** 3) if self.total_space else 0.0
-
     @property
     def free_space_gb(self) -> Optional[float]:
         return self.free_space / (1024 ** 3) if self.free_space else None
-
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @field_validator('device_id')
+    @classmethod
+    def validate_device_id(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Device ID не может быть пустой строкой")
+        return v
+
+    @field_validator('volume_label')
+    @classmethod
+    def validate_volume_label(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Volume label не может быть пустой строкой")
+        return v
+
+class DiskVolume(BaseModel):
+    id: int
+    hostname: NonEmptyStr
+    disk_id: NonEmptyStr = Field(..., alias="disk_id", min_length=1, max_length=255)
+    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
+    total_space_gb: float = Field(ge=0.0)
+    free_space_gb: float = Field(ge=0.0)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @field_validator('disk_id')
+    @classmethod 
+    def validate_disk_id(cls, v):
+        if len(v.strip()) == 0: 
+            raise ValueError("Disk ID не может быть пустой строкой")
+        return v
+
+    @field_validator('volume_label')
+    @classmethod
+    def validate_volume_label(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Volume label не может быть пустой строкой")
+        return v
 
 class VideoCard(BaseModel):
     name: NonEmptyStr = Field(..., alias="name")
@@ -97,6 +168,8 @@ class MACAddress(BaseModel):
 class ComputerBase(BaseModel):
     hostname: NonEmptyStr
     ip_addresses: List[IPAddress] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
     os_name: Optional[str] = None
     os_version: Optional[str] = None
     processors: Optional[List[Processor]] = None
@@ -137,7 +210,8 @@ class ComputerBase(BaseModel):
 class ComputerList(ComputerBase):
     id: int
     last_updated: datetime
-    disks: List[Disk] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
     software: List[Software] = []
     roles: List[Role] = []
     video_cards: List[VideoCard] = []
@@ -147,7 +221,8 @@ class ComputerList(ComputerBase):
 class Computer(ComputerBase):
     id: int
     last_updated: datetime
-    disks: List[Disk] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
     roles: List[Role] = []
     software: List[Software] = []
     video_cards: List[VideoCard] = []
@@ -156,7 +231,8 @@ class Computer(ComputerBase):
 class ComputerCreate(ComputerBase):
     roles: List[Role] = []
     software: List[Software] = []
-    disks: List[Disk] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
     video_cards: List[VideoCard] = []
     processors: List[Processor] = []
     model_config = ConfigDict(from_attributes=True)
@@ -191,12 +267,6 @@ class ServerDistribution(BaseModel):
     count: int
     model_config = ConfigDict(from_attributes=True)
 
-class DiskVolume(BaseModel):
-    hostname: NonEmptyStr
-    disk_id: NonEmptyStr
-    total_space_gb: float
-    free_space_gb: float
-    model_config = ConfigDict(from_attributes=True)
 
 class StatusStats(BaseModel):
     status: CheckStatus
@@ -217,13 +287,16 @@ class ScanStats(BaseModel):
     status_stats: List[StatusStats]
     model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
 
+class ComponentChangeStats(BaseModel):
+    component_type: str
+    changes_count: int
+
 class DashboardStats(BaseModel):
-    total_computers: Optional[int]
+    total_computers: Optional[int] = None  # Изменено с int | None на Optional[int]
     os_stats: OsStats
     disk_stats: DiskStats
     scan_stats: ScanStats
-    os_names: List[str] = []
-    model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
+    component_changes: List[ComponentChangeStats] = []
 
 class ErrorResponse(BaseModel):
     error: NonEmptyStr
@@ -291,3 +364,9 @@ class AppSettingUpdate(BaseModel):
                     raise ValueError(f"Недопустимый IP или диапазон: {ip}")
         return v
     model_config = ConfigDict(from_attributes=True)
+
+class ComponentHistory(BaseModel):
+    component_type: str
+    data: Union[PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software]
+    detected_on: Optional[str] = None
+    removed_on: Optional[str] = None

@@ -247,7 +247,7 @@ async def update_check_status(
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 
-@router.get("/computers/{computer_id}/history", response_model=List[Dict[str, Any]])
+@router.get("/computers/{computer_id}/history", response_model=List[schemas.ComponentHistory])
 async def get_component_history(
     computer_id: int,
     db: AsyncSession = Depends(get_db),

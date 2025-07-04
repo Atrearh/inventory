@@ -31,6 +31,7 @@ const App: React.FC = () => {
             <Route path="/computer/:computerId" element={<ComputerDetail />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/computers/hostname/:hostname" element={<ComputerDetail />} />
           </Routes>
         </Content>
       </Layout>

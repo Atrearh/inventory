@@ -113,8 +113,8 @@ class WinRMDataCollector:
                 raise RuntimeError(f"Ошибка выполнения скрипта: {error_message}")
             output = decode_output(result.std_out)
             if not output.strip():
-                logger.error(f"Пустой вывод от {script_name} для {self.hostname}")
-                raise RuntimeError(f"Скрипт вернул пустой вывод")
+                logger.warning(f"Пустой вывод от {script_name} для {self.hostname}, возвращается пустой список")
+                return []  # Возвращаем пустой список вместо вызова ошибки
             logger.info(f"Скрипт {script_name} выполнен успешно для {self.hostname}")
             try:
                 data = json.loads(output)
@@ -141,26 +141,27 @@ class WinRMDataCollector:
             return False
 
     async def get_all_pc_info(self, session: winrm.Session, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
-        """Собирает полную информацию о компьютере, используя одну WinRM-сессию."""
         result = {
             "hostname": self.hostname,
             "check_status": "partial",
-            "error": None,
             "ip_addresses": [],
             "mac_addresses": [],
             "processors": [],
             "video_cards": [],
-            "disks": [],
+            "disks": {"physical_disks": [], "logical_disks": []},
             "software": [],
-            "roles": []
+            "roles": [],
+            "os_name": "Unknown",
+            "os_version": None,
+            "ram": None,
+            "motherboard": None,
+            "last_boot": None,
+            "is_virtual": False,
         }
 
         try:
-            # Проверяем, является ли хост сервером
             is_server = await self._is_server(session)
             script_name = "server_info.ps1" if is_server else "hardware_info.ps1"
-            
-            # Выполняем основной скрипт
             hardware_data = await self._execute_script(session, script_name)
             result.update({
                 "os_name": hardware_data.get("os_name", "Unknown"),
@@ -169,24 +170,32 @@ class WinRMDataCollector:
                 "motherboard": hardware_data.get("motherboard"),
                 "last_boot": hardware_data.get("last_boot"),
                 "is_virtual": hardware_data.get("is_virtual", False),
-                "ip_addresses": hardware_data.get("ip_addresses", []),
-                "mac_addresses": hardware_data.get("mac_addresses", []),
-                "processors": hardware_data.get("processors", []),
-                "video_cards": hardware_data.get("video_cards", []),
+                "ip_addresses": list(set(hardware_data.get("ip_addresses", []))),  # Удаляем дубли
+                "mac_addresses": list(set(hardware_data.get("mac_addresses", []))),  # Удаляем дубли
+                "processors": list({proc['name']: proc for proc in hardware_data.get("processors", [])}.values()),  # Удаляем дубли по имени
+                "video_cards": list({card['name']: card for card in hardware_data.get("video_cards", [])}.values()),  # Удаляем дубли по имени
                 "roles": hardware_data.get("roles", []) if is_server else []
             })
 
-            # Сбор данных о дисках
             disk_data = await self._execute_script(session, "disk_info.ps1")
-            result["disks"] = disk_data if isinstance(disk_data, list) else [disk_data] if disk_data else []
+            # Фильтруем некорректные диски
+            physical_disks = [disk for disk in disk_data.get("physical_disks", []) if disk.get("serial")]
+            logical_disks = [disk for disk in disk_data.get("logical_disks", []) if disk.get("device_id") and disk.get("total_space", 0) > 0]
+            result["disks"] = {
+                "physical_disks": list({disk['serial']: disk for disk in physical_disks}.values()),  # Удаляем дубли по serial
+                "logical_disks": list({disk['device_id']: disk for disk in logical_disks}.values())  # Удаляем дубли по device_id
+            }
 
-            # Сбор данных о софте
+            software_data = []
             if mode == "Full":
                 software_data = await self._execute_script(session, "software_info_full.ps1")
-            else:  # Режим 'Changes'
-                software_data = await self._execute_script(session, "software_info_changes.ps1", last_updated=last_updated)
-            # Фильтруем install_date из software_data
-            result["software"] = software_data if isinstance(software_data, list) else []
+            else:
+                try:
+                    software_data = await self._execute_script(session, "software_info_changes.ps1", last_updated=last_updated)
+                except RuntimeError as e:
+                    logger.warning(f"Ошибка при получении данных software_info для {self.hostname}: {str(e)}")
+                    software_data = []
+            result["software"] = list({(soft.get("DisplayName", "").lower(), soft.get("DisplayVersion", "").lower()): soft for soft in software_data}.values())  # Удаляем дубли по имени и версии
             result["check_status"] = "success"
         except Exception as e:
             result["error"] = f"Ошибка сбора данных: {str(e)}"
@@ -195,4 +204,4 @@ class WinRMDataCollector:
 
         logger.info(f"Собраны данные для {self.hostname} в режиме {mode}: {result['check_status']}")
         logger.debug(f"Подробные данные для {self.hostname}: {result}")
-        return result 
+        return result

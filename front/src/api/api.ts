@@ -1,23 +1,25 @@
+// src/api/api.ts
+
 import axios from 'axios';
 import { API_URL } from '../config';
-import { Computer, ComputerList, ComputersResponse, DashboardStats, CheckStatus, ChangeLog } from '../types/schemas';
+import { Computer, ComputersResponse, DashboardStats, ComponentHistory } from '../types/schemas'; // Обновили импорт
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
 });
 
-// Інтерфейс для відповіді на запит перезапуску сервера
+// Интерфейс для ответа на запрос перезапуска сервера
 export interface RestartResponse {
   message: string;
 }
 
-// Запуск сканування Active Directory
+// Запуск сканирования Active Directory
 export const startADScan = async () => {
-  const response = await axiosInstance.post<{ message: string }>('/ad/scan');
+  const response = await axiosInstance.post<{ status: string; task_id: string }>('/ad/scan');
   return response.data;
 };
 
-// Отримання статистики дашборда
+// Получение статистики дашборда
 export const getStatistics = async (params: { metrics?: string[] } = {}) => {
   const response = await axiosInstance.get<DashboardStats>('/statistics', {
     params: {
@@ -36,7 +38,7 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
   return response.data;
 };
 
-// Отримання списку комп'ютерів з фільтрацією та пагінацією
+// Получение списка компьютеров с фильтрацией и пагинацией
 export const getComputers = async (params: {
   hostname?: string;
   os_name?: string;
@@ -73,7 +75,7 @@ export const getComputers = async (params: {
   return response.data;
 };
 
-// Експорт списку комп'ютерів у CSV
+// Экспорт списка компьютеров в CSV
 export const exportComputersToCSV = async (params: {
   hostname?: string;
   os_name?: string;
@@ -107,28 +109,27 @@ export const exportComputersToCSV = async (params: {
   return response.data;
 };
 
-// Отримання даних комп'ютера за ID
+// Получение данных компьютера по ID
 export const getComputerById = async (computerId: number) => {
   const response = await axiosInstance.get<Computer>(`/computers/${computerId}`);
   return response.data;
 };
 
-// Отримання історії змін для комп'ютера
-export const getHistory = async (computerId: number) => {
-  const response = await axiosInstance.get<ChangeLog[]>(`/history/${computerId}`);
+export const getHistory = async (computerId: number): Promise<ComponentHistory[]> => {
+  const response = await axiosInstance.get<ComponentHistory[]>(`/api/computers/${computerId}/history`);
   return response.data;
 };
 
-// Запуск сканування
+// Запуск сканирования
 export const startScan = async () => {
   const response = await axiosInstance.post<{ status: string; task_id: string }>('/scan');
   return response.data;
 };
 
-// Отримання статусу сканування
+// Получение статуса сканирования
 export const getScanStatus = async (taskId: string) => {
   const response = await axiosInstance.get(`/scan/status/${taskId}`);
-  return response.data;
+  return response.data; 
 };
 
 // Перезапуск сервера

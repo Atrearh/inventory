@@ -29,17 +29,70 @@ export interface AppSettingUpdate {
   cors_allow_origins?: string | null;
   allowed_ips?: string | null;
 }
-export interface ChangeLog {
-  id: number;
-  computer_id: number;
-  field: string;
-  old_value?: string | null;
-  new_value?: string | null;
-  changed_at: string;
+export interface ComponentChangeStats {
+  component_type: string;
+  changes_count: number;
+}
+export interface ComponentHistory {
+  component_type: string;
+  data: PhysicalDisk | LogicalDisk | Processor | VideoCard | IPAddress | MACAddress | Software;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface PhysicalDisk {
+  id?: number | null;
+  computer_id?: number | null;
+  model?: string | null;
+  serial?: string | null;
+  interface?: string | null;
+  media_type?: string | null;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface LogicalDisk {
+  device_id?: string | null;
+  volume_label?: string | null;
+  total_space: number;
+  free_space?: number | null;
+  physical_disk_id?: number | null;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface Processor {
+  name: string;
+  number_of_cores: number;
+  number_of_logical_processors: number;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface VideoCard {
+  name: string;
+  driver_version?: string | null;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface IPAddress {
+  address: string;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface MACAddress {
+  address: string;
+  detected_on?: string | null;
+  removed_on?: string | null;
+}
+export interface Software {
+  DisplayName: string;
+  DisplayVersion?: string | null;
+  InstallDate?: string | null;
+  detected_on?: string | null;
+  removed_on?: string | null;
 }
 export interface Computer {
   hostname: string;
   ip_addresses?: IPAddress[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[] | null;
@@ -51,45 +104,18 @@ export interface Computer {
   check_status?: CheckStatus | null;
   id: number;
   last_updated: string;
-  disks?: Disk[];
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
 }
-export interface IPAddress {
-  address: string;
-}
-export interface Processor {
-  name: string;
-  number_of_cores: number;
-  number_of_logical_processors: number;
-}
-export interface MACAddress {
-  address: string;
-}
-export interface Disk {
-  device_id?: string | null;
-  model?: string | null;
-  total_space: number;
-  free_space?: number | null;
-}
 export interface Role {
   Name: string;
-}
-export interface Software {
-  DisplayName: string;
-  DisplayVersion?: string | null;
-  InstallDate?: string | null;
-  Action?: string | null;
-  is_deleted?: boolean;
-}
-export interface VideoCard {
-  name: string;
-  driver_version?: string | null;
 }
 export interface ComputerBase {
   hostname: string;
   ip_addresses?: IPAddress[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[] | null;
@@ -103,6 +129,8 @@ export interface ComputerBase {
 export interface ComputerCreate {
   hostname: string;
   ip_addresses?: IPAddress[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[];
@@ -114,12 +142,13 @@ export interface ComputerCreate {
   check_status?: CheckStatus | null;
   roles?: Role[];
   software?: Software[];
-  disks?: Disk[];
   video_cards?: VideoCard[];
 }
 export interface ComputerList {
   hostname: string;
   ip_addresses?: IPAddress[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
   processors?: Processor[];
@@ -131,7 +160,6 @@ export interface ComputerList {
   check_status?: CheckStatus | null;
   id: number;
   last_updated: string;
-  disks?: Disk[];
   software?: Software[];
   roles?: Role[];
   video_cards?: VideoCard[];
@@ -145,11 +173,11 @@ export interface ComputersResponse {
   total: number;
 }
 export interface DashboardStats {
-  total_computers: number | null;
+  total_computers?: number | null;
   os_stats: OsStats;
   disk_stats: DiskStats;
   scan_stats: ScanStats;
-  os_names?: string[];
+  component_changes?: ComponentChangeStats[];
 }
 export interface OsStats {
   client_os: OsDistribution[];
@@ -167,8 +195,10 @@ export interface DiskStats {
   low_disk_space: DiskVolume[];
 }
 export interface DiskVolume {
+  id: number;
   hostname: string;
   disk_id: string;
+  volume_label?: string | null;
   total_space_gb: number;
   free_space_gb: number;
 }

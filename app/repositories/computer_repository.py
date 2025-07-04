@@ -1,13 +1,13 @@
 from typing import List, Optional, Tuple, Dict, Any, Type, TypeVar
 from datetime import datetime
-from sqlalchemy import select, func, tuple_
+from sqlalchemy import select, func, tuple_  
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from .. import models, schemas
 from sqlalchemy.orm import selectinload
-from sqlalchemy import union_all, update
-
+from sqlalchemy import union_all, update, literal
+from typing_extensions import List as ListAny
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -81,7 +81,8 @@ class ComputerRepository:
 
         try:
             query = select(models.Computer).options(
-                selectinload(models.Computer.disks),
+                selectinload(models.Computer.physical_disks),
+                selectinload(models.Computer.logical_disks),
                 selectinload(models.Computer.software),
                 selectinload(models.Computer.roles),
                 selectinload(models.Computer.video_cards),
@@ -132,7 +133,8 @@ class ComputerRepository:
         try:
             stmt = select(models.Computer).options(
                 selectinload(models.Computer.roles),
-                selectinload(models.Computer.disks),
+                selectinload(models.Computer.physical_disks),
+                selectinload(models.Computer.logical_disks),
                 selectinload(models.Computer.software),
                 selectinload(models.Computer.ip_addresses),
                 selectinload(models.Computer.processors),
@@ -146,9 +148,10 @@ class ComputerRepository:
             if computer:
                 logger.debug(
                     f"Компьютер {computer.id}: roles={len(computer.roles)}, "
-                    f"software={len(computer.software)}, disks={len(computer.disks)}, "
-                    f"ip_addresses={len(computer.ip_addresses)}, processors={len(computer.processors)}, "
-                    f"mac_addresses={len(computer.mac_addresses)}, video_cards={len(computer.video_cards)}"
+                    f"software={len(computer.software)}, physical_disks={len(computer.physical_disks)}, "
+                    f"logical_disks={len(computer.logical_disks)}, ip_addresses={len(computer.ip_addresses)}, "
+                    f"processors={len(computer.processors)}, mac_addresses={len(computer.mac_addresses)}, "
+                    f"video_cards={len(computer.video_cards)}"
                 )
                 return await self._computer_to_pydantic(computer)
             else:
@@ -190,123 +193,110 @@ class ComputerRepository:
             # Створюємо запити для кожної таблиці компонентів
             disk_query = (
                 select(
-                    func.literal('disk').label('component_type'),
-                    models.Disk.__table__.c.id,
-                    models.Disk.__table__.c.device_id.label('identifier'),
-                    models.Disk.__table__.c.model,
-                    models.Disk.__table__.c.total_space,
-                    models.Disk.__table__.c.free_space,
-                    models.Disk.__table__.c.serial,
-                    models.Disk.__table__.c.interface,
-                    models.Disk.__table__.c.media_type,
-                    models.Disk.__table__.c.volume_label,
-                    models.Disk.__table__.c.detected_on,
-                    models.Disk.__table__.c.removed_on
+                    literal('physical_disk').label('component_type'),
+                    func.JSON_OBJECT(
+                        'model', models.PhysicalDisk.model,
+                        'serial', models.PhysicalDisk.serial,
+                        'interface', models.PhysicalDisk.interface,
+                        'media_type', models.PhysicalDisk.media_type,
+                        'detected_on', models.PhysicalDisk.detected_on,
+                        'removed_on', models.PhysicalDisk.removed_on
+                    ).label('data'),
+                    models.PhysicalDisk.detected_on,
+                    models.PhysicalDisk.removed_on
                 )
-                .where(models.Disk.computer_id == computer_id)
+                .where(models.PhysicalDisk.computer_id == computer_id)
+            )
+
+            logical_disk_query = (
+                select(
+                    literal('logical_disk').label('component_type'),
+                    func.JSON_OBJECT(
+                        'device_id', models.LogicalDisk.device_id,
+                        'volume_label', models.LogicalDisk.volume_label,
+                        'total_space', models.LogicalDisk.total_space,
+                        'free_space', models.LogicalDisk.free_space,
+                        'physical_disk_id', models.LogicalDisk.physical_disk_id,
+                        'detected_on', models.LogicalDisk.detected_on,
+                        'removed_on', models.LogicalDisk.removed_on
+                    ).label('data'),
+                    models.LogicalDisk.detected_on,
+                    models.LogicalDisk.removed_on
+                )
+                .where(models.LogicalDisk.computer_id == computer_id)
             )
 
             processor_query = (
                 select(
-                    func.literal('processor').label('component_type'),
-                    models.Processor.__table__.c.id,
-                    models.Processor.__table__.c.name.label('identifier'),
-                    models.Processor.__table__.c.name,
-                    models.Processor.__table__.c.number_of_cores,
-                    models.Processor.__table__.c.number_of_logical_processors,
-                    func.literal(None).label('model'),
-                    func.literal(None).label('total_space'),
-                    func.literal(None).label('free_space'),
-                    func.literal(None).label('serial'),
-                    func.literal(None).label('interface'),
-                    func.literal(None).label('media_type'),
-                    func.literal(None).label('volume_label'),
-                    models.Processor.__table__.c.detected_on,
-                    models.Processor.__table__.c.removed_on
+                    literal('processor').label('component_type'),
+                    func.JSON_OBJECT(
+                        'name', models.Processor.name,
+                        'number_of_cores', models.Processor.number_of_cores,
+                        'number_of_logical_processors', models.Processor.number_of_logical_processors,
+                        'detected_on', models.Processor.detected_on,
+                        'removed_on', models.Processor.removed_on
+                    ).label('data'),
+                    models.Processor.detected_on,
+                    models.Processor.removed_on
                 )
                 .where(models.Processor.computer_id == computer_id)
             )
 
             video_card_query = (
                 select(
-                    func.literal('video_card').label('component_type'),
-                    models.VideoCard.__table__.c.id,
-                    models.VideoCard.__table__.c.name.label('identifier'),
-                    models.VideoCard.__table__.c.name,
-                    func.literal(None).label('number_of_cores'),
-                    func.literal(None).label('number_of_logical_processors'),
-                    models.VideoCard.__table__.c.driver_version.label('model'),
-                    func.literal(None).label('total_space'),
-                    func.literal(None).label('free_space'),
-                    func.literal(None).label('serial'),
-                    func.literal(None).label('interface'),
-                    func.literal(None).label('media_type'),
-                    func.literal(None).label('volume_label'),
-                    models.VideoCard.__table__.c.detected_on,
-                    models.VideoCard.__table__.c.removed_on
+                    literal('video_card').label('component_type'),
+                    func.JSON_OBJECT(
+                        'name', models.VideoCard.name,
+                        'driver_version', models.VideoCard.driver_version,
+                        'detected_on', models.VideoCard.detected_on,
+                        'removed_on', models.VideoCard.removed_on
+                    ).label('data'),
+                    models.VideoCard.detected_on,
+                    models.VideoCard.removed_on
                 )
                 .where(models.VideoCard.computer_id == computer_id)
             )
 
             ip_address_query = (
                 select(
-                    func.literal('ip_address').label('component_type'),
-                    models.IPAddress.__table__.c.id,
-                    models.IPAddress.__table__.c.address.label('identifier'),
-                    models.IPAddress.__table__.c.address.label('name'),
-                    func.literal(None).label('number_of_cores'),
-                    func.literal(None).label('number_of_logical_processors'),
-                    func.literal(None).label('model'),
-                    func.literal(None).label('total_space'),
-                    func.literal(None).label('free_space'),
-                    func.literal(None).label('serial'),
-                    func.literal(None).label('interface'),
-                    func.literal(None).label('media_type'),
-                    func.literal(None).label('volume_label'),
-                    models.IPAddress.__table__.c.detected_on,
-                    models.IPAddress.__table__.c.removed_on
+                    literal('ip_address').label('component_type'),
+                    func.JSON_OBJECT(
+                        'address', models.IPAddress.address,
+                        'detected_on', models.IPAddress.detected_on,
+                        'removed_on', models.IPAddress.removed_on
+                    ).label('data'),
+                    models.IPAddress.detected_on,
+                    models.IPAddress.removed_on
                 )
                 .where(models.IPAddress.computer_id == computer_id)
             )
 
             mac_address_query = (
                 select(
-                    func.literal('mac_address').label('component_type'),
-                    models.MACAddress.__table__.c.id,
-                    models.MACAddress.__table__.c.address.label('identifier'),
-                    models.MACAddress.__table__.c.address.label('name'),
-                    func.literal(None).label('number_of_cores'),
-                    func.literal(None).label('number_of_logical_processors'),
-                    func.literal(None).label('model'),
-                    func.literal(None).label('total_space'),
-                    func.literal(None).label('free_space'),
-                    func.literal(None).label('serial'),
-                    func.literal(None).label('interface'),
-                    func.literal(None).label('media_type'),
-                    func.literal(None).label('volume_label'),
-                    models.MACAddress.__table__.c.detected_on,
-                    models.MACAddress.__table__.c.removed_on
+                    literal('mac_address').label('component_type'),
+                    func.JSON_OBJECT(
+                        'address', models.MACAddress.address,
+                        'detected_on', models.MACAddress.detected_on,
+                        'removed_on', models.MACAddress.removed_on
+                    ).label('data'),
+                    models.MACAddress.detected_on,
+                    models.MACAddress.removed_on
                 )
                 .where(models.MACAddress.computer_id == computer_id)
             )
 
             software_query = (
                 select(
-                    func.literal('software').label('component_type'),
-                    models.Software.__table__.c.id,
-                    models.Software.__table__.c.name.label('identifier'),
-                    models.Software.__table__.c.name,
-                    func.literal(None).label('number_of_cores'),
-                    func.literal(None).label('number_of_logical_processors'),
-                    models.Software.__table__.c.version.label('model'),
-                    func.literal(None).label('total_space'),
-                    func.literal(None).label('free_space'),
-                    func.literal(None).label('serial'),
-                    func.literal(None).label('interface'),
-                    func.literal(None).label('media_type'),
-                    func.literal(None).label('volume_label'),
-                    models.Software.__table__.c.detected_on,
-                    models.Software.__table__.c.removed_on
+                    literal('software').label('component_type'),
+                    func.JSON_OBJECT(
+                        'DisplayName', models.Software.name,
+                        'DisplayVersion', models.Software.version,
+                        'InstallDate', models.Software.install_date,
+                        'detected_on', models.Software.detected_on,
+                        'removed_on', models.Software.removed_on
+                    ).label('data'),
+                    models.Software.detected_on,
+                    models.Software.removed_on
                 )
                 .where(models.Software.computer_id == computer_id)
             )
@@ -314,6 +304,7 @@ class ComputerRepository:
             # Об'єднуємо запити через UNION ALL
             union_query = union_all(
                 disk_query,
+                logical_disk_query,
                 processor_query,
                 video_card_query,
                 ip_address_query,
@@ -324,61 +315,12 @@ class ComputerRepository:
             result = await self.db.execute(union_query)
             rows = result.fetchall()
 
+            # Формуємо історію
             history = []
             for row in rows:
-                component_type = row.component_type
-                data = {}
-                if component_type == 'disk':
-                    data = schemas.Disk(
-                        device_id=row.identifier,
-                        model=row.model,
-                        total_space=row.total_space or 0,
-                        free_space=row.free_space,
-                        serial=row.serial,
-                        interface=row.interface,
-                        media_type=row.media_type,
-                        volume_label=row.volume_label,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-                elif component_type == 'processor':
-                    data = schemas.Processor(
-                        name=row.name,
-                        number_of_cores=row.number_of_cores,
-                        number_of_logical_processors=row.number_of_logical_processors,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-                elif component_type == 'video_card':
-                    data = schemas.VideoCard(
-                        name=row.name,
-                        driver_version=row.model,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-                elif component_type == 'ip_address':
-                    data = schemas.IPAddress(
-                        address=row.name,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-                elif component_type == 'mac_address':
-                    data = schemas.MACAddress(
-                        address=row.name,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-                elif component_type == 'software':
-                    data = schemas.Software(
-                        name=row.name,
-                        version=row.model,
-                        detected_on=row.detected_on,
-                        removed_on=row.removed_on
-                    ).model_dump()
-
                 history.append({
-                    "component_type": component_type,
-                    "data": data,
+                    "component_type": row.component_type,
+                    "data": row.data,
                     "detected_on": row.detected_on.isoformat() if row.detected_on else None,
                     "removed_on": row.removed_on.isoformat() if row.removed_on else None
                 })
@@ -391,21 +333,22 @@ class ComputerRepository:
             logger.error(f"Неочікувана помилка при отриманні історії компонентів для ID {computer_id}: {str(e)}")
             raise
 
+
     async def _update_related_entities_async(
         self,
-        db_computer: models.Computer, 
-        new_entities: List[Any],
+        db_computer: models.Computer,
+        new_entities: ListAny,
         model_class: Type[T],
         table: Any,
         unique_field: str,
         update_fields: List[str],
     ) -> None:
         try:
-            # Формуємо список унікальних ідентифікаторів нових компонентів
+            # Формируем список уникальных идентификаторов новых компонентов
             new_identifiers = {entity if isinstance(entity, str) else getattr(entity, unique_field) for entity in new_entities}
             new_entities_dict = {entity if isinstance(entity, str) else getattr(entity, unique_field): entity for entity in new_entities}
 
-            # Отримуємо активні компоненти з БД (де removed_on IS NULL)
+            # Получаем активные компоненты из БД (где removed_on IS NULL)
             result = await self.db.execute(
                 select(model_class).where(
                     model_class.computer_id == db_computer.id,
@@ -414,7 +357,7 @@ class ComputerRepository:
             )
             existing_entities_dict = {getattr(e, unique_field): e for e in result.scalars().all()}
 
-            # Визначаємо компоненти, які потрібно позначити як видалені
+            # Определяем компоненты, которые нужно пометить как удаленные
             entities_to_mark_removed = set(existing_entities_dict.keys()) - new_identifiers
             if entities_to_mark_removed:
                 await self.db.execute(
@@ -426,9 +369,9 @@ class ComputerRepository:
                     )
                     .values(removed_on=datetime.utcnow())
                 )
-                logger.debug(f"Позначено як видалені {len(entities_to_mark_removed)} {table.name} для {db_computer.hostname}")
+                logger.debug(f"Пометили как удаленные {len(entities_to_mark_removed)} {table.name} для {db_computer.hostname}")
 
-            # Створюємо нові компоненти
+            # Создаем новые компоненты
             new_objects = []
             for identifier in new_identifiers:
                 if identifier not in existing_entities_dict:
@@ -451,15 +394,146 @@ class ComputerRepository:
                                 removed_on=None
                             )
                         )
-                    logger.debug(f"Додано новий компонент {identifier} до {table.name} для {db_computer.hostname}")
+                    logger.debug(f"Добавлен новый компонент {identifier} в {table.name} для {db_computer.hostname}")
 
             if new_objects:
                 self.db.add_all(new_objects)
-                logger.debug(f"Додано {len(new_objects)} нових записів до {table.name} для {db_computer.hostname}")
+                logger.debug(f"Добавлено {len(new_objects)} новых записей в {table.name} для {db_computer.hostname}")
 
             await self.db.flush()
         except Exception as e:
-            logger.error(f"Помилка при оновленні {table.name} для {db_computer.hostname}: {str(e)}")
+            await self.db.rollback()
+            logger.error(f"Ошибка при обновлении {table.name} для {db_computer.hostname}: {str(e)}")
+            raise
+
+    async def _update_logical_disks_async(self, db_computer: models.Computer, logical_disks: List[schemas.LogicalDisk]) -> None:
+        """Обновляет логические диски с учетом связи с физическими дисками."""
+        try:
+            # Получаем существующие физические диски для связи
+            result = await self.db.execute(
+                select(models.PhysicalDisk).where(
+                    models.PhysicalDisk.computer_id == db_computer.id,
+                    models.PhysicalDisk.removed_on.is_(None)
+                )
+            )
+            physical_disks = {p.serial: p for p in result.scalars().all()}
+
+            # Формируем уникальные идентификаторы логических дисков
+            new_identifiers = {disk.device_id for disk in logical_disks}
+            new_disks_dict = {disk.device_id: disk for disk in logical_disks}
+
+            # Получаем существующие логические диски
+            result = await self.db.execute(
+                select(models.LogicalDisk).where(
+                    models.LogicalDisk.computer_id == db_computer.id,
+                    models.LogicalDisk.removed_on.is_(None)
+                )
+            )
+            existing_disks_dict = {d.device_id: d for d in result.scalars().all()}
+
+            # Пометить удаленные логические диски
+            disks_to_mark_removed = set(existing_disks_dict.keys()) - new_identifiers
+            if disks_to_mark_removed:
+                await self.db.execute(
+                    update(models.LogicalDisk.__table__)
+                    .where(
+                        models.LogicalDisk.computer_id == db_computer.id,
+                        models.LogicalDisk.device_id.in_(disks_to_mark_removed),
+                        models.LogicalDisk.removed_on.is_(None)
+                    )
+                    .values(removed_on=datetime.utcnow())
+                )
+                logger.debug(f"Пометили как удаленные {len(disks_to_mark_removed)} logical_disks для {db_computer.hostname}")
+
+            # Создаем или обновляем логические диски
+            new_objects = []
+            for device_id in new_identifiers:
+                if device_id not in existing_disks_dict:
+                    new_disk = new_disks_dict[device_id]
+                    physical_disk_id = physical_disks.get(new_disk.serial, None).id if new_disk.serial in physical_disks else None
+                    new_objects.append(
+                        models.LogicalDisk(
+                            computer_id=db_computer.id,
+                            device_id=new_disk.device_id,
+                            volume_label=new_disk.volume_label,
+                            total_space=new_disk.total_space,
+                            free_space=new_disk.free_space,
+                            physical_disk_id=physical_disk_id,
+                            detected_on=datetime.utcnow(),
+                            removed_on=None
+                        )
+                    )
+                    logger.debug(f"Добавлен новый логический диск {device_id} для {db_computer.hostname}")
+
+            if new_objects:
+                self.db.add_all(new_objects)
+                logger.debug(f"Добавлено {len(new_objects)} новых логических дисков для {db_computer.hostname}")
+
+            await self.db.flush()
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Ошибка при обновлении logical_disks для {db_computer.hostname}: {str(e)}")
+            raise
+
+    async def update_related_entities(self, db_computer: models.Computer, computer: schemas.ComputerCreate, mode: str = "Full") -> None:
+        """
+        Обновляет все связанные сущности компьютера, вызывая правильные асинхронные методы.
+        """
+        try:
+            # Обновление IP-адресов
+            if computer.ip_addresses is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.ip_addresses, models.IPAddress, models.IPAddress.__table__,
+                    "address", ["address"]
+                )
+
+            # Обновление MAC-адресов
+            if computer.mac_addresses is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.mac_addresses, models.MACAddress, models.MACAddress.__table__,
+                    "address", ["address"]
+                )
+
+            # Обновление процессоров
+            if computer.processors is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.processors, models.Processor, models.Processor.__table__,
+                    "name", ["name", "number_of_cores", "number_of_logical_processors"]
+                )
+
+            # Обновление видеокарт
+            if computer.video_cards is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.video_cards, models.VideoCard, models.VideoCard.__table__,
+                    "name", ["name", "driver_version"]
+                )
+
+            # Обновление физических дисков
+            if computer.physical_disks is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.physical_disks, models.PhysicalDisk, models.PhysicalDisk.__table__,
+                    "serial", ["model", "serial", "interface", "media_type"]
+                )
+
+            # Обновление логических дисков
+            if computer.logical_disks is not None:
+                await self._update_logical_disks_async(db_computer, computer.logical_disks)
+
+            # Обновление программного обеспечения
+            if computer.software is not None:
+                await self._update_software_async(db_computer, computer.software, mode)
+
+            # Обновление ролей
+            if computer.roles is not None:
+                await self._update_related_entities_async(
+                    db_computer, computer.roles, models.Role, models.Role.__table__,
+                    "name", ["name"]
+                )
+
+            logger.debug(f"Обновление связанных сущностей для {db_computer.hostname} завершено.")
+        except Exception as e:
+            logger.error(f"Ошибка обновления связанных сущностей для {db_computer.hostname}: {str(e)}", exc_info=True)
+            await self.db.rollback()
             raise
 
     async def _update_software_async(self, db_computer: models.Computer, new_software: List[schemas.Software], mode: str = "Full") -> None:
@@ -528,42 +602,3 @@ class ComputerRepository:
             logger.error(f"Помилка при оновленні ПЗ для {db_computer.hostname}: {str(e)}")
             raise
 
-    async def update_related_entities(self, db_computer: models.Computer, computer: schemas.ComputerCreate):
-        try:
-            if computer.roles:
-                await self._update_related_entities_async(
-                    db_computer, computer.roles, models.Role, models.Role.__table__, "name", ["name"]
-                )
-            if computer.disks:
-                await self._update_related_entities_async(
-                    db_computer, computer.disks, models.Disk, models.Disk.__table__, "device_id",
-                    ["total_space", "model", "serial", "interface", "media_type", "volume_label"]
-                )
-            if computer.software:
-                await self._update_software_async(db_computer, computer.software)
-            if computer.video_cards:
-                await self._update_related_entities_async(
-                    db_computer, computer.video_cards, models.VideoCard, models.VideoCard.__table__, "name",
-                    ["driver_version"]
-                )
-            if computer.processors:
-                await self._update_related_entities_async(
-                    db_computer, computer.processors, models.Processor, models.Processor.__table__, "name",
-                    ["number_of_cores", "number_of_logical_processors"]
-                )
-            if computer.ip_addresses:
-                await self._update_related_entities_async(
-                    db_computer, computer.ip_addresses, models.IPAddress, models.IPAddress.__table__, "address",
-                    ["address"]
-                )
-            if computer.mac_addresses:
-                await self._update_related_entities_async(
-                    db_computer, computer.mac_addresses, models.MACAddress, models.MACAddress.__table__, "address",
-                    ["address"]
-                )
-        except SQLAlchemyError as e:
-            logger.error(f"Помилка бази даних при оновленні пов’язаних сутностей для {db_computer.hostname}: {str(e)}")
-            raise
-        except Exception as e:
-            logger.error(f"Помилка оновлення пов’язаних сутностей для {db_computer.hostname}: {str(e)}")
-            raise

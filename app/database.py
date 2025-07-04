@@ -8,7 +8,7 @@ from .settings import settings
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+Base = declarative_base()  
 
 # Инициализация engine и async_session_factory при загрузке модуля
 SQLALCHEMY_DATABASE_URL = settings.database_url
@@ -18,7 +18,7 @@ if not SQLALCHEMY_DATABASE_URL:
 
 logger.debug(f"Инициализация базы данных с URL: {SQLALCHEMY_DATABASE_URL}")
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
+    SQLALCHEMY_DATABASE_URL, 
     pool_size=20,
     max_overflow=10,
     pool_timeout=30,

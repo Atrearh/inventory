@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ad_server_url: str = ""
     domain: str = ""
     ad_username: NonEmptyStr = "admin"
-    ad_password: NonEmptyStr = "password"
+    ad_password: NonEmptyStr = "password" 
     api_url: str = ""
     test_hosts: str = ""
     log_level: NonEmptyStr = "INFO" 

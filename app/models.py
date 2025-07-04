@@ -70,6 +70,8 @@ class Computer(Base):
     __tablename__ = "computers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    physical_disks: Mapped[List["PhysicalDisk"]] = relationship("PhysicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     os_name: Mapped[Optional[str]] = mapped_column(String)
     os_version: Mapped[Optional[str]] = mapped_column(String)
     ram: Mapped[Optional[int]] = mapped_column(Integer)
@@ -83,7 +85,6 @@ class Computer(Base):
     mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     software: Mapped[List["Software"]] = relationship("Software", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    disks: Mapped[List["Disk"]] = relationship("Disk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     video_cards: Mapped[List["VideoCard"]] = relationship("VideoCard", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     processors: Mapped[List["Processor"]] = relationship("Processor", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     __table_args__ = (
@@ -96,6 +97,8 @@ class Role(Base):
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="roles")
+    detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     __table_args__ = (
         Index('idx_computer_role', 'computer_id', 'name', unique=True),
     )
@@ -114,23 +117,36 @@ class Software(Base):
         Index('idx_software_computer_id', 'computer_id', 'name', 'version', unique=True),
     )
 
-class Disk(Base):
-    __tablename__ = "disks"
+class PhysicalDisk(Base):
+    __tablename__ = "physical_disks"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
-    device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    total_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    free_space: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    computer: Mapped["Computer"] = relationship("Computer", back_populates="disks")
-    serial =  Column(String, nullable=True)
-    interface = Column(String, nullable=True)
-    media_type =  Column(String, nullable=True)
-    volume_label =  Column(String, nullable=True)
+    serial: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    interface: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    media_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="physical_disks")
     __table_args__ = (
-        Index('idx_computer_disk', 'computer_id', 'device_id', unique=True),
+        Index('idx_computer_physical_disk', 'computer_id', 'serial', unique=True),
+    )
+
+class LogicalDisk(Base):
+    __tablename__ = "logical_disks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
+    physical_disk_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("physical_disks.id"), nullable=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    volume_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    total_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    free_space: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    computer: Mapped["Computer"] = relationship("Computer", back_populates="logical_disks")
+    physical_disk: Mapped[Optional["PhysicalDisk"]] = relationship("PhysicalDisk")
+    __table_args__ = (
+        Index('idx_computer_logical_disk', 'computer_id', 'device_id', unique=True),
     )
 
 class VideoCard(Base):

@@ -1,4 +1,3 @@
-# app/services/computer_service.py
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -9,7 +8,7 @@ from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
 from ..database import get_db
-from ..schemas import ComputerCreate, Role, Software, Disk, CheckStatus, Computer, VideoCard, Processor, IPAddress, MACAddress
+from ..schemas import ComputerCreate, Role, Software,PhysicalDisk,LogicalDisk, CheckStatus, Computer, VideoCard, Processor, IPAddress, MACAddress
 from ..data_collector import WinRMDataCollector, winrm_session
 
 logger = logging.getLogger(__name__)
@@ -38,54 +37,96 @@ class ComputerService:
             raise
 
     async def prepare_computer_data_for_db(self, comp_data: Dict[str, Any], hostname: str, mode: str = "Full") -> ComputerCreate:
-        """Подготовка данных компьютера для сохранения в БД."""
         logger.debug(f"Подготовка данных для компьютера: {hostname}")
         try:
-            ip_addresses = [IPAddress(address=ip) for ip in comp_data.get('ip_addresses', []) if ip]
-            mac_addresses = [MACAddress(address=mac) for mac in comp_data.get('mac_addresses', []) if mac]
-            disks = []
-            for disk in comp_data.get('disks', []):
+            # Удаляем дубликаты для IP-адресов
+            ip_addresses = [IPAddress(address=ip) for ip in set(comp_data.get('ip_addresses', [])) if ip]
+            # Удаляем дубликаты для MAC-адресов
+            mac_addresses = [MACAddress(address=mac) for mac in set(comp_data.get('mac_addresses', [])) if mac]
+            
+            # Обработка физических дисков
+            physical_disks = []
+            disk_data = comp_data.get('disks', {})
+            serial_to_physical_disk = {}
+            seen_serials = set()  # Для отслеживания уникальных серийных номеров
+            for disk in disk_data.get('physical_disks', []):
                 if not isinstance(disk, dict):
-                    logger.warning(f"Некорректный элемент диска для {hostname}: {disk}, ожидался словарь")
+                    logger.warning(f"Некорректный элемент физического диска для {hostname}: {disk}")
                     continue
-                model = disk.get('model', '') if not isinstance(disk.get('model'), list) else disk.get('model', [])[0] if disk.get('model') else ''
                 serial = disk.get('serial', '') if not isinstance(disk.get('serial'), list) else disk.get('serial', [])[0] if disk.get('serial') else ''
+                if not serial or serial in seen_serials:
+                    logger.warning(f"Пропущен дублирующийся или пустой физический диск для {hostname}: serial={serial}")
+                    continue
+                seen_serials.add(serial)
+                model = disk.get('model', '') if not isinstance(disk.get('model'), list) else disk.get('model', [])[0] if disk.get('model') else ''
                 interface = disk.get('interface', '') if not isinstance(disk.get('interface'), list) else disk.get('interface', [])[0] if disk.get('interface') else ''
                 media_type = disk.get('media_type', '')
-                device_id = disk.get('device_id')
-                total_space = disk.get('total_space', 0)
-                free_space = disk.get('free_space', 0)
-                volume_label = disk.get('volume_label', '') or ''
-                if not device_id or total_space <= 0:
-                    logger.warning(f"Пропущен диск для {hostname}: device_id={device_id}, total_space={total_space}")
-                    continue
-                disks.append(Disk(
-                    device_id=device_id,
+                physical_disk = PhysicalDisk(
                     model=model,
                     serial=serial,
                     interface=interface,
-                    media_type=media_type,
+                    media_type=media_type
+                )
+                physical_disks.append(physical_disk)
+                serial_to_physical_disk[serial] = physical_disk
+
+            # Обработка логических дисков
+            logical_disks = []
+            seen_device_ids = set()  # Для отслеживания уникальных device_id
+            for disk in disk_data.get('logical_disks', []):
+                if not isinstance(disk, dict):
+                    logger.warning(f"Некорректный элемент логического диска для {hostname}: {disk}")
+                    continue
+                device_id = disk.get('device_id')
+                if not device_id or device_id in seen_device_ids:
+                    logger.warning(f"Пропущен дублирующийся или пустой логический диск для {hostname}: device_id={device_id}")
+                    continue
+                seen_device_ids.add(device_id)
+                total_space = disk.get('total_space', 0)
+                free_space = disk.get('free_space', 0)
+                volume_label = disk.get('volume_label', '') or ''
+                logical_disk = LogicalDisk(
+                    device_id=device_id,
+                    volume_label=volume_label,
                     total_space=total_space,
                     free_space=free_space,
-                    volume_label=volume_label
-                ))
-                logger.debug(f"Добавлен диск для {hostname}: device_id={device_id}, model={model}, serial={serial}, interface={interface}, media_type={media_type}, total_space={total_space}, free_space={free_space}, volume_label={volume_label}")
+                )
+                logical_disks.append(logical_disk)
+
+            # Удаляем дубликаты для процессоров и видеокарт
+            processors = []
+            seen_processor_names = set()
+            for proc in comp_data.get('processors', []):
+                name = proc.get('name')
+                if name and name not in seen_processor_names:
+                    seen_processor_names.add(name)
+                    processors.append(Processor(**proc))
+
+            video_cards = []
+            seen_video_card_names = set()
+            for card in comp_data.get('video_cards', []):
+                name = card.get('name')
+                if name and name not in seen_video_card_names:
+                    seen_video_card_names.add(name)
+                    video_cards.append(VideoCard(**card))
+
             computer_data = ComputerCreate(
                 hostname=hostname,
                 ip_addresses=ip_addresses,
+                mac_addresses=mac_addresses,
                 os_name=comp_data.get('os_name', 'Unknown'),
                 os_version=comp_data.get('os_version'),
                 ram=comp_data.get('ram'),
-                mac_addresses=mac_addresses,
                 motherboard=comp_data.get('motherboard'),
                 last_boot=datetime.fromisoformat(comp_data['last_boot']) if comp_data.get('last_boot') else None,
                 is_virtual=comp_data.get('is_virtual', False),
                 check_status=comp_data.get('check_status', CheckStatus.success),
                 roles=[Role(name=role) for role in comp_data.get('roles', [])],
                 software=[Software(**soft) for soft in comp_data.get('software', [])],
-                disks=disks,
-                video_cards=[VideoCard(**card) for card in comp_data.get('video_cards', [])],
-                processors=[Processor(**proc) for proc in comp_data.get('processors', [])]
+                physical_disks=physical_disks,
+                logical_disks=logical_disks,
+                video_cards=video_cards,
+                processors=processors
             )
             logger.info(f"Данные компьютера {hostname} подготовлены успешно")
             return computer_data
@@ -206,7 +247,7 @@ class ComputerService:
 
                     computer_to_create = await self.prepare_computer_data_for_db(result_data, host, mode)
                     await self.computer_repo.async_upsert_computer(computer_to_create, host, mode)
-                    await self.related_entity_repo.update_related_entities(db_computer, computer_to_create)
+                    await self.computer_repo.update_related_entities(db_computer, computer_to_create)  
                     await db.commit()
                     logger_adapter.info(f"Хост {host} успішно оброблено.")
                     return True

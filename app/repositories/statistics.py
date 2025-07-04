@@ -1,10 +1,8 @@
-# app/repositories/statistics.py
 import logging
 import re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, Float
-from sqlalchemy.sql.expression import case
-from datetime import datetime
+from sqlalchemy.sql.expression import case, or_
 from typing import List, Optional
 
 from .. import models, schemas
@@ -15,14 +13,16 @@ class StatisticsRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_total_computers(self) -> int:
+    async def get_total_computers(self) -> Optional[int]:
         """Возвращает общее количество компьютеров."""
         logger.debug("Запрос количества компьютеров")
         try:
             result = await self.db.execute(select(func.count(models.Computer.id)))
-            return result.scalar_one()
+            count = result.scalar_one()
+            logger.debug(f"Получено количество компьютеров: {count}")
+            return count
         except Exception as e:
-            logger.error(f"Ошибка при получении количества компьютеров: {str(e)}")
+            logger.error(f"Ошибка при получении количества компьютеров: {str(e)}", exc_info=True)
             raise
 
     async def get_os_names(self) -> List[str]:
@@ -142,50 +142,43 @@ class StatisticsRepository:
             raise
 
     async def get_low_disk_space_with_volumes(self) -> List[schemas.DiskVolume]:
-        """Возвращает список дисков с низким уровнем свободного места."""
-        logger.debug("Запрос дисков с низким свободным местом и объемами")
+        logger.debug("Запрос логических дисков с низким свободным местом")
         try:
             stmt = (
                 select(
+                    models.Computer.id,
                     models.Computer.hostname,
-                    models.Disk.device_id,
-                    models.Disk.total_space,
-                    models.Disk.free_space,
+                    models.LogicalDisk.device_id,
+                    models.LogicalDisk.volume_label,
+                    models.LogicalDisk.total_space,
+                    models.LogicalDisk.free_space,
                 )
-                .join(models.Computer, models.Disk.computer_id == models.Computer.id)
+                .join(models.Computer, models.LogicalDisk.computer_id == models.Computer.id)
                 .filter(
-                    models.Disk.total_space > 0,
-                    models.Disk.free_space.isnot(None),
-                    (models.Disk.free_space.cast(Float) / models.Disk.total_space) < 0.1,
+                    models.LogicalDisk.total_space > 0,
+                    models.LogicalDisk.free_space.isnot(None),
+                    (models.LogicalDisk.free_space.cast(Float) / models.LogicalDisk.total_space) < 0.1,
                 )
             )
             result = await self.db.execute(stmt)
             disks_data = result.all()
+            logger.debug(f"Получено {len(disks_data)} записей о логических дисках: {disks_data}")
 
-            return [
+            disk_volumes = [
                 schemas.DiskVolume(
+                    id=computer_id,
                     hostname=hostname,
                     disk_id=device_id or "Unknown",
+                    volume_label=volume_label,
                     total_space_gb=round(total_space / (1024**3), 2) if total_space else 0.0,
                     free_space_gb=round(free_space / (1024**3), 2) if free_space else 0.0,
                 )
-                for hostname, device_id, total_space, free_space in disks_data
+                for computer_id, hostname, device_id, volume_label, total_space, free_space in disks_data
             ]
+            logger.debug(f"Сформировано {len(disk_volumes)} объектов DiskVolume")
+            return disk_volumes
         except Exception as e:
-            logger.error(f"Ошибка при получении данных о дисках: {str(e)}")
-            raise
-
-    async def get_last_scan_time(self) -> Optional[datetime]:
-        """Возвращает время последнего полного сканирования."""
-        logger.debug("Запрос последней задачи сканирования")
-        try:
-            result = await self.db.execute(
-                select(models.ScanTask).order_by(models.ScanTask.updated_at.desc()).limit(1)
-            )
-            last_scan = result.scalar_one_or_none()
-            return last_scan.updated_at if last_scan else None
-        except Exception as e:
-            logger.error(f"Ошибка при получении времени последнего сканирования: {str(e)}")
+            logger.error(f"Ошибка при получении данных о дисках: {str(e)}", exc_info=True)
             raise
 
     async def get_status_stats(self) -> List[schemas.StatusStats]:
@@ -206,43 +199,90 @@ class StatisticsRepository:
             logger.error(f"Ошибка при получении статистики статусов: {str(e)}")
             raise
 
-    async def get_statistics(self, metrics: List[str] = None) -> schemas.DashboardStats:
-        """Возвращает статистику для дашборда, включая список уникальных имен ОС."""
-        if metrics is None:
-            metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats"]
-        
-        total_computers = 0
-        os_stats = schemas.OsStats(client_os=[], server_os=[])
-        low_disk_space = []
-        last_scan_time = None
-        status_stats = []
-        
-        try:
-            if "total_computers" in metrics:
-                total_computers = await self.get_total_computers()
-            if "os_distribution" in metrics:
-                os_stats = await self.get_os_distribution()
-            if "low_disk_space_with_volumes" in metrics:
-                low_disk_space = await self.get_low_disk_space_with_volumes()
-            if "last_scan_time" in metrics:
-                last_scan_time = await self.get_last_scan_time()
-            if "status_stats" in metrics:
-                status_stats = await self.get_status_stats()
-            
-            logger.debug("Статистика собрана успешно")
-        
-        except Exception as e:
-            logger.error(f"Ошибка получения статистики: {str(e)}", exc_info=True)
-            raise
-        
-        result = schemas.DashboardStats(
-            total_computers=total_computers,
-            os_stats=os_stats,
-            disk_stats=schemas.DiskStats(low_disk_space=low_disk_space),
-            scan_stats=schemas.ScanStats(
-                last_scan_time=last_scan_time,
-                status_stats=status_stats
-            ),
+    async def get_statistics(self, metrics: List[str]) -> schemas.DashboardStats:
+        stats = schemas.DashboardStats(
+            total_computers=None,
+            os_stats=schemas.OsStats(client_os=[], server_os=[]),
+            disk_stats=schemas.DiskStats(low_disk_space=[]),
+            scan_stats=schemas.ScanStats(last_scan_time=None, status_stats=[]),
+            component_changes=[]
         )
-        logger.debug(f"Возвращаемые данные статистики: {result.model_dump()}")
-        return result
+
+        if "total_computers" in metrics:
+            stats.total_computers = (await self.db.execute(select(func.count()).select_from(models.Computer))).scalar() or 0
+
+        if "os_distribution" in metrics:
+            client_os_query = await self.db.execute(
+                select(models.Computer.os_name, func.count().label("count"))
+                .filter(~models.Computer.os_name.ilike("%server%"))
+                .group_by(models.Computer.os_name)
+            )
+            stats.os_stats.client_os = [
+                schemas.OsDistribution(category=row.os_name or "Unknown", count=row.count)
+                for row in client_os_query.all()
+            ]
+            server_os_query = await self.db.execute(
+                select(models.Computer.os_name, func.count().label("count"))
+                .filter(models.Computer.os_name.ilike("%server%"))
+                .group_by(models.Computer.os_name)
+            )
+            stats.os_stats.server_os = [
+                schemas.ServerDistribution(category=row.os_name or "Unknown", count=row.count)
+                for row in server_os_query.all()
+            ]
+
+        if "low_disk_space_with_volumes" in metrics:
+            low_disk_space_query = await self.db.execute(
+                select(models.Computer.id, models.Computer.hostname, models.LogicalDisk.device_id, models.LogicalDisk.volume_label, models.LogicalDisk.total_space, models.LogicalDisk.free_space)
+                .join(models.LogicalDisk, models.Computer.id == models.LogicalDisk.computer_id)
+                .filter(models.LogicalDisk.free_space / models.LogicalDisk.total_space < 0.1)
+            )
+            stats.disk_stats.low_disk_space = [
+                schemas.DiskVolume(
+                    id=row.id,
+                    hostname=row.hostname,
+                    disk_id=row.device_id or "Unknown",
+                    volume_label=row.volume_label,
+                    total_space_gb=row.total_space / (1024 * 1024 * 1024),
+                    free_space_gb=row.free_space / (1024 * 1024 * 1024) if row.free_space else 0
+                )
+                for row in low_disk_space_query.all()
+            ]
+
+        if "last_scan_time" in metrics:
+            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by( models.ScanTask.updated_at.desc()))
+            last_scan_time = last_scan.scalars().first()
+            stats.scan_stats.last_scan_time = last_scan_time
+
+        if "status_stats" in metrics:
+            status_query = await self.db.execute(
+                select(models.Computer.check_status, func.count().label("count"))
+                .group_by(models.Computer.check_status)
+            )
+            stats.scan_stats.status_stats = [
+                schemas.StatusStats(status=row.check_status or "Unknown", count=row.count)
+                for row in status_query.all()
+            ]
+
+        if "component_changes" in metrics:
+            component_types = [
+                ("software", models.Software),
+                ("physical_disk", models.PhysicalDisk),
+                ("logical_disk", models.LogicalDisk),
+                ("processor", models.Processor),
+                ("video_card", models.VideoCard),
+                ("ip_address", models.IPAddress),
+                ("mac_address", models.MACAddress)
+            ]
+            for component_type, model in component_types:
+                count_query = await self.db.execute(
+                    select(func.count()).select_from(model).filter(
+                        or_(model.detected_on != None, model.removed_on != None)
+                    )
+                )
+                count = count_query.scalar() or 0
+                stats.component_changes.append(
+                    schemas.ComponentChangeStats(component_type=component_type, changes_count=count)
+                )
+
+        return stats

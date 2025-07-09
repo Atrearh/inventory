@@ -1,9 +1,8 @@
-// src/components/ComputerDetail.tsx
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { getComputerById, getHistory } from '../api/api';
+import { getComputerById, getHistory, startHostScan } from '../api/api';
 import { useState } from 'react';
-import { Skeleton, Typography, Table, Button, Collapse } from 'antd';
+import { Skeleton, Typography, Table, Button, Collapse, message } from 'antd';
 import GeneralInfo from './GeneralInfo';
 import styles from './ComputerDetail.module.css';
 import type { TableProps } from 'antd';
@@ -39,7 +38,7 @@ const ComputerDetail: React.FC = () => {
     return <div className={styles.error}>Невірний ID комп'ютера</div>;
   }
 
-const { data: computer, error: compError, isLoading: compLoading } = useQuery({
+  const { data: computer, error: compError, isLoading: compLoading } = useQuery({
     queryKey: ['computer', computerIdNum],
     queryFn: () => getComputerById(computerIdNum),
     enabled: !!computerId,
@@ -48,7 +47,7 @@ const { data: computer, error: compError, isLoading: compLoading } = useQuery({
     staleTime: 5 * 60 * 1000,
   });
 
-const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
+  const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
     queryKey: ['history', computerIdNum],
     queryFn: () => getHistory(computerIdNum),
     enabled: !!computerId,
@@ -65,6 +64,7 @@ const { data: history = [], error: histError, isLoading: histLoading } = useQuer
   };
 
   const isServerOS = computer?.os_name?.toLowerCase().includes('server');
+  const isVirtualServer = isServerOS && computer?.is_virtual;
   const currentDate = new Date();
 
   // Время последней проверки
@@ -87,6 +87,21 @@ const { data: history = [], error: histError, isLoading: histLoading } = useQuer
     if (components.length > 0) acc[roleType].push(components.join('-'));
     return acc;
   }, {} as Record<string, string[]>);
+
+  // Обработчик для запуска сканирования
+  const handleScanHost = async () => {
+    if (!computer?.hostname) {
+        message.error('Hostname не найден');
+        return;
+    }
+    try {
+        const response = await startHostScan(computer.hostname);
+        message.success(`Сканирование начато, task_id: ${response.task_id}`);
+    } catch (error: any) {
+        message.error(`Ошибка при запуске сканирования: ${error.response?.data?.error || error.message}`);
+        console.error(error);
+    }
+};
 
   const roleColumns: TableProps<Role>['columns'] = [
     {
@@ -215,7 +230,45 @@ const { data: history = [], error: histError, isLoading: histLoading } = useQuer
     },
   ];
 
-const historyColumns: TableProps<ComponentHistory>['columns'] = [
+  const videoCardColumns: TableProps<VideoCard>['columns'] = [
+    {
+      title: 'Назва',
+      dataIndex: 'name',
+      key: 'name',
+      sorter: true,
+      sortOrder: sort.key === 'name' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('name') }),
+    },
+    {
+      title: 'Версія драйвера',
+      dataIndex: 'driver_version',
+      key: 'driver_version',
+      render: (value) => value ?? '-',
+      sorter: true,
+      sortOrder: sort.key === 'driver_version' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('driver_version') }),
+    },
+    {
+      title: 'Дата виявлення',
+      dataIndex: 'detected_on',
+      key: 'detected_on',
+      render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
+      sorter: true,
+      sortOrder: sort.key === 'detected_on' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('detected_on') }),
+    },
+    {
+      title: 'Дата видалення',
+      dataIndex: 'removed_on',
+      key: 'removed_on',
+      render: (value) => (value ? new Date(value).toLocaleString('uk-UA') : '-'),
+      sorter: true,
+      sortOrder: sort.key === 'removed_on' ? (sort.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      onHeaderCell: () => ({ onClick: () => handleSort('removed_on') }),
+    },
+  ];
+
+  const historyColumns: TableProps<ComponentHistory>['columns'] = [
     {
       title: 'Тип компонента',
       dataIndex: 'component_type',
@@ -317,19 +370,39 @@ const historyColumns: TableProps<ComponentHistory>['columns'] = [
         <div className={styles.error}>Комп'ютер не знайдено</div>
       ) : (
         <>
+          <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', padding: '8px 0', marginBottom: 16 }}>
+            <Button type="primary" onClick={handleScanHost}>
+              Сканувати хост
+            </Button>
+          </div>
           <Title level={2} className={styles.title}>{computer.hostname || 'Завантаження...'}</Title>
           <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
-          <div>
-            <Title level={3} className={styles.subtitle}>Физические диски</Title>
-            <Table
-              dataSource={computer.physical_disks || []}
-              columns={physicalDiskColumns}
-              rowKey={(record) => record.serial ?? 'unknown-physical-disk'}
-              pagination={false}
-              locale={{ emptyText: 'Немає даних про физические диски' }}
-              size="small"
-            />
-          </div>
+          {!isVirtualServer && (
+            <>
+              <div>
+                <Title level={3} className={styles.subtitle}>Физические диски</Title>
+                <Table
+                  dataSource={computer.physical_disks || []}
+                  columns={physicalDiskColumns}
+                  rowKey={(record) => record.serial ?? 'unknown-physical-disk'}
+                  pagination={false}
+                  locale={{ emptyText: 'Немає даних про физические диски' }}
+                  size="small"
+                />
+              </div>
+              <div>
+                <Title level={3} className={styles.subtitle}>Відеокарти</Title>
+                <Table
+                  dataSource={computer.video_cards || []}
+                  columns={videoCardColumns}
+                  rowKey={(record) => record.name ?? 'unknown-video-card'}
+                  pagination={false}
+                  locale={{ emptyText: 'Немає даних про відеокарти' }}
+                  size="small"
+                />
+              </div>
+            </>
+          )}
           <div>
             <Title level={3} className={styles.subtitle}>Логические диски</Title>
             <Table

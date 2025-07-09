@@ -40,7 +40,7 @@ class PhysicalDisk(BaseModel):
     id: Optional[int] = None
     computer_id: Optional[int] = None
     model: Optional[NonEmptyStr] = Field(None, alias="model", min_length=1, max_length=255)
-    serial: Optional[NonEmptyStr] = Field(None, alias="serial", max_length=100)
+    serial: NonEmptyStr = Field(None, alias="serial", max_length=100)
     interface: Optional[NonEmptyStr] = Field(None, alias="interface", max_length=50)
     media_type: Optional[NonEmptyStr] = Field(None, alias="media_type", max_length=50)
     detected_on: Optional[datetime] = None
@@ -80,15 +80,18 @@ class LogicalDisk(BaseModel):
     volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
     total_space: int = Field(ge=0, alias="total_space")
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
-    physical_disk_id: Optional[int] = None
+    parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)  # Новое поле для серийного номера физического диска
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
+
     @property
     def total_space_gb(self) -> float:
         return self.total_space / (1024 ** 3) if self.total_space else 0.0
+
     @property
     def free_space_gb(self) -> Optional[float]:
         return self.free_space / (1024 ** 3) if self.free_space else None
+
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @field_validator('device_id')
@@ -103,6 +106,13 @@ class LogicalDisk(BaseModel):
     def validate_volume_label(cls, v):
         if v and len(v.strip()) == 0:
             raise ValueError("Volume label не может быть пустой строкой")
+        return v
+
+    @field_validator('parent_disk_serial')
+    @classmethod
+    def validate_parent_disk_serial(cls, v):
+        if v and len(v.strip()) == 0:
+            raise ValueError("Parent disk serial не может быть пустой строкой")
         return v
 
 class DiskVolume(BaseModel):

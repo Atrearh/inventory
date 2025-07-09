@@ -1,4 +1,3 @@
-# app/main.py
 import signal
 import asyncio
 import uuid
@@ -7,7 +6,7 @@ import uvicorn
 import io
 import csv
 import ipaddress
-from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status
+from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status, Body 
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -17,14 +16,15 @@ from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
 from .database import engine, get_db, init_db, shutdown_db
 from . import models, schemas
-from .settings import settings
+from .settings import settings 
 from .services.computer_service import ComputerService
 from .services.ad_service import ADService
 from .repositories.statistics import StatisticsRepository
 from .schemas import ErrorResponse, AppSettingUpdate
 from .logging_config import setup_logging
 from .repositories.computer_repository import ComputerRepository
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
+
 logger = logging.getLogger(__name__)
 
 setup_logging(log_level=settings.log_level)
@@ -35,6 +35,16 @@ shutdown_event = asyncio.Event()
 async def lifespan(app: FastAPI):
     logger.info("Инициализация приложения...")
     try:
+        app.state.allowed_ip_networks = []
+        for ip_range in settings.allowed_ips_list:
+            try:
+                if '/' in ip_range:
+                    app.state.allowed_ip_networks.append(ipaddress.ip_network(ip_range, strict=False))
+                else:
+                    app.state.allowed_ip_networks.append(ipaddress.ip_address(ip_range))
+            except ValueError as e:
+                logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
+                raise
         await init_db()
         yield
     finally:
@@ -61,18 +71,19 @@ async def check_ip_allowed(request: Request, call_next):
     client_ip = request.client.host
     request.state.logger.debug(f"Проверка IP: {client_ip}")
     allowed = False
-    for ip_range in settings.allowed_ips_list:
-        try:
-            if '/' in ip_range:
-                network = ipaddress.ip_network(ip_range, strict=False)
-                if ipaddress.ip_address(client_ip) in network:
-                    allowed = True
-                    break
-            elif client_ip == ip_range:
+    try:
+        client_ip_addr = ipaddress.ip_address(client_ip)
+        for ip_or_network in request.app.state.allowed_ip_networks:
+            if isinstance(ip_or_network, ipaddress.IPv4Network) and client_ip_addr in ip_or_network:
                 allowed = True
                 break
-        except ValueError as e:
-            request.state.logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
+            elif client_ip_addr == ip_or_network:
+                allowed = True
+                break
+    except ValueError as e:
+        request.state.logger.error(f"Неверный формат IP клиента {client_ip}: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверный IP-адрес клиента")
+    
     if not allowed:
         request.state.logger.warning(f"Доступ запрещен для IP: {client_ip}")
         raise HTTPException(
@@ -168,46 +179,57 @@ async def export_computers_to_csv(
     sort_by: str = Query("hostname", description="Поле для сортировки"),
     sort_order: str = Query("asc", description="Порядок: asc или desc"),
 ):
+    """Экспорт компьютеров в CSV с потоковой передачей данных."""
     logger.info(f"Экспорт компьютеров в CSV с параметрами: hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}")
-    try:
+    async def generate_csv():
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
+        output.write('\ufeff')
+        writer.writerow([
+            'IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС',
+            'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Объем (ГБ)', 'Видеокарта'
+        ])
+
         async with db as session:
             repo = ComputerRepository(session)
-            computers, _ = await repo.get_computers(
+            async for computer in repo.stream_computers(
                 hostname=hostname,
                 os_name=os_name,
                 check_status=check_status,
                 sort_by=sort_by,
                 sort_order=sort_order,
-                page=1,
-                limit=0  # 0 означає повернення всіх записів
-            )
+                server_filter=None
+            ):
+                disk_info = f"{computer.physical_disks[0].model} ({computer.logical_disks[0].total_space_gb:.2f} GB)" if computer.physical_disks and computer.logical_disks else ''
+                video_card = computer.video_cards[0].name if computer.video_cards else ''
+                is_server = 'Сервер' if 'server' in computer.os_name.lower() else 'Клиент'
+                virtualization = 'Виртуальный' if computer.is_virtual else 'Физический'
 
-            output = io.StringIO()
-            writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
-            output.write('\ufeff')
-            writer.writerow(['IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС', 'Время последней проверки'])
-            for computer in computers:
-                if any([computer.ip_addresses, computer.hostname, computer.ram, computer.mac_addresses, computer.motherboard, computer.os_name, computer.last_updated]):
-                    writer.writerow([
-                        computer.ip_addresses[0].address if computer.ip_addresses else '',
-                        computer.hostname or '',
-                        str(computer.ram) if computer.ram is not None else '',
-                        computer.mac_addresses[0].address if computer.mac_addresses else '',
-                        computer.motherboard or '',
-                        computer.os_name or '',
-                        computer.last_updated if isinstance(computer.last_updated, str) else computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else ''
-                    ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+                writer.writerow([
+                    computer.ip_addresses[0].address if computer.ip_addresses else '',
+                    computer.hostname or '',
+                    str(computer.ram) if computer.ram is not None else '',
+                    computer.mac_addresses[0].address if computer.mac_addresses else '',
+                    computer.motherboard or '',
+                    computer.os_name or '',
+                    computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else '',
+                    is_server,
+                    virtualization,
+                    disk_info,
+                    video_card
+                ])
+        yield output.getvalue()
+        output.close()
 
-            output.seek(0)
-            headers = {
-                'Content-Disposition': 'attachment; filename="computers.csv"',
-                'Content-Type': 'text/csv; charset=utf-8-sig'
-            }
-            return StreamingResponse(output, headers=headers)
-    except Exception as e:
-        logger.error(f"Ошибка экспорта компьютеров в CSV: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-    
+    headers = {
+        'Content-Disposition': 'attachment; filename="computers.csv"',
+        'Content-Type': 'text/csv; charset=utf-8-sig'
+    }
+    return StreamingResponse(generate_csv(), headers=headers)
+
 @router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
 async def create_computer(
     comp_data: schemas.ComputerCreate,
@@ -219,8 +241,8 @@ async def create_computer(
     try:
         async with db as session:
             computer_repo = ComputerRepository(session)
-            computer_service = ComputerService(db=session, computer_repo=computer_repo)
-            return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname)
+            computer_service = ComputerService()
+            return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname, session)
     except Exception as e:
         logger_adapter.error(f"Ошибка создания/обновления компьютера {comp_data.hostname}: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка сервера")
@@ -246,7 +268,6 @@ async def update_check_status(
         logger_adapter.error(f"Ошибка обновления check_status для {data.hostname}: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
-
 @router.get("/computers/{computer_id}/history", response_model=List[schemas.ComponentHistory])
 async def get_component_history(
     computer_id: int,
@@ -265,22 +286,43 @@ async def get_component_history(
         raise HTTPException(status_code=500, detail="Помилка сервера")
 
 @router.post("/scan", response_model=dict, operation_id="start_scan")
-async def start_scan(background_tasks: BackgroundTasks,db: AsyncSession = Depends(get_db),request: Request = None,):
+async def start_scan(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    request: Request = None,
+    payload: dict = Body(None),  # Извлекаем тело запроса
+):
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
-    logger_adapter.info(f"Запуск фонового сканирования с task_id: {task_id}")
+    hostname = payload.get("hostname") if payload else None  # Извлекаем hostname из тела
+    logger_adapter.info(f"Запуск фонового сканирования с ID: {task_id}, hostname: {hostname or 'все хосты'}")
     try:
         async with db as session:
-            computer_repo = ComputerRepository(session)
-            computer_service = ComputerService(db=session, computer_repo=computer_repo)
-            background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter)
-            return {"task_id": task_id}
+            computer_service = ComputerService(session)
+            task = await computer_service.create_scan_task(task_id)
+            if task.status != models.ScanStatus.running:
+                logger_adapter.warning(f"Задача {task_id} уже существует и имеет статус {task.status}")
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Задача с ID {task_id} уже существует"
+                )
+            background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter, hostname=hostname)
+            return {"status": "success", "task_id": task_id}
+    except SQLAlchemyError as e: 
+        logger_adapter.error(f"Ошибка запуска сканирования {task_id}: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise HTTPException(status_code=500, detail="Ошибка сервера при создании задачи")
     except Exception as e:
-        logger_adapter.error(f"Ошибка запуска сканирования: {str(e)}")
+        logger_adapter.error(f"Ошибка запуска сканирования {task_id}: {str(e)}", exc_info=True)
+        await session.rollback()
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 @router.get("/scan/status/{task_id}", response_model=schemas.ScanTask)
-async def scan_status(task_id: str, db: AsyncSession = Depends(get_db), request: Request = None,):
+async def scan_status(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    request: Request = None,
+):
     logger_adapter = request.state.logger if request else logger
     try:
         async with db as session:
@@ -295,7 +337,10 @@ async def scan_status(task_id: str, db: AsyncSession = Depends(get_db), request:
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 @router.get("/statistics", response_model=schemas.DashboardStats, operation_id="get_statistics")
-async def get_statistics(metrics: List[str] = Query(None, description="Список метрик для получения статистики"),db: AsyncSession = Depends(get_db),):
+async def get_statistics(
+    metrics: List[str] = Query(None, description="Список метрик для получения статистики"),
+    db: AsyncSession = Depends(get_db),
+):
     try:
         async with db as session:
             repo = StatisticsRepository(session)
@@ -330,7 +375,7 @@ async def get_computers(
                 sort_order=sort_order,
                 page=page,
                 limit=limit,
-                server_filter=server_filter,
+                server_filter=server_filter
             )
             return schemas.ComputersResponse(data=computers, total=total)
     except Exception as e:
@@ -338,7 +383,11 @@ async def get_computers(
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 @router.post("/ad/scan", response_model=dict, operation_id="start_ad_scan")
-async def start_ad_scan(background_tasks: BackgroundTasks,db: AsyncSession = Depends(get_db), request: Request = None,):
+async def start_ad_scan(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    request: Request = None,
+):
     logger_adapter = request.state.logger if request else logger
     task_id = str(uuid.uuid4())
     logger_adapter.info(f"Запуск фонового сканирования AD с task_id: {task_id}")
@@ -346,14 +395,15 @@ async def start_ad_scan(background_tasks: BackgroundTasks,db: AsyncSession = Dep
         async with db as session:
             repo = ComputerRepository(session)
             ad_service = ADService(repo)
-            background_tasks.add_task(ad_service.scan_and_update_ad, session)
+            await repo.create_scan_task(task_id)
+            background_tasks.add_task(ad_service.scan_and_update_ad, task_id, logger_adapter)
             return {"status": "success", "task_id": task_id}
     except Exception as e:
         logger_adapter.error(f"Ошибка запуска AD сканирования: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка сервера")
 
 @router.post("/clean-deleted-software/", response_model=dict)
-async def clean_deleted_software(db: AsyncSession = Depends(get_db),):
+async def clean_deleted_software(db: AsyncSession = Depends(get_db)):
     try:
         async with db as session:
             repo = ComputerRepository(session)

@@ -43,7 +43,7 @@ export interface PhysicalDisk {
   id?: number | null;
   computer_id?: number | null;
   model?: string | null;
-  serial?: string | null;
+  serial?: string;
   interface?: string | null;
   media_type?: string | null;
   detected_on?: string | null;
@@ -54,7 +54,7 @@ export interface LogicalDisk {
   volume_label?: string | null;
   total_space: number;
   free_space?: number | null;
-  physical_disk_id?: number | null;
+  parent_disk_serial?: string | null;
   detected_on?: string | null;
   removed_on?: string | null;
 }

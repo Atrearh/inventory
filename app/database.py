@@ -20,7 +20,7 @@ logger.debug(f"Инициализация базы данных с URL: {SQLALCH
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL, 
     pool_size=20,
-    max_overflow=10,
+    max_overflow=10, 
     pool_timeout=30,
     pool_recycle=300,
     #echo=False,  # Отключаем echo для продакшн окружения

@@ -1,8 +1,6 @@
-// src/api/api.ts
-
 import axios from 'axios';
 import { API_URL } from '../config';
-import { Computer, ComputersResponse, DashboardStats, ComponentHistory } from '../types/schemas'; // Обновили импорт
+import { Computer, ComputersResponse, DashboardStats, ComponentHistory } from '../types/schemas';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
@@ -13,9 +11,21 @@ export interface RestartResponse {
   message: string;
 }
 
+// Интерфейс для ответа на запрос сканирования хоста
+export interface ScanResponse {
+  status: string;
+  task_id: string;
+}
+
 // Запуск сканирования Active Directory
 export const startADScan = async () => {
   const response = await axiosInstance.post<{ status: string; task_id: string }>('/ad/scan');
+  return response.data;
+};
+
+// Запуск сканирования конкретного хоста
+export const startHostScan = async (hostname: string) => {
+  const response = await axiosInstance.post<ScanResponse>('/scan', { hostname });
   return response.data;
 };
 
@@ -129,7 +139,7 @@ export const startScan = async () => {
 // Получение статуса сканирования
 export const getScanStatus = async (taskId: string) => {
   const response = await axiosInstance.get(`/scan/status/${taskId}`);
-  return response.data; 
+  return response.data;
 };
 
 // Перезапуск сервера

@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 function Clean-String($s) {if (-not $s) { return "" } ($s -replace '[\x00-\x1F\x7F]', '').Trim()}
@@ -46,5 +46,5 @@ try {
         error    = Clean-String $_.Exception.Message
     }
     Write-Error "Ошибка выполнения скрипта: $($_.Exception.Message)"
-    ConvertTo-Json -InputObject $errorResult -Depth 2 -Compress
+    ConvertTo-Json -InputObject $errorResult -Depth 10 -Compress
 }

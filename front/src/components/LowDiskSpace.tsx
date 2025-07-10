@@ -10,6 +10,11 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
   // Логування для діагностики даних
   console.log('Дані low_disk_space:', lowDiskSpace);
 
+  // Фільтруємо диски, де вільний простір менше 1ТБ (1024 ГБ)
+  const filteredLowDiskSpace = lowDiskSpace.filter(
+    (disk) => disk.free_space_gb <= 1024
+  );
+
   const diskColumns = [
     {
       title: 'Hostname',
@@ -38,10 +43,10 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
   return (
     <div style={{ marginTop: '16px' }}>
       <h3>Комп'ютери з низьким обсягом диска</h3>
-      {lowDiskSpace.length > 0 ? (
+      {filteredLowDiskSpace.length > 0 ? (
         <Table
           columns={diskColumns}
-          dataSource={lowDiskSpace}
+          dataSource={filteredLowDiskSpace}
           rowKey={(record) => `${record.id}-${record.disk_id}`}
           size="middle"
           locale={{ emptyText: 'Немає даних' }}

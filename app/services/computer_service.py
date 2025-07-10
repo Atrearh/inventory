@@ -296,17 +296,28 @@ class ComputerService:
 
     async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         try:
+            async with async_session_factory() as host_db:
+                logger_adapter.debug(f"Открыта сессия для хоста {host}: {id(host_db)}")
+                repo = ComputerRepository(host_db)
+                service = ComputerService(host_db)
+                result = await service.process_single_host_inner(host, logger_adapter)
+                logger_adapter.debug(f"Сессия для хоста {host} успешно завершена")
+                return result
+        except Exception as e:
+            logger_adapter.error(f"Ошибка обработки хоста {host}: {str(e)}", exc_info=True)
+            return False
+
+    async def process_single_host_inner(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
+        try:
             db_computer, mode, is_server = await self._get_scan_context(host)
             username, password = await self._get_domain_credentials(host)
             collector = WinRMDataCollector(hostname=host, username=username, password=password)
             result_data = await collector.get_all_pc_info(mode=mode, last_updated=db_computer.last_updated if db_computer else None)
             
-            # Проверяем статус и наличие данных
             if result_data.get("check_status") in ("unreachable", "failed"):
                 logger_adapter.warning(f"Хост {host} не обработан: check_status={result_data.get('check_status')}")
                 return await self._handle_scan_failure(host, result_data)
             
-            # Проверяем, есть ли значимые данные
             if not any([
                 result_data.get("ip_addresses"),
                 result_data.get("mac_addresses"),
@@ -329,7 +340,6 @@ class ComputerService:
             
             await self.computer_repo.update_related_entities(db_computer, computer_to_create, mode=mode)
             
-            # Проверка данных в базе после сохранения
             result = await self.computer_repo.db.execute(
                 select(models.Computer).options(
                     selectinload(models.Computer.ip_addresses),
@@ -343,18 +353,18 @@ class ComputerService:
                 ).filter(models.Computer.id == computer_id)
             )
             db_computer_check = result.scalars().first()
-            logger.debug(f"Проверка данных в базе для {host}: "
-                        f"os_name={db_computer_check.os_name}, "
-                        f"os_version={db_computer_check.os_version}, "
-                        f"ram={db_computer_check.ram}, "
-                        f"motherboard={db_computer_check.motherboard}, "
-                        f"last_boot={db_computer_check.last_boot}, "
-                        f"ip_addresses={[ip.address for ip in db_computer_check.ip_addresses]}, "
-                        f"mac_addresses={[mac.address for mac in db_computer_check.mac_addresses]}, "
-                        f"processors={[proc.name for proc in db_computer_check.processors]}, "
-                        f"physical_disks={[pd.serial for pd in db_computer_check.physical_disks]}, "
-                        f"logical_disks={[ld.device_id for ld in db_computer_check.logical_disks]}, "
-                        f"video_cards={[vc.name for vc in db_computer_check.video_cards]}")
+            logger_adapter.debug(f"Проверка данных в базе для {host}: "
+                            f"os_name={db_computer_check.os_name}, "
+                            f"os_version={db_computer_check.os_version}, "
+                            f"ram={db_computer_check.ram}, "
+                            f"motherboard={db_computer_check.motherboard}, "
+                            f"last_boot={db_computer_check.last_boot}, "
+                            f"ip_addresses={[ip.address for ip in db_computer_check.ip_addresses]}, "
+                            f"mac_addresses={[mac.address for mac in db_computer_check.mac_addresses]}, "
+                            f"processors={[proc.name for proc in db_computer_check.processors]}, "
+                            f"physical_disks={[pd.serial for pd in db_computer_check.physical_disks]}, "
+                            f"logical_disks={[ld.device_id for ld in db_computer_check.logical_disks]}, "
+                            f"video_cards={[vc.name for vc in db_computer_check.video_cards]}")
             
             return True
         except asyncio.CancelledError:
@@ -408,10 +418,20 @@ class ComputerService:
                 logger_adapter.error(f"Не удалось создать или получить задачу {task_id}")
                 return
 
-            # Если hostname указан, сканируем только его, иначе все хосты
-            if hostname: 
+            if hostname:
                 hosts = [hostname]
                 logger_adapter.info(f"Сканирование одного хоста: {hostname}")
+                all_hosts = await self.get_hosts_to_scan()
+                if hostname not in all_hosts:
+                    logger_adapter.warning(f"Хост {hostname} не найден в списке доступных хостов")
+                    await self.update_scan_task_status(
+                        task_id=task_id,
+                        status=models.ScanStatus.failed,
+                        scanned_hosts=0,
+                        successful_hosts=0,
+                        error=f"Хост {hostname} не найден"
+                    )
+                    return
             else:
                 hosts = await self.get_hosts_to_scan()
                 logger_adapter.info(f"Получено {len(hosts)} хостов для сканирования: {hosts[:5]}...")
@@ -428,12 +448,10 @@ class ComputerService:
 
             async def process_host_with_semaphore(host: str):
                 async with self.semaphore:
-                    async with async_session_factory() as host_db:
-                        repo = ComputerRepository(host_db)
-                        service = ComputerService(host_db)
-                        if await service.process_single_host(host, logger_adapter):
-                            nonlocal successful
-                            successful += 1
+                    result = await self.process_single_host(host, logger_adapter)
+                    if result:
+                        nonlocal successful
+                        successful += 1
 
             tasks = [process_host_with_semaphore(host) for host in hosts]
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -448,7 +466,7 @@ class ComputerService:
         
         except SQLAlchemyError as e:
             logger_adapter.error(f"Критическая ошибка в задаче сканирования {task_id}: {str(e)}", exc_info=True)
-            await self.computer_repo.db.rollback()  # Откатываем транзакцию
+            await self.computer_repo.db.rollback()
             await self.update_scan_task_status(
                 task_id=task_id,
                 status=models.ScanStatus.failed,
@@ -458,7 +476,7 @@ class ComputerService:
             )
         except Exception as e:
             logger_adapter.error(f"Критическая ошибка в задаче сканирования {task_id}: {str(e)}", exc_info=True)
-            await self.computer_repo.db.rollback()  # Откатываем транзакцию
+            await self.computer_repo.db.rollback()
             await self.update_scan_task_status(
                 task_id=task_id,
                 status=models.ScanStatus.failed,

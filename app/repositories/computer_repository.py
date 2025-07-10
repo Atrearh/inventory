@@ -514,12 +514,12 @@ class ComputerRepository:
         """Потоковая передача компьютеров с фильтрацией."""
         try:
             query = self._build_computer_query(hostname, os_name, check_status, server_filter, sort_by, sort_order)
-            async for computer in await self.db.stream(query):
-                yield await self._computer_to_pydantic(computer.scalars().first())
+            async for row in await self.db.stream(query):
+                yield await self._computer_to_pydantic(row[0])  # Используем row[0] вместо computer.scalars().first()
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при потоковом получении компьютеров: {str(e)}", exc_info=True)
             raise
-
+        
     async def get_all_hosts(self) -> List[str]:
         """Получает список всех хостов из базы данных."""
         try:

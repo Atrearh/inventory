@@ -1,12 +1,12 @@
-// src/App.tsx
-import { Routes, Route} from 'react-router-dom';
-import { Layout, Menu} from 'antd';
+import { Routes, Route } from 'react-router-dom';
+import { Layout, Menu } from 'antd';
 import { Link } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import ComputerList from './components/ComputerList';
 import ComputerDetail from './components/ComputerDetail';
 import Settings from './components/Settings';
 import AdminPanel from './components/AdminPanel';
+import NotFound from './components/NotFound';
 
 const { Content, Sider } = Layout;
 
@@ -29,9 +29,10 @@ const App: React.FC = () => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/computers" element={<ComputerList />} />
             <Route path="/computer/:computerId" element={<ComputerDetail />} />
+            <Route path="/computers/:computerId" element={<ComputerDetail />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin" element={<AdminPanel />} />
-            <Route path="/computers/hostname/:hostname" element={<ComputerDetail />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Content>
       </Layout>

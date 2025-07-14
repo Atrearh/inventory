@@ -3,27 +3,17 @@ import asyncio
 import uuid
 import logging
 import uvicorn
-import io
-import csv
 import ipaddress
-from fastapi import FastAPI, Depends, HTTPException, APIRouter, Request, BackgroundTasks, Query, status, Body 
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
-from winrm.exceptions import WinRMTransportError, WinRMError
 from contextlib import asynccontextmanager
 from .database import engine, get_db, init_db, shutdown_db
-from . import models, schemas
-from .settings import settings 
-from .services.computer_service import ComputerService
-from .services.ad_service import ADService
-from .repositories.statistics import StatisticsRepository
-from .schemas import ErrorResponse, AppSettingUpdate
+from .settings import settings
 from .logging_config import setup_logging
-from .repositories.computer_repository import ComputerRepository
-from typing import List, Optional
+from .schemas import ErrorResponse
+from .routers import auth, computers, scan, statistics
+from .routers.settings import router as settings_router  # Импортируем только роутер
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +42,6 @@ async def lifespan(app: FastAPI):
         await shutdown_db()
 
 app = FastAPI(title="Inventory Management", lifespan=lifespan)
-router = APIRouter(prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,11 +91,21 @@ async def add_correlation_id(request: Request, call_next):
     response.headers["X-Correlation-ID"] = correlation_id
     return response
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Запрос: {request.method} {request.url}, headers: {request.headers}")
+    response = await call_next(request)
+    logger.info(f"Ответ: {response.status_code}")
+    return response
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     correlation_id = getattr(request.state, 'correlation_id', "unknown")
     logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
     logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
+
+    from winrm.exceptions import WinRMTransportError, WinRMError
+    from sqlalchemy.exc import SQLAlchemyError
 
     match exc:
         case HTTPException(status_code=status_code, detail=detail):
@@ -144,298 +143,13 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers=headers
     )
 
-@router.get("/settings", response_model=AppSettingUpdate)
-async def get_settings():
-    logger.info("Получение текущих настроек")
-    return AppSettingUpdate(
-        ad_server_url=settings.ad_server_url,
-        domain=settings.domain,
-        ad_username=settings.ad_username,
-        ad_password="********",
-        api_url=settings.api_url,
-        test_hosts=settings.test_hosts,
-        log_level=settings.log_level,
-        scan_max_workers=settings.scan_max_workers,
-        polling_days_threshold=settings.polling_days_threshold,
-        winrm_operation_timeout=settings.winrm_operation_timeout,
-        winrm_read_timeout=settings.winrm_read_timeout,
-        winrm_port=settings.winrm_port,
-        winrm_server_cert_validation=settings.winrm_server_cert_validation,
-        ping_timeout=settings.ping_timeout,
-        powershell_encoding=settings.powershell_encoding,
-        json_depth=settings.json_depth,
-        server_port=settings.server_port,
-        cors_allow_origins=settings.cors_allow_origins,
-        allowed_ips=settings.allowed_ips,
-    )
-
-@router.get("/computers/export/csv", response_model=None)
-async def export_computers_to_csv(
-    db: AsyncSession = Depends(get_db),
-    hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
-    os_version: Optional[str] = Query(None, description="Фильтр по версии ОС"),
-    os_name: Optional[str] = Query(None, description="Фильтр по имени ОС"),
-    check_status: Optional[schemas.CheckStatus] = Query(None, description="Фильтр по check_status"),
-    sort_by: str = Query("hostname", description="Поле для сортировки"),
-    sort_order: str = Query("asc", description="Порядок: asc или desc"),
-):
-    """Экспорт компьютеров в CSV с потоковой передачей данных."""
-    logger.info(f"Экспорт компьютеров в CSV с параметрами: hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}")
-    async def generate_csv():
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
-        output.write('\ufeff')
-        writer.writerow([
-            'IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС',
-            'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Объем (ГБ)', 'Видеокарта'
-        ])
-
-        async with db as session:
-            repo = ComputerRepository(session)
-            async for computer in repo.stream_computers(
-                hostname=hostname,
-                os_name=os_name,
-                check_status=check_status,
-                sort_by=sort_by,
-                sort_order=sort_order,
-                server_filter=None
-            ):
-                disk_info = f"{computer.physical_disks[0].model} ({computer.logical_disks[0].total_space_gb:.2f} GB)" if computer.physical_disks and computer.logical_disks else ''
-                video_card = computer.video_cards[0].name if computer.video_cards else ''
-                is_server = 'Сервер' if 'server' in computer.os_name.lower() else 'Клиент'
-                virtualization = 'Виртуальный' if computer.is_virtual else 'Физический'
-
-                yield output.getvalue()
-                output.seek(0)
-                output.truncate(0)
-                writer.writerow([
-                    computer.ip_addresses[0].address if computer.ip_addresses else '',
-                    computer.hostname or '',
-                    str(computer.ram) if computer.ram is not None else '',
-                    computer.mac_addresses[0].address if computer.mac_addresses else '',
-                    computer.motherboard or '',
-                    computer.os_name or '',
-                    computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else '',
-                    is_server,
-                    virtualization,
-                    disk_info,
-                    video_card
-                ])
-        yield output.getvalue()
-        output.close()
-
-    headers = {
-        'Content-Disposition': 'attachment; filename="computers.csv"',
-        'Content-Type': 'text/csv; charset=utf-8-sig'
-    }
-    return StreamingResponse(generate_csv(), headers=headers)
-
-@router.post("/report", response_model=schemas.Computer, operation_id="create_computer_report")
-async def create_computer(
-    comp_data: schemas.ComputerCreate,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Получен отчет для hostname: {comp_data.hostname}")
-    try:
-        async with db as session:
-            computer_repo = ComputerRepository(session)
-            computer_service = ComputerService()
-            return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname, session)
-    except Exception as e:
-        logger_adapter.error(f"Ошибка создания/обновления компьютера {comp_data.hostname}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.post("/update_check_status", operation_id="update_computer_check_status")
-async def update_check_status(
-    data: schemas.ComputerUpdateCheckStatus,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Обновление check_status для {data.hostname}")
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            db_computer = await repo.async_update_computer_check_status(data.hostname, data.check_status)
-            if not db_computer:
-                raise HTTPException(status_code=404, detail="Компьютер не найден")
-            return {"status": "success"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger_adapter.error(f"Ошибка обновления check_status для {data.hostname}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.get("/computers/{computer_id}/history", response_model=List[schemas.ComponentHistory])
-async def get_component_history(
-    computer_id: int,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Отримання історії компонентів для комп’ютера з ID: {computer_id}")
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            history = await repo.get_component_history(computer_id)
-            return history
-    except Exception as e:
-        logger_adapter.error(f"Помилка отримання історії компонентів для ID {computer_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Помилка сервера")
-
-@router.post("/scan", response_model=dict, operation_id="start_scan")
-async def start_scan(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-    payload: dict = Body(None),  # Извлекаем тело запроса
-):
-    logger_adapter = request.state.logger if request else logger
-    task_id = str(uuid.uuid4())
-    hostname = payload.get("hostname") if payload else None  # Извлекаем hostname из тела
-    logger_adapter.info(f"Запуск фонового сканирования с ID: {task_id}, hostname: {hostname or 'все хосты'}")
-    try:
-        async with db as session:
-            computer_service = ComputerService(session)
-            task = await computer_service.create_scan_task(task_id)
-            if task.status != models.ScanStatus.running:
-                logger_adapter.warning(f"Задача {task_id} уже существует и имеет статус {task.status}")
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Задача с ID {task_id} уже существует"
-                )
-            background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter, hostname=hostname)
-            return {"status": "success", "task_id": task_id}
-    except SQLAlchemyError as e: 
-        logger_adapter.error(f"Ошибка запуска сканирования {task_id}: {str(e)}", exc_info=True)
-        await session.rollback()
-        raise HTTPException(status_code=500, detail="Ошибка сервера при создании задачи")
-    except Exception as e:
-        logger_adapter.error(f"Ошибка запуска сканирования {task_id}: {str(e)}", exc_info=True)
-        await session.rollback()
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.get("/scan/status/{task_id}", response_model=schemas.ScanTask)
-async def scan_status(
-    task_id: str,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    try:
-        async with db as session:
-            result = await session.execute(select(models.ScanTask).filter(models.ScanTask.id == task_id))
-            db_task = result.scalars().first()
-            if not db_task:
-                logger_adapter.error(f"Задача {task_id} не найдена")
-                raise HTTPException(status_code=404, detail="Задача не найдена")
-            return db_task
-    except Exception as e:
-        logger_adapter.error(f"Ошибка получения статуса задачи {task_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.get("/statistics", response_model=schemas.DashboardStats, operation_id="get_statistics")
-async def get_statistics(
-    metrics: List[str] = Query(None, description="Список метрик для получения статистики"),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        async with db as session:
-            repo = StatisticsRepository(session)
-            if metrics is None:
-                metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats"]
-            return await repo.get_statistics(metrics)
-    except Exception as e:
-        logger.error(f"Ошибка получения статистики: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.get("/computers", response_model=schemas.ComputersResponse, operation_id="get_computers")
-async def get_computers(
-    hostname: Optional[str] = Query(None),
-    os_name: Optional[str] = Query(None),
-    check_status: Optional[str] = Query(None),
-    sort_by: Optional[str] = Query("hostname", description="Поле для сортировки"),
-    sort_order: Optional[str] = Query("asc", description="Порядок сортировки: asc или desc"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(10, ge=1, le=100, description="Количество записей на странице"),
-    server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
-    db: AsyncSession = Depends(get_db),
-):
-    logger.info(f"Запрос списка компьютеров с параметрами: hostname={hostname}, os_name={os_name}, server_filter={server_filter}")
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            computers, total = await repo.get_computers(
-                hostname=hostname,
-                os_name=os_name,
-                check_status=check_status,
-                sort_by=sort_by,
-                sort_order=sort_order,
-                page=page,
-                limit=limit,
-                server_filter=server_filter
-            )
-            return schemas.ComputersResponse(data=computers, total=total)
-    except Exception as e:
-        logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.post("/ad/scan", response_model=dict, operation_id="start_ad_scan")
-async def start_ad_scan(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    task_id = str(uuid.uuid4())
-    logger_adapter.info(f"Запуск фонового сканирования AD с task_id: {task_id}")
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            ad_service = ADService(repo)
-            await repo.create_scan_task(task_id)
-            background_tasks.add_task(ad_service.scan_and_update_ad, task_id, logger_adapter)
-            return {"status": "success", "task_id": task_id}
-    except Exception as e:
-        logger_adapter.error(f"Ошибка запуска AD сканирования: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.post("/clean-deleted-software/", response_model=dict)
-async def clean_deleted_software(db: AsyncSession = Depends(get_db)):
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            deleted_count = await repo.clean_old_deleted_software()
-            return {"message": f"Удалено {deleted_count} записей о ПО"}
-    except Exception as e:
-        logger.error(f"Ошибка очистки старых записей ПО: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-@router.get("/computers/{computer_id}", response_model=schemas.Computer, operation_id="get_computer_by_id")
-async def get_computer_by_id(
-    computer_id: int,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Получение данных компьютера с ID: {computer_id}")
-    try:
-        async with db as session:
-            repo = ComputerRepository(session)
-            computer = await repo.async_get_computer_by_id(computer_id)
-            if not computer:
-                logger_adapter.warning(f"Компьютер с ID {computer_id} не найден")
-                raise HTTPException(status_code=404, detail="Компьютер не найден")
-            return computer
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger_adapter.error(f"Ошибка получения компьютера ID {computer_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ошибка сервера")
-
-app.include_router(router)
+# Подключение роутеров
+app.include_router(auth.router, prefix="/auth")
+app.include_router(auth.users_router, prefix="/api/users")
+app.include_router(computers.router, prefix="/api")
+app.include_router(scan.router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
+app.include_router(statistics.router, prefix="/api")
 
 if __name__ == "__main__":
     logger.info("Запуск приложения")

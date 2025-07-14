@@ -1,20 +1,20 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getComputers, getStatistics } from '../api/api';
-import { ComputersResponse, DashboardStats, ComputerList } from '../types/schemas';
-import { useState, useEffect } from 'react';
+import { ComputersResponse, DashboardStats, ComputerListItem } from '../types/schemas';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'; // Добавлен useMemo
 import { useSearchParams, Link } from 'react-router-dom';
 import { notification, Skeleton, Input, Select, Table, Button } from 'antd';
-import { useDebounce } from '../hooks/useDebounce';
+import { debounce } from 'lodash';
+import { useExportCSV } from '../hooks/useExportCSV';
 import { ITEMS_PER_PAGE } from '../config';
-import styles from './ComputerList.module.css';
 import type { TableProps } from 'antd';
-import axios from 'axios';
-import { API_URL } from '../config';
+import type { InputRef } from 'antd';
+import styles from './ComputerList.module.css';
 
 interface Filters {
-  hostname: string;
+  hostname: string | undefined;
   os_name: string | undefined;
-  check_status: string;
+  check_status: string | undefined;
   sort_by: string;
   sort_order: 'asc' | 'desc';
   page: number;
@@ -30,17 +30,16 @@ interface Sorter {
 const ComputerListComponent: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Filters>({
-    hostname: searchParams.get('hostname') || '',
-    os_name: searchParams.get('os_name') || '',
-    check_status: searchParams.get('check_status') || '',
+    hostname: searchParams.get('hostname') || undefined,
+    os_name: searchParams.get('os_name') || undefined,
+    check_status: searchParams.get('check_status') || undefined,
     sort_by: searchParams.get('sort_by') || 'hostname',
     sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'asc',
     page: Number(searchParams.get('page')) || 1,
     limit: Number(searchParams.get('limit')) || ITEMS_PER_PAGE,
   });
-
-  const debouncedHostname = useDebounce(filters.hostname, 800);
-  const debouncedOsName = useDebounce(filters.os_name, 800);
+  const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
+  const inputRef = useRef<InputRef>(null);
 
   const isServerOs = (osName: string) => {
     const serverOsPatterns = [/server/i, /hyper-v/i];
@@ -48,9 +47,13 @@ const ComputerListComponent: React.FC = () => {
   };
 
   const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<ComputersResponse, Error>({
-    queryKey: ['computers', { ...filters, hostname: debouncedHostname, os_name: debouncedOsName }],
+    queryKey: ['computers', { os_name: filters.os_name, check_status: filters.check_status, sort_by: filters.sort_by, sort_order: filters.sort_order, server_filter: filters.server_filter }],
     queryFn: () => {
-      const params: Filters = { ...filters, hostname: debouncedHostname, os_name: debouncedOsName };
+      const params: Partial<Filters> = {
+        ...filters,
+        hostname: undefined, // Отключаем серверную фильтрацию по hostname
+        limit: 1000, // Загружаем до 1000 записей
+      };
       if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
         params.os_name = 'unknown';
       } else if (params.os_name && isServerOs(params.os_name)) {
@@ -58,8 +61,7 @@ const ComputerListComponent: React.FC = () => {
       } else {
         params.server_filter = undefined;
       }
-      console.log('Query Params:', params);
-      return getComputers(params);
+      return getComputers(params as Filters);
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -78,114 +80,109 @@ const ComputerListComponent: React.FC = () => {
     enabled: true,
   });
 
-  useEffect(() => {
-    console.log('OS Names:', statsData?.os_names);
-    const params: Record<string, string> = {
-      hostname: filters.hostname,
-      check_status: filters.check_status,
-      sort_by: filters.sort_by,
-      sort_order: filters.sort_order,
-      page: String(filters.page),
-      limit: String(filters.limit),
-    };
-    if (filters.os_name) {
-      params.os_name = filters.os_name;
-    }
-    if (filters.server_filter) {
-      params.server_filter = filters.server_filter;
-    }
-    setSearchParams(params);
-  }, [filters, setSearchParams, statsData]);
+  const { handleExportCSV } = useExportCSV(filters);
 
-  useEffect(() => {
-    if (
-      debouncedHostname.length > 2 ||
-      (debouncedOsName && debouncedOsName.length > 2) ||
-      debouncedHostname === '' ||
-      (debouncedOsName === '' || debouncedOsName === undefined)
-    ) {
+  const debouncedSetHostname = useCallback(
+    debounce((value: string) => {
       setFilters((prev) => ({
         ...prev,
-        hostname: debouncedHostname,
-        os_name: debouncedOsName,
+        hostname: value || undefined,
         page: 1,
       }));
+    }, 300),
+    []
+  );
+
+  useEffect(() => {
+    if (computersData?.data) {
+      setCachedComputers(computersData.data.slice(0, 1000));
+      if (computersData.total > 1000) {
+        notification.warning({
+          message: 'Ограничение данных',
+          description: 'Отображается только первые 1000 компьютеров. Используйте фильтры для точного поиска.',
+        });
+      }
     }
-  }, [debouncedHostname, debouncedOsName]);
+  }, [computersData]);
 
-  const handleExportCSV = async () => {
-    try {
-      const params = {
-        hostname: filters.hostname || undefined,
-        os_name: filters.os_name || undefined,
-        check_status: filters.check_status || undefined,
-        sort_by: filters.sort_by,
-        sort_order: filters.sort_order,
-        server_filter: filters.os_name && isServerOs(filters.os_name) ? 'server' : undefined,
-      };
-      const response = await axios.get(`${API_URL}/computers/export/csv`, {
-        params,
-        responseType: 'blob',
-      });
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (filters.hostname) params.hostname = filters.hostname;
+    if (filters.check_status) params.check_status = filters.check_status;
+    if (filters.os_name) params.os_name = filters.os_name;
+    if (filters.server_filter) params.server_filter = filters.server_filter;
+    params.sort_by = filters.sort_by;
+    params.sort_order = filters.sort_order;
+    params.page = String(filters.page);
+    params.limit = String(filters.limit);
+    setSearchParams(params, { replace: true });
+  }, [filters, setSearchParams]);
 
-      const currentDate = new Date().toISOString().split('T')[0];
-      const filename = `computers_${currentDate}.csv`;
+  // ✨ ОПТИМИЗАЦИЯ: Мемоизация фильтрации и сортировки
+  const filteredComputers = useMemo(() => {
+    let filtered = [...cachedComputers];
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      notification.success({
-        message: 'Успех',
-        description: 'Файл CSV успешно скачан',
-      });
-    } catch (error) {
-      notification.error({
-        message: 'Ошибка',
-        description: 'Не удалось экспортировать данные в CSV',
-      });
+    if (filters.hostname) {
+      filtered = filtered.filter(comp => comp.hostname.toLowerCase().startsWith(filters.hostname!.toLowerCase()));
     }
-  };
+    if (filters.os_name) {
+      filtered = filtered.filter(comp => comp.os_name?.toLowerCase().includes(filters.os_name!.toLowerCase()));
+    }
+    if (filters.check_status) {
+      filtered = filtered.filter(comp => comp.check_status === filters.check_status);
+    }
+    if (filters.server_filter === 'server') {
+      filtered = filtered.filter(comp => comp.os_name && isServerOs(comp.os_name));
+    } else if (filters.server_filter === 'client') {
+      filtered = filtered.filter(comp => comp.os_name && !isServerOs(comp.os_name));
+    }
 
-  const handleTableChange: TableProps<ComputerList>['onChange'] = (pagination, _, sorter) => {
+    filtered.sort((a, b) => {
+      const field = filters.sort_by as keyof ComputerListItem;
+      const aValue = a[field] || '';
+      const bValue = b[field] || '';
+      if (filters.sort_order === 'asc') {
+        return String(aValue).localeCompare(String(bValue));
+      } else {
+        return String(bValue).localeCompare(String(aValue));
+      }
+    });
+
+    const start = (filters.page - 1) * filters.limit;
+    const end = start + filters.limit;
+    return {
+      data: filtered.slice(start, end),
+      total: filtered.length,
+    };
+  }, [cachedComputers, filters]);
+
+  const handleTableChange: TableProps<ComputerListItem>['onChange'] = (pagination, _, sorter) => {
     const sorterResult = sorter as Sorter;
     setFilters({
       ...filters,
       page: pagination.current || 1,
       limit: pagination.pageSize || ITEMS_PER_PAGE,
-      sort_by: sorterResult.field || 'hostname',
+      sort_by: (sorterResult.field as string) || 'hostname',
       sort_order: sorterResult.order === 'descend' ? 'desc' : 'asc',
     });
   };
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+  // ✨ ИСПРАВЛЕНИЕ: Обработка ' ' как 'undefined' для сброса фильтра
+  const handleFilterChange = (key: keyof Filters, value: string | undefined) => {
+    const finalValue = value === '' ? undefined : value;
     setFilters({
       ...filters,
-      [key]: value,
+      [key]: finalValue,
       page: 1,
-      server_filter: value && isServerOs(value) ? 'server' : undefined,
+      server_filter: key === 'os_name' && finalValue && isServerOs(finalValue) ? 'server' : undefined,
     });
-  };
-
-  const clearFilter = (key: keyof Filters) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: '',
-      page: 1,
-      server_filter: undefined,
-    }));
   };
 
   const clearAllFilters = () => {
     setFilters({
-      hostname: '',
-      os_name: '',
-      check_status: '',
+      hostname: undefined,
+      os_name: undefined,
+      check_status: undefined,
       sort_by: 'hostname',
       sort_order: 'asc',
       page: 1,
@@ -195,14 +192,14 @@ const ComputerListComponent: React.FC = () => {
     refetch();
   };
 
-  const columns: TableProps<ComputerList>['columns'] = [
+  const columns: TableProps<ComputerListItem>['columns'] = [
     {
       title: 'Hostname',
       dataIndex: 'hostname',
       key: 'hostname',
       sorter: true,
       sortOrder: filters.sort_by === 'hostname' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
-      render: (text: string, record: ComputerList) => (
+      render: (text: string, record: ComputerListItem) => (
         <Link to={`/computer/${record.id}`} className={styles.link}>
           {text}
         </Link>
@@ -226,79 +223,90 @@ const ComputerListComponent: React.FC = () => {
     },
   ];
 
-  if (isComputersLoading || isStatsLoading) {
-    return <Skeleton active paragraph={{ rows: 10 }} />;
-  }
-  if (computersError || statsError) {
-    return <div className={styles.error}>Ошибка: {(computersError || statsError)?.message}</div>;
-  }
-
   return (
     <div className={styles.container}>
-      <h2 className={styles.title}>
-        Список компьютеров ({computersData?.total || 0})
-        <Button
-          type="primary"
-          onClick={handleExportCSV}
-          style={{ float: 'right', marginLeft: 8 }}
-        >
-          Экспорт в CSV
-        </Button>
-      </h2>
-      <div className={styles.filters}>
-        <Input
-          placeholder="Фильтр по Hostname"
-          value={filters.hostname}
-          onChange={(e) => handleFilterChange('hostname', e.target.value)}
-          className={styles.filterInput}
-          allowClear
-        />
-        <Select
-          value={filters.os_name}
-          onChange={(value) => handleFilterChange('os_name', value)}
-          className={styles.filterSelect}
-          placeholder="Выберите ОС"
-          loading={isStatsLoading}
-          showSearch
-          optionFilterProp="children"
-        >
-          <Select.Option value="">Все ОС</Select.Option>
-          {statsData?.os_names && [...new Set([...statsData.os_stats.client_os.map((item) => item.category),...statsData.os_stats.server_os.map((item) => item.category),])].map((os: string) => (
-            <Select.Option key={os} value={os}>
-              {os}
-            </Select.Option>
-          ))}
-        </Select>
-        <Select
-          value={filters.check_status}
-          onChange={(value) => handleFilterChange('check_status', value)}
-          className={styles.filterSelect}
-          placeholder="Все проверки"
-        >
-          <Select.Option value="">Все проверки</Select.Option>
-          <Select.Option value="success">Success</Select.Option>
-          <Select.Option value="failed">Failed</Select.Option>
-          <Select.Option value="unreachable">Unreachable</Select.Option>
-        </Select>
-        <Button onClick={clearAllFilters} style={{ marginLeft: 8 }}>
-          Очистить все фильтры
-        </Button>
-      </div>
-      <Table
-        columns={columns}
-        dataSource={computersData?.data || []}
-        rowKey="id"
-        pagination={{
-          current: filters.page,
-          pageSize: filters.limit,
-          total: computersData?.total || 0, // Используем total из ответа сервера
-          showSizeChanger: false,
-          showQuickJumper: false,
-        }}
-        onChange={handleTableChange}
-        locale={{ emptyText: 'Нет данных для отображения' }}
-        size="small"
-      />
+      {isComputersLoading || isStatsLoading ? (
+        <Skeleton active paragraph={{ rows: 10 }} />
+      ) : computersError || statsError ? (
+        <div className={styles.error}>Ошибка: {(computersError || statsError)?.message}</div>
+      ) : (
+        <>
+          <h2 className={styles.title}>
+            Список компьютеров ({filteredComputers.total || 0})
+            <Button
+              type="primary"
+              onClick={handleExportCSV}
+              style={{ float: 'right', marginLeft: 8 }}
+            >
+              Экспорт в CSV
+            </Button>
+          </h2>
+          <div className={styles.filters}>
+            <Input
+              ref={inputRef}
+              placeholder="Фильтр по Hostname (поиск по началу)"
+              // ✨ Улучшение: используем defaultValue для uncontrolled-like поведения с дебаунсом
+              defaultValue={filters.hostname}
+              onChange={(e) => {
+                debouncedSetHostname(e.target.value);
+              }}
+              className={styles.filterInput}
+              allowClear
+            />
+            <Select
+              // ✨ ИСПРАВЛЕНИЕ: Используем `''` вместо `undefined` для значения Select
+              value={filters.os_name || ''}
+              onChange={(value) => handleFilterChange('os_name', value)}
+              className={styles.filterSelect}
+              placeholder="Выберите ОС"
+              loading={isStatsLoading}
+              showSearch
+              optionFilterProp="children"
+            >
+              {/* ✨ ИСПРАВЛЕНИЕ: `value` теперь пустая строка */}
+              <Select.Option value="">Все ОС</Select.Option>
+              {[...new Set([
+                ...(statsData?.os_stats.client_os.map(item => item.category) || []),
+                ...(statsData?.os_stats.server_os.map(item => item.category) || []),
+              ])].map((os: string) => (
+                <Select.Option key={os} value={os}>
+                  {os}
+                </Select.Option>
+              ))}
+            </Select>
+            <Select
+              // ✨ ИСПРАВЛЕНИЕ: Используем `''` вместо `undefined`
+              value={filters.check_status || ''}
+              onChange={(value) => handleFilterChange('check_status', value)}
+              className={styles.filterSelect}
+              placeholder="Все проверки"
+            >
+              <Select.Option value="">Все проверки</Select.Option>
+              <Select.Option value="success">Success</Select.Option>
+              <Select.Option value="failed">Failed</Select.Option>
+              <Select.Option value="unreachable">Unreachable</Select.Option>
+            </Select>
+            <Button onClick={clearAllFilters} style={{ marginLeft: 8 }}>
+              Очистить все фильтры
+            </Button>
+          </div>
+          <Table
+            columns={columns}
+            dataSource={filteredComputers.data}
+            rowKey="id"
+            pagination={{
+              current: filters.page,
+              pageSize: filters.limit,
+              total: filteredComputers.total || 0,
+              showSizeChanger: false,
+              showQuickJumper: false,
+            }}
+            onChange={handleTableChange}
+            locale={{ emptyText: 'Нет данных для отображения' }}
+            size="small"
+          />
+        </>
+      )}
     </div>
   );
 };

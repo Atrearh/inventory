@@ -2,6 +2,7 @@ import logging
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from .utils import NonEmptyStr
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     server_port: int = 8000
     cors_allow_origins: NonEmptyStr = "http://localhost:8000,http://localhost:5173,http://localhost:8080,http://192.168.0.143:8080,http://192.168.0.143:8000,http://192.168.0.143:5173"
     allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23" 
+    secret_key: str = os.getenv("SECRET_KEY", "your-very-secret-key-here")
+
  
     class Config:
         env_file = "app/.env"

@@ -7,6 +7,7 @@ from typing import Optional, List
 from datetime import datetime
 from cryptography.fernet import Fernet
 import os
+from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 
 class CheckStatus(enum.Enum):
     success = "success"
@@ -196,3 +197,14 @@ class ScanTask(Base):
     error: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+
+class User(SQLAlchemyBaseUserTable[int], Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), nullable=False)  # Указываем длину 50 для VARCHAR
+    email = Column(String(255), nullable=False, unique=True)  # Длина 255 для email
+    hashed_password = Column(String(255), nullable=False)  # Длина 255 для хэша пароля
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    is_verified = Column(Boolean, default=False)

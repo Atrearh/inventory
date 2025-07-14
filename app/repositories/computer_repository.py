@@ -1,14 +1,18 @@
 from typing import List, Optional, Tuple, Dict, Any, Type, TypeVar, AsyncGenerator
 from datetime import datetime
-from sqlalchemy import select, func, tuple_, update, literal
+from sqlalchemy import select, func, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 import logging
-from .. import models, schemas
+from .. import models
 from sqlalchemy.orm import selectinload
-from sqlalchemy import union_all
 from typing_extensions import List as ListAny
+from functools import lru_cache
+import hashlib
+import time
 
+# Импортируем ComputerList для корректной валидации
+from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComponentHistory, ComputerCreate, ComputerList, ComputerListItem, ComputerUpdateCheckStatus
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -35,7 +39,7 @@ class ComputerRepository:
             logger.error(f"Ошибка при получении/создании компьютера {hostname}: {str(e)}", exc_info=True)
             raise
 
-    async def async_upsert_computer(self, computer: schemas.ComputerCreate, hostname: str, mode: str = "Full") -> int:
+    async def async_upsert_computer(self, computer: ComputerCreate, hostname: str, mode: str = "Full") -> int:
         """Создает или обновляет компьютер в базе данных."""
         try:
             computer_data = computer.model_dump(
@@ -52,23 +56,26 @@ class ComputerRepository:
             await self.db.flush()
             await self.db.commit()
             logger.debug(f"Компьютер {hostname} сохранен с ID {db_computer.id}, os_name={db_computer.os_name}, os_version={db_computer.os_version}, ram={db_computer.ram}")
+            self.get_computers.cache_clear()  # Сбрасываем кэш при обновлении
             return db_computer.id
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при сохранении компьютера {hostname}: {str(e)}", exc_info=True)
             await self.db.rollback()
             raise
 
-    async def _computer_to_pydantic(self, computer: models.Computer) -> schemas.ComputerList:
-        """Преобразует объект компьютера в Pydantic-схему."""
+    async def _computer_to_pydantic(self, computers: List[models.Computer]) -> List[ComputerListItem]:
+        """Преобразует список объектов компьютера в Pydantic-схему."""
         try:
-            return schemas.ComputerList.model_validate(computer, from_attributes=True)
+            return [ComputerListItem.model_validate(comp, from_attributes=True) for comp in computers]
         except Exception as e:
-            logger.error(f"Ошибка преобразования компьютера {computer.id} в Pydantic-схему: {str(e)}")
+            logger.error(f"Ошибка преобразования компьютеров в Pydantic-схему: {str(e)}")
             raise
+
+
 
     def _build_computer_query(
         self,
-        hostname: Optional[str] = None,
+        hostname: Optional[str] = None, # ✨ ИСПРАВЛЕНИЕ: Добавлен недостающий аргумент
         os_name: Optional[str] = None,
         check_status: Optional[str] = None,
         server_filter: Optional[str] = None,
@@ -76,17 +83,8 @@ class ComputerRepository:
         sort_order: str = "asc"
     ) -> Any:
         """Создает SQLAlchemy-запрос для получения компьютеров с фильтрами."""
-        query = select(models.Computer).options(
-            selectinload(models.Computer.physical_disks),
-            selectinload(models.Computer.logical_disks),
-            selectinload(models.Computer.software),
-            selectinload(models.Computer.roles),
-            selectinload(models.Computer.video_cards),
-            selectinload(models.Computer.processors),
-            selectinload(models.Computer.ip_addresses),
-            selectinload(models.Computer.mac_addresses)
-        )
-        if hostname:
+        query = select(models.Computer)
+        if hostname: # ✨ ИСПРАВЛЕНИЕ: Добавлена логика фильтрации по hostname
             query = query.filter(models.Computer.hostname.ilike(f"%{hostname}%"))
         if os_name:
             query = query.filter(models.Computer.os_name.ilike(f"%{os_name}%"))
@@ -96,7 +94,7 @@ class ComputerRepository:
             query = query.filter(models.Computer.os_name.ilike("%server%"))
         elif server_filter == "client":
             query = query.filter(~models.Computer.os_name.ilike("%server%"))
-        if sort_by in ["hostname", "os_name", "last_updated"]:
+        if sort_by in ["hostname", "os_name", "last_updated", "check_status"]:
             order_column = getattr(models.Computer, sort_by)
             if sort_order.lower() == "desc":
                 order_column = order_column.desc()
@@ -105,9 +103,8 @@ class ComputerRepository:
             query = query.order_by(models.Computer.hostname)
         return query
 
-    async def get_computers(
+    def _generate_cache_key(
         self,
-        hostname: Optional[str],
         os_name: Optional[str],
         check_status: Optional[str],
         sort_by: str,
@@ -115,24 +112,53 @@ class ComputerRepository:
         page: int,
         limit: int,
         server_filter: Optional[str]
-    ) -> Tuple[List[schemas.ComputerList], int]:
-        """Получает список компьютеров с пагинацией и фильтрацией."""
+    ) -> str:
+        """Генерирует ключ для кэширования на основе параметров запроса."""
+        params = f"{os_name}|{check_status}|{sort_by}|{sort_order}|{page}|{limit}|{server_filter}"
+        return hashlib.md5(params.encode()).hexdigest()
+
+    @lru_cache(maxsize=100)
+    async def get_computers(
+        self,
+        os_name: Optional[str] = None,
+        check_status: Optional[str] = None,
+        sort_by: Optional[str] = "hostname",
+        sort_order: Optional[str] = "asc",
+        page: Optional[int] = 1,
+        limit: Optional[int] = 1000,
+        server_filter: Optional[str] = None
+    ) -> Tuple[List[ComputerListItem], int]:
+        """Получение списка компьютеров с фильтрацией и пагинацией."""
+        start_time = time.time()
+        cache_key = self._generate_cache_key(os_name, check_status, sort_by, sort_order, page, limit, server_filter)
         try:
-            query = self._build_computer_query(hostname, os_name, check_status, server_filter, sort_by, sort_order)
+            # Создаем запрос с фильтрами
+            query = self._build_computer_query(
+                os_name=os_name,
+                check_status=check_status,
+                server_filter=server_filter,
+                sort_by=sort_by,
+                sort_order=sort_order
+            )
+
+            # Подсчет общего количества после фильтрации
             count_query = select(func.count()).select_from(query.subquery())
-            result = await self.db.execute(count_query)
-            total = result.scalar()
-            if limit > 0:
-                query = query.offset((page - 1) * limit).limit(limit)
+            total = (await self.db.execute(count_query)).scalar() or 0
+
+            # Пагинация
+            query = query.offset((page - 1) * limit).limit(limit)
             result = await self.db.execute(query)
             computers = result.scalars().all()
-            pydantic_computers = [await self._computer_to_pydantic(computer) for computer in computers]
+
+            # Преобразуем SQLAlchemy объекты в Pydantic
+            pydantic_computers = await self._computer_to_pydantic(computers)
+            logger.debug(f"Получено {len(pydantic_computers)} компьютеров, всего: {total}, время: {time.time() - start_time:.3f} сек, cache_key: {cache_key}")
             return pydantic_computers, total
-        except SQLAlchemyError as e:
-            logger.error(f"Ошибка базы данных при получении списка компьютеров: {str(e)}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Ошибка при получении компьютеров: {str(e)}", exc_info=True)
             raise
 
-    async def async_get_computer_by_id(self, computer_id: int) -> Optional[schemas.ComputerList]:
+    async def async_get_computer_by_id(self, computer_id: int) -> Optional[ComputerList]:
         """Получает компьютер по ID."""
         try:
             stmt = select(models.Computer).options(
@@ -147,7 +173,8 @@ class ComputerRepository:
             ).filter(models.Computer.id == computer_id)
             result = await self.db.execute(stmt)
             computer = result.scalars().first()
-            return await self._computer_to_pydantic(computer) if computer else None
+            # ✨ ИСПРАВЛЕНИЕ: Валидируем одну модель, а не список
+            return ComputerList.model_validate(computer, from_attributes=True) if computer else None
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при получении компьютера ID {computer_id}: {str(e)}")
             raise
@@ -172,104 +199,108 @@ class ComputerRepository:
             logger.error(f"Ошибка обновления check_status для {hostname}: {str(e)}", exc_info=True)
             raise
 
+
+
+
     async def get_component_history(self, computer_id: int) -> List[Dict[str, Any]]:
-        """Получает историю компонентов компьютера с помощью UNION ALL."""
+        """Получает историю компонентов компьютера."""
         try:
-            component_queries = [
-                (select(
-                    literal('physical_disk').label('component_type'),
-                    func.JSON_OBJECT(
-                        'model', models.PhysicalDisk.model,
-                        'serial', models.PhysicalDisk.serial,
-                        'interface', models.PhysicalDisk.interface,
-                        'media_type', models.PhysicalDisk.media_type,
-                        'detected_on', models.PhysicalDisk.detected_on,
-                        'removed_on', models.PhysicalDisk.removed_on
-                    ).label('data'),
-                    models.PhysicalDisk.detected_on,
-                    models.PhysicalDisk.removed_on
-                ).where(models.PhysicalDisk.computer_id == computer_id)),
-                (select(
-                    literal('logical_disk').label('component_type'),
-                    func.JSON_OBJECT(
-                        'device_id', models.LogicalDisk.device_id,
-                        'volume_label', models.LogicalDisk.volume_label,
-                        'total_space', models.LogicalDisk.total_space,
-                        'free_space', models.LogicalDisk.free_space,
-                        'physical_disk_id', models.LogicalDisk.physical_disk_id,
-                        'detected_on', models.LogicalDisk.detected_on,
-                        'removed_on', models.LogicalDisk.removed_on
-                    ).label('data'),
-                    models.LogicalDisk.detected_on,
-                    models.LogicalDisk.removed_on
-                ).where(models.LogicalDisk.computer_id == computer_id)),
-                (select(
-                    literal('processor').label('component_type'),
-                    func.JSON_OBJECT(
-                        'name', models.Processor.name,
-                        'number_of_cores', models.Processor.number_of_cores,
-                        'number_of_logical_processors', models.Processor.number_of_logical_processors,
-                        'detected_on', models.Processor.detected_on,
-                        'removed_on', models.Processor.removed_on
-                    ).label('data'),
-                    models.Processor.detected_on,
-                    models.Processor.removed_on
-                ).where(models.Processor.computer_id == computer_id)),
-                (select(
-                    literal('video_card').label('component_type'),
-                    func.JSON_OBJECT(
-                        'name', models.VideoCard.name,
-                        'driver_version', models.VideoCard.driver_version,
-                        'detected_on', models.VideoCard.detected_on,
-                        'removed_on', models.VideoCard.removed_on
-                    ).label('data'),
-                    models.VideoCard.detected_on,
-                    models.VideoCard.removed_on
-                ).where(models.VideoCard.computer_id == computer_id)),
-                (select(
-                    literal('ip_address').label('component_type'),
-                    func.JSON_OBJECT(
-                        'address', models.IPAddress.address,
-                        'detected_on', models.IPAddress.detected_on,
-                        'removed_on', models.IPAddress.removed_on
-                    ).label('data'),
-                    models.IPAddress.detected_on,
-                    models.IPAddress.removed_on
-                ).where(models.IPAddress.computer_id == computer_id)),
-                (select(
-                    literal('mac_address').label('component_type'),
-                    func.JSON_OBJECT(
-                        'address', models.MACAddress.address,
-                        'detected_on', models.MACAddress.detected_on,
-                        'removed_on', models.MACAddress.removed_on
-                    ).label('data'),
-                    models.MACAddress.detected_on,
-                    models.MACAddress.removed_on
-                ).where(models.MACAddress.computer_id == computer_id)),
-                (select(
-                    literal('software').label('component_type'),
-                    func.JSON_OBJECT(
-                        'DisplayName', models.Software.name,
-                        'DisplayVersion', models.Software.version,
-                        'InstallDate', models.Software.install_date,
-                        'detected_on', models.Software.detected_on,
-                        'removed_on', models.Software.removed_on
-                    ).label('data'),
-                    models.Software.detected_on,
-                    models.Software.removed_on
-                ).where(models.Software.computer_id == computer_id))
-            ]
-            union_query = union_all(*component_queries).order_by('detected_on')
-            result = await self.db.execute(union_query)
-            return [
-                {
-                    "component_type": row.component_type,
-                    "data": row.data,
-                    "detected_on": row.detected_on.isoformat() if row.detected_on else None,
-                    "removed_on": row.removed_on.isoformat() if row.removed_on else None
-                }
-                for row in result.fetchall()
-            ]
+            history = []
+            
+            # Получение физических дисков
+            physical_disks = await self.db.execute(
+                select(models.PhysicalDisk)
+                .where(models.PhysicalDisk.computer_id == computer_id)
+            )
+            for disk in physical_disks.scalars().all():
+                history.append({
+                    "component_type": "physical_disk",
+                    "data": PhysicalDisk.model_validate(disk, from_attributes=True).model_dump(),
+                    "detected_on": disk.detected_on.isoformat() if disk.detected_on else None,
+                    "removed_on": disk.removed_on.isoformat() if disk.removed_on else None
+                })
+            
+            # Получение логических дисков
+            logical_disks = await self.db.execute(
+                select(models.LogicalDisk)
+                .where(models.LogicalDisk.computer_id == computer_id)
+            )
+            for disk in logical_disks.scalars().all():
+                history.append({
+                    "component_type": "logical_disk",
+                    "data": LogicalDisk.model_validate(disk, from_attributes=True).model_dump(),
+                    "detected_on": disk.detected_on.isoformat() if disk.detected_on else None,
+                    "removed_on": disk.removed_on.isoformat() if disk.removed_on else None
+                })
+            
+            # Получение процессоров
+            processors = await self.db.execute(
+                select(models.Processor)
+                .where(models.Processor.computer_id == computer_id)
+            )
+            for proc in processors.scalars().all():
+                history.append({
+                    "component_type": "processor",
+                    "data": Processor.model_validate(proc, from_attributes=True).model_dump(),
+                    "detected_on": proc.detected_on.isoformat() if proc.detected_on else None,
+                    "removed_on": proc.removed_on.isoformat() if proc.removed_on else None
+                })
+            
+            # Получение видеокарт
+            video_cards = await self.db.execute(
+                select(models.VideoCard)
+                .where(models.VideoCard.computer_id == computer_id)
+            )
+            for vc in video_cards.scalars().all():
+                history.append({
+                    "component_type": "video_card",
+                    "data": VideoCard.model_validate(vc, from_attributes=True).model_dump(),
+                    "detected_on": vc.detected_on.isoformat() if vc.detected_on else None,
+                    "removed_on": vc.removed_on.isoformat() if vc.removed_on else None
+                })
+            
+            # Получение IP-адресов
+            ip_addresses = await self.db.execute(
+                select(models.IPAddress)
+                .where(models.IPAddress.computer_id == computer_id)
+            )
+            for ip in ip_addresses.scalars().all():
+                history.append({
+                    "component_type": "ip_address",
+                    "data": IPAddress.model_validate(ip, from_attributes=True).model_dump(),
+                    "detected_on": ip.detected_on.isoformat() if ip.detected_on else None,
+                    "removed_on": ip.removed_on.isoformat() if ip.removed_on else None
+                })
+            
+            # Получение MAC-адресов
+            mac_addresses = await self.db.execute(
+                select(models.MACAddress)
+                .where(models.MACAddress.computer_id == computer_id)
+            )
+            for mac in mac_addresses.scalars().all():
+                history.append({
+                    "component_type": "mac_address",
+                    "data": MACAddress.model_validate(mac, from_attributes=True).model_dump(),
+                    "detected_on": mac.detected_on.isoformat() if mac.detected_on else None,
+                    "removed_on": mac.removed_on.isoformat() if mac.removed_on else None
+                })
+            
+            # Получение программного обеспечения
+            software = await self.db.execute(
+                select(models.Software)
+                .where(models.Software.computer_id == computer_id)
+            )
+            for sw in software.scalars().all():
+                history.append({
+                    "component_type": "software",
+                    "data": Software.model_validate(sw, from_attributes=True).model_dump(),
+                    "detected_on": sw.detected_on.isoformat() if sw.detected_on else None,
+                    "removed_on": sw.removed_on.isoformat() if sw.removed_on else None
+                })
+            
+            # Сортировка по detected_on
+            history.sort(key=lambda x: x["detected_on"] or "")
+            return history
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при получении истории компонентов для ID {computer_id}: {str(e)}")
             raise
@@ -368,7 +399,7 @@ class ComputerRepository:
             logger.error(f"Ошибка получения physical_disk_id для serial {serial}: {str(e)}")
             return None
 
-    async def _create_logical_disk(self, db_computer: models.Computer, disk: schemas.LogicalDisk) -> models.LogicalDisk:
+    async def _create_logical_disk(self, db_computer: models.Computer, disk: LogicalDisk) -> models.LogicalDisk:
         """Создает объект логического диска с учетом parent_disk_serial."""
         physical_disk_id = await self._get_physical_disk_id(db_computer.id, disk.parent_disk_serial)
         return models.LogicalDisk(
@@ -382,7 +413,7 @@ class ComputerRepository:
             removed_on=None
         )
 
-    async def update_related_entities(self, db_computer: models.Computer, computer: schemas.ComputerCreate, mode: str = "Full") -> None:
+    async def update_related_entities(self, db_computer: models.Computer, computer: ComputerCreate, mode: str = "Full") -> None:
         """Обновляет все связанные сущности компьютера."""
         try:
             if computer.ip_addresses is not None:
@@ -454,7 +485,7 @@ class ComputerRepository:
             await self.db.rollback()
             raise
 
-    async def _update_software_async(self, db_computer: models.Computer, new_software: List[schemas.Software], mode: str) -> None:
+    async def _update_software_async(self, db_computer: models.Computer, new_software: List[Software], mode: str) -> None:
         """Обновляет программное обеспечение компьютера."""
         if not new_software:
             logger.debug(f"Данные о ПО отсутствуют для {db_computer.hostname}, обновление ПО пропущено")
@@ -510,25 +541,31 @@ class ComputerRepository:
         sort_by: str,
         sort_order: str,
         server_filter: Optional[str]
-    ) -> AsyncGenerator[schemas.ComputerList, None]:
+    ) -> AsyncGenerator[ComputerList, None]:
         """Потоковая передача компьютеров с фильтрацией."""
         try:
             query = self._build_computer_query(hostname, os_name, check_status, server_filter, sort_by, sort_order)
-            async for row in await self.db.stream(query):
-                yield await self._computer_to_pydantic(row[0])  # Используем row[0] вместо computer.scalars().first()
+            
+            query = query.options(
+                selectinload(models.Computer.physical_disks),
+                selectinload(models.Computer.logical_disks),
+                selectinload(models.Computer.ip_addresses),
+                selectinload(models.Computer.mac_addresses),
+                selectinload(models.Computer.video_cards),
+                selectinload(models.Computer.processors),  # Добавлено
+                selectinload(models.Computer.software),   # Добавлено
+                selectinload(models.Computer.roles)       # Добавлено
+            )
+            
+            result = await self.db.stream(query)
+            async for row in result:
+                computer_obj = row[0]
+                yield ComputerList.model_validate(computer_obj, from_attributes=True)
         except SQLAlchemyError as e:
             logger.error(f"Ошибка базы данных при потоковом получении компьютеров: {str(e)}", exc_info=True)
             raise
-        
-    async def get_all_hosts(self) -> List[str]:
-        """Получает список всех хостов из базы данных."""
-        try:
-            result = await self.db.execute(select(models.Computer.hostname))
-            return [row[0] for row in result.fetchall()]
-        except SQLAlchemyError as e:
-            logger.error(f"Ошибка получения хостов из БД: {str(e)}")
-            raise
 
+    
     async def update_scan_task_status(self, task_id: str, status: str, scanned_hosts: int, successful_hosts: int, error: Optional[str]):
         """Обновляет статус задачи сканирования."""
         try:

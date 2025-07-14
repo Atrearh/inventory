@@ -1,181 +1,114 @@
-// src/components/Dashboard.tsx
+
 import { useQuery } from '@tanstack/react-query';
 import { getComputers, getStatistics } from '../api/api';
 import { ComputerList, ComputersResponse, DashboardStats } from '../types/schemas';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Modal } from 'antd';
-import StatsSummary from './StatsSummary';
-import OsDistribution from './OsDistribution';
+import { Modal, Table } from 'antd';
+import CombinedStats from './CombinedStats';
 import LowDiskSpace from './LowDiskSpace';
-import StatusStats from './StatusStats';
 import DashboardMenu from './DashboardMenu';
-import { Table } from 'antd';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const Dashboard: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Determine active tab from URL search parameter
+  const params = new URLSearchParams(location.search);
+  const activeTab = params.get('tab') || 'summary';
+
   const [selectedOs, setSelectedOs] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState('summary');
-  const [filters, setFilters] = useState<{ os_name?: string; page: number; limit: number; server_filter?: string }>({
-    page: 1,
-    limit: 10,
-  });
+  const [filters, setFilters] = useState({ page: 1, limit: 10 });
   const [filteredComputers, setFilteredComputers] = useState<ComputerList[]>([]);
 
   const { data, error: statsError, isLoading } = useQuery<DashboardStats, Error>({
     queryKey: ['statistics'],
-    queryFn: () =>
-      getStatistics({
-        metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'],
-      }),
+    queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
     staleTime: 60 * 60 * 1000,
   });
 
-  const {
-    data: computersData,
-    isLoading: isComputersLoading,
-    error: computersError,
-  } = useQuery<ComputersResponse, Error>({
+  const { data: computersData, isLoading: isComputersLoading, error: computersError } = useQuery<ComputersResponse, Error>({
     queryKey: ['computers', selectedOs, filters.page, filters.limit],
     queryFn: () => {
-      console.log('Отправка запроса getComputers с os_name:', selectedOs);
       const isServerOs = selectedOs === 'Other Servers';
-      return getComputers({
-        os_name: selectedOs === 'Unknown' || isServerOs ? undefined : selectedOs || undefined,
-        server_filter: isServerOs ? 'server' : undefined,
-        page: filters.page,
-        limit: filters.limit,
-      });
+      return getComputers({ os_name: selectedOs === 'Unknown' || isServerOs ? undefined : selectedOs, server_filter: isServerOs ? 'server' : undefined, page: filters.page, limit: filters.limit });
     },
     enabled: !!selectedOs,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   });
 
   useEffect(() => {
     if (computersData?.data) {
-      console.log('Получены данные компьютеров:', computersData.data);
       setFilteredComputers(computersData.data);
       setIsModalVisible(true);
     }
   }, [computersData]);
 
-  useEffect(() => {
-    if (data?.disk_stats?.low_disk_space?.length) {
-      console.warn(`${data.disk_stats.low_disk_space.length} компьютеров имеют низкий объем диска.`);
-    }
-  }, [data?.disk_stats?.low_disk_space?.length]);
-
   if (isLoading) return <div>Загрузка...</div>;
-  if (statsError) return <div>Ошибка: {statsError.message}</div>;
-  if (!data) return <div>Данные недоступны</div>;
+  if (statsError) return <div style={{ color: 'red' }}>Помилка: {statsError.message}</div>;
+  if (!data) return <div style={{ color: 'red' }}>Дані відсутні</div>;
+
+  const handleTabChange = (tab: string) => {
+    navigate(`?tab=${tab}`);
+  };
 
   const computerColumns = [
     { title: 'Hostname', dataIndex: 'hostname', key: 'hostname' },
-    {
-      title: 'IP',
-      dataIndex: 'ip_addresses',
-      key: 'ip',
-      render: (ip_addresses: ComputerList['ip_addresses']) =>
-        ip_addresses && ip_addresses.length > 0 ? ip_addresses[0].address : '-',
-    },
-    { title: 'Версия ОС', dataIndex: 'os_version', key: 'os_version' },
+    { title: 'IP', dataIndex: 'ip_addresses', key: 'ip', render: (ip_addresses: ComputerList['ip_addresses']) => ip_addresses?.[0]?.address || '-' },
+    { title: 'ОС', dataIndex: 'os_version', key: 'os_version' },
     { title: 'Статус', dataIndex: 'check_status', key: 'check_status' },
   ];
 
-  const osMapping: Record<string, string | undefined> = {
-    'Unknown': undefined,
-    'Other Servers': undefined,
-    'Windows 10': 'Windows 10%',
-    'Windows 11': 'Windows 11%',
-    'Windows 7': 'Windows 7%',
-    'Ubuntu': 'Ubuntu%',
-    'CentOS': 'CentOS%',
-    'Debian': 'Debian%',
-    'Windows Server 2022': 'Windows Server 2022%',
-    'Windows Server 2019': 'Windows Server 2019%',
-    'Windows Server 2016': 'Windows Server 2016%',
-    'Windows Server 2008': 'Windows Server 2008%',
-    'Hyper-V': 'Hyper-V%',
-    'Other Clients': '',
-  };
-
-  const handleOsClick = (os: string, isClientOs: boolean) => {
-    const mappedOs = osMapping[os] || os;
-    console.log(`Выбрано ОС: ${os}, mappedOs: ${mappedOs}, isClientOs: ${isClientOs}`);
+  const handleOsClick = (os: string) => {
     setSelectedOs(os);
     setFilters({ page: 1, limit: 10 });
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      <h2 style={{ marginBottom: 16 }}>Статистика інвентаризації</h2>
-      <DashboardMenu onTabChange={setActiveTab} />
+    <div style={{ padding: 12 }}>
+      <h1 style={{ marginBottom: 0, marginTop: 0  }}>Статистика</h1>
+      <DashboardMenu activeTab={activeTab} onTabChange={handleTabChange} />
+
       {activeTab === 'summary' && (
-        <StatsSummary
+        <CombinedStats
           totalComputers={data.total_computers}
           lastScanTime={data.scan_stats.last_scan_time}
-        />
-      )}
-      {activeTab === 'os_distribution' && (
-        <OsDistribution
           clientOsData={data.os_stats.client_os}
           serverOsData={data.os_stats.server_os}
+          statusStats={data.scan_stats.status_stats}
+          lowDiskSpaceCount={data.disk_stats.low_disk_space.length}
           onOsClick={handleOsClick}
+          onStatusClick={(status) => navigate(`/computers?check_status=${encodeURIComponent(status)}`)}
         />
       )}
-      {activeTab === 'low_disk_space' && (
-        <LowDiskSpace lowDiskSpace={data.disk_stats.low_disk_space} />
-      )}
-      {activeTab === 'status_stats' && (
-        <StatusStats statusStats={data.scan_stats.status_stats} />
-      )}
-      {data.disk_stats.low_disk_space.length > 0 && (
-        <div style={{ color: 'red', marginTop: '1rem' }}>
-          Увага: {data.disk_stats.low_disk_space.length} комп'ютерів мають низький обсяг диска.
-        </div>
-      )}
+      {activeTab === 'low_disk_space' && <LowDiskSpace lowDiskSpace={data.disk_stats.low_disk_space} />}
+
       <Modal
-        title={`Комп'ютери з ОС: ${selectedOs ? selectedOs.replace('%', '') : 'Не вибрано'}`}
+        title={selectedOs ? selectedOs.replace('%', '') : 'Не вибрано'}
         open={isModalVisible}
-        onCancel={() => {
-          setIsModalVisible(false);
-          setSelectedOs(null);
-          setFilteredComputers([]);
-        }}
+        onCancel={() => { setIsModalVisible(false); setSelectedOs(null); setFilteredComputers([]); }}
         footer={null}
-        width={800}
+        width={600}
       >
         {isComputersLoading ? (
           <div>Загрузка...</div>
         ) : computersError ? (
-          <p>Помилка завантаження даних: {computersError.message}</p>
-        ) : filteredComputers.length > 0 ? (
+          <div style={{ color: 'red' }}>Помилка: {computersError.message}</div>
+        ) : (
           <Table
             columns={computerColumns}
             dataSource={filteredComputers}
             rowKey="id"
             size="small"
-            pagination={{
-              current: filters.page,
-              pageSize: filters.limit,
-              total: computersData?.total || 0,
-              onChange: (page, pageSize) => setFilters({ ...filters, page, limit: pageSize }),
-            }}
-            locale={{ emptyText: 'Немає даних' }}
+            pagination={{ current: filters.page, pageSize: filters.limit, total: computersData?.total || 0, onChange: (p, ps) => setFilters({ ...filters, page: p, limit: ps }) }}
+            locale={{ emptyText: '-' }}
           />
-        ) : (
-          <p>Немає даних</p>
         )}
       </Modal>
-      <Link to="/computers" aria-label="Перейти до списку всіх комп'ютерів" style={{ marginTop: '16px', display: 'block' }}>
-        Перейти до списку комп'ютерів
-      </Link>
     </div>
   );
 };

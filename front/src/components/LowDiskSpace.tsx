@@ -7,12 +7,11 @@ interface LowDiskSpaceProps {
 }
 
 const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
-  // Логування для діагностики даних
-  console.log('Дані low_disk_space:', lowDiskSpace);
+  console.log('Дані lowDiskSpace:', lowDiskSpace);
 
-  // Фільтруємо диски, де вільний простір менше 1ТБ (1024 ГБ)
+  // Фільтрація комп'ютерів з низьким обсягом диска (менше або дорівнює 1024 ГБ)
   const filteredLowDiskSpace = lowDiskSpace.filter(
-    (disk) => disk.free_space_gb <= 1024
+    (disk) => disk.free_space_gb !== undefined && disk.free_space_gb <= 1024
   );
 
   const diskColumns = [
@@ -21,7 +20,7 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
       dataIndex: 'hostname',
       key: 'hostname',
       render: (hostname: string, record: DashboardStats['disk_stats']['low_disk_space'][0]) => (
-        <Link to={`/computers/${record.id}`}>{hostname}</Link>
+        <Link to={`/computer/${record.id}`}>{hostname || 'Невідомо'}</Link>
       ),
     },
     { title: 'Диск', dataIndex: 'disk_id', key: 'disk_id' },
@@ -30,15 +29,20 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
       title: 'Загальний обсяг (ГБ)',
       dataIndex: 'total_space_gb',
       key: 'total_space_gb',
-      render: (value: number) => value.toFixed(2),
+      render: (value: number) => (value !== undefined ? value.toFixed(2) : 'Н/Д'),
     },
     {
       title: 'Вільний обсяг (ГБ)',
       dataIndex: 'free_space_gb',
       key: 'free_space_gb',
-      render: (value: number) => value.toFixed(2),
+      render: (value: number) => (value !== undefined ? value.toFixed(2) : 'Н/Д'),
     },
   ];
+
+  if (!lowDiskSpace || lowDiskSpace.length === 0) {
+    console.warn('lowDiskSpace відсутні або порожні');
+    return <p style={{ color: 'red' }}>Дані про низький обсяг диска відсутні</p>;
+  }
 
   return (
     <div style={{ marginTop: '16px' }}>

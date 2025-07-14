@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, UseQueryOptions } from '@tanstack/react-query';
 import { Form, Input, Button, Select, message, Spin } from 'antd';
-import axios from 'axios';
+import { apiInstance } from '../api/api';
 
 interface SettingsData {
   ad_server_url?: string;
@@ -29,29 +29,41 @@ const Settings: React.FC = () => {
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
 
-  const { data, isLoading, error } = useQuery({
+  const queryOptions: UseQueryOptions<SettingsData, Error, SettingsData, ['settings']> = {
     queryKey: ['settings'],
     queryFn: async () => {
-      const response = await axios.get('/api/settings');
-      return response.data as SettingsData;
+      const response = await apiInstance.get<SettingsData>('/settings');
+      return response.data;
     },
-  });
+    onError: (error: any) => {
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      messageApi.error(`Ошибка загрузки настроек: ${error.response?.data?.error || error.message}`);
+    },
+  };
+
+  const { data, isLoading, error } = useQuery(queryOptions);
 
   const mutation = useMutation({
     mutationFn: async (values: SettingsData) => {
-      // Убедимся, что строки отправляются как есть
       const processedValues = {
         ...values,
         cors_allow_origins: values.cors_allow_origins?.trim(),
         allowed_ips: values.allowed_ips?.trim(),
       };
-      const response = await axios.post('/api/settings', processedValues);
+      const response = await apiInstance.post('/settings', processedValues);
       return response.data;
     },
     onSuccess: () => {
-      messageApi.success('Настройки успешно обновлены');
+      messageApi.success('Настройки успешно обновлены. Перезапустите сервер для применения изменений.');
     },
     onError: (error: any) => {
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
       messageApi.error(`Ошибка обновления настроек: ${error.response?.data?.error || error.message}`);
     },
   });

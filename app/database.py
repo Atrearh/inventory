@@ -3,12 +3,11 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import logging
 from typing import AsyncGenerator
-from contextlib import asynccontextmanager
 from .settings import settings
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()  
+Base = declarative_base()
 
 # Инициализация engine и async_session_factory при загрузке модуля
 SQLALCHEMY_DATABASE_URL = settings.database_url
@@ -18,12 +17,11 @@ if not SQLALCHEMY_DATABASE_URL:
 
 logger.debug(f"Инициализация базы данных с URL: {SQLALCHEMY_DATABASE_URL}")
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL, 
+    SQLALCHEMY_DATABASE_URL,
     pool_size=20,
-    max_overflow=10, 
+    max_overflow=10,
     pool_timeout=30,
     pool_recycle=300,
-    #echo=False,  # Отключаем echo для продакшн окружения
 )
 logger.debug(f"Создан engine с параметрами: pool_size=20, max_overflow=10, pool_timeout=30, pool_recycle=300")
 
@@ -56,7 +54,6 @@ async def shutdown_db():
         logger.error(f"Ошибка при закрытии пула соединений: {str(e)}", exc_info=True)
         raise
 
-@asynccontextmanager
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Предоставляет асинхронную сессию базы данных."""
     session = async_session_factory()
@@ -70,5 +67,5 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
         raise
     finally:
-        await session.close() 
+        await session.close()
         logger.debug(f"Сессия {id(session)} базы данных закрыта")

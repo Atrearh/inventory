@@ -6,6 +6,8 @@ from .models import CheckStatus, ScanStatus
 from .utils import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
 import logging
 import ipaddress
+from fastapi_users import schemas
+from pydantic import EmailStr
 
 logger = logging.getLogger(__name__)
 
@@ -380,3 +382,26 @@ class ComponentHistory(BaseModel):
     data: Union[PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software]
     detected_on: Optional[str] = None
     removed_on: Optional[str] = None
+
+class UserRead(schemas.BaseUser[int]):
+    username: str
+    role: Optional[str] = None
+
+class UserCreate(schemas.BaseUserCreate):
+    username: str
+    email: EmailStr
+    password: str
+    role: Optional[str] = None
+
+class UserUpdate(schemas.BaseUserUpdate):
+    username: Optional[str] = None
+    role: Optional[str] = None   
+
+class ComputerListItem(BaseModel):
+    id: int
+    hostname: NonEmptyStr
+    os_name: Optional[str] = None
+    check_status: Optional[CheckStatus] = None
+    last_updated: datetime
+
+    model_config = ConfigDict(from_attributes=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})

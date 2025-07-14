@@ -258,7 +258,7 @@ class StatisticsRepository:
             status_query = await self.db.execute(
                 select(models.Computer.check_status, func.count().label("count"))
                 .group_by(models.Computer.check_status)
-            )
+            ) 
             stats.scan_stats.status_stats = [
                 schemas.StatusStats(status=row.check_status or "Unknown", count=row.count)
                 for row in status_query.all()

@@ -164,6 +164,13 @@ export interface ComputerList {
   roles?: Role[];
   video_cards?: VideoCard[];
 }
+export interface ComputerListItem {
+  id: number;
+  hostname: string;
+  os_name?: string | null;
+  check_status?: CheckStatus | null;
+  last_updated: string;
+}
 export interface ComputerUpdateCheckStatus {
   hostname: string;
   check_status: CheckStatus;
@@ -223,4 +230,31 @@ export interface ScanTask {
   scanned_hosts: number;
   successful_hosts: number;
   error?: string | null;
+}
+export interface UserCreate {
+  email: string;
+  password: string;
+  is_active?: boolean | null;
+  is_superuser?: boolean | null;
+  is_verified?: boolean | null;
+  username: string;
+  role?: string | null;
+}
+export interface UserRead {
+  id: number;
+  email: string;
+  is_active?: boolean;
+  is_superuser?: boolean;
+  is_verified?: boolean;
+  username: string;
+  role?: string | null;
+}
+export interface UserUpdate {
+  password?: string | null;
+  email?: string | null;
+  is_active?: boolean | null;
+  is_superuser?: boolean | null;
+  is_verified?: boolean | null;
+  username?: string | null;
+  role?: string | null;
 }

@@ -12,8 +12,9 @@ from .database import engine, get_db, init_db, shutdown_db
 from .settings import settings
 from .logging_config import setup_logging
 from .schemas import ErrorResponse
-from .routers import auth, computers, scan, statistics
+from .routers import auth, computers, scan, statistics, scripts
 from .routers.settings import router as settings_router  # Импортируем только роутер
+from .data_collector import script_cache
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,17 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers=headers
     )
 
+@app.on_event("startup")
+async def startup_event():
+    """Инициализация при запуске приложения."""
+    logger.info("Запуск приложения...")
+    try:
+        script_cache.preload_scripts()
+        logger.info(f"Все скрипты предварительно загружены в кэш. Кэш: {list(script_cache._cache.keys())}")
+    except Exception as e:
+        logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}", exc_info=True)
+        raise  # Поднимаем исключение, чтобы сервер не запускался при ошибке
+
 # Подключение роутеров
 app.include_router(auth.router, prefix="/auth")
 app.include_router(auth.users_router, prefix="/api/users")
@@ -150,6 +162,7 @@ app.include_router(computers.router, prefix="/api")
 app.include_router(scan.router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
+app.include_router(scripts.router, prefix="")
 
 if __name__ == "__main__":
     logger.info("Запуск приложения")

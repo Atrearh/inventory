@@ -21,6 +21,9 @@ const addTokenInterceptor = (instance: AxiosInstance) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('Токен добавлен в запрос:', token.substring(0, 10) + '...');
+    } else {
+      console.warn('Токен отсутствует в localStorage');
     }
     return config;
   });
@@ -129,9 +132,6 @@ export const getComputers = async (params: {
   return response.data;
 };
 
-
-
-
 // Экспорт списка компьютеров в CSV
 export const exportComputersToCSV = async (params: {
   hostname?: string;
@@ -180,6 +180,7 @@ export const getComputerById = async (computerId: number) => {
     throw error;
   }
 };
+
 // Получение истории компонентов
 export const getHistory = async (computerId: number): Promise<ComponentHistory[]> => {
   try {
@@ -264,4 +265,36 @@ export const logout = async () => {
   await authInstance.post('/auth/jwt/logout', null, {
     headers: { 'Content-Type': 'application/json' },
   });
+};
+
+export const updatePolicies = async (hostname: string) => {
+  if (!hostname) {
+    throw new Error('Hostname не указан');
+  }
+  console.log('Отправка запроса updatePolicies:', { hostname });
+  const response = await apiInstance.post('/scripts/execute/updatePolicies.ps1', { hostname });
+  return response.data;
+};
+
+export const restartPrintSpooler = async (hostname: string) => {
+  if (!hostname) {
+    throw new Error('Hostname не указан');
+  }
+  console.log('Отправка запроса restartPrintSpooler:', { hostname });
+  const response = await apiInstance.post('/scripts/execute/restartPrintSpooler.ps1', { hostname });
+  return response.data;
+};
+
+export const getScriptsList = async (): Promise<string[]> => {
+  const response = await apiInstance.get(`/scripts/list`);
+  return response.data;
+};
+
+export const executeScript = async (hostname: string, scriptName: string): Promise<{ output: string; error: string }> => {
+  if (!hostname) {
+    throw new Error('Hostname не указан');
+  }
+  console.log('Отправка запроса executeScript:', { hostname, scriptName });
+  const response = await apiInstance.post(`/scripts/execute/${scriptName}`, { hostname });
+  return response.data;
 };

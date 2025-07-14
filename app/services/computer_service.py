@@ -232,21 +232,26 @@ class ComputerService:
         """Получение контекста сканирования для хоста."""
         logger.debug(f"Получение контекста сканирования для {host}")
         try:
-            db_computer_result = await self.computer_repo.db.execute(select(models.Computer).filter(models.Computer.hostname == host))
+            db_computer_result = await self.computer_repo.db.execute(
+                select(models.Computer).filter(models.Computer.hostname == host)
+            )
             db_computer = db_computer_result.scalars().first()
             mode = self._determine_scan_mode(db_computer)
+            
+            # Проверка наличия данных в таблице software
+            if db_computer:
+                query = select(models.Software).filter(models.Software.computer_id == db_computer.id)
+                result = await self.computer_repo.db.execute(query)
+                software_records = result.scalars().all()
+                if not software_records:  # Если данных о ПО нет, устанавливаем полное сканирование
+                    mode = "Full"
+                    logger.debug(f"Для хоста {host} отсутствуют данные в таблице software, установлен режим 'Full'")
+            
             is_server = await self._is_server(host, db_computer)
             return db_computer, mode, is_server
         except Exception as e:
             logger.error(f"Ошибка получения контекста для {host}: {str(e)}")
             raise
-
-    async def _collect_host_data(self, host: str, mode: str, is_server: bool, last_updated: Optional[datetime]) -> Dict[str, Any]:
-        """Сбор данных с хоста через WinRM."""
-        logger.debug(f"Сбор данных для {host} в режиме {mode}")
-        collector = WinRMDataCollector(hostname=host, username=settings.ad_username, password=settings.ad_password)
-        with winrm_session(host, settings.ad_username, settings.ad_password) as session:
-            return await collector.get_all_pc_info(session, mode=mode, last_updated=last_updated)
 
     async def _process_and_save_data(self, host: str, result_data: Dict[str, Any], mode: str, db_computer: Optional[models.Computer]) -> bool:
         """Обработка и сохранение данных хоста."""

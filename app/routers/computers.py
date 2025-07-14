@@ -47,7 +47,7 @@ async def export_computers_to_csv(
         ]
         writer.writerow(header)
         
-        yield output.getvalue()
+        yield output.getvalue() 
         output.seek(0)
         output.truncate(0)
 

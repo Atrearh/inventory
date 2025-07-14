@@ -1,10 +1,10 @@
-import { Button, Form, Input, Table, Popconfirm, message } from 'antd';
+import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useState } from 'react'; 
 import { startScan, startADScan, register, getUsers, updateUser, deleteUser } from '../api/api';
-import { UserRead, UserCreate } from '../types/schemas';
+import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
 
-// Интерфейс для ответа API
 interface MutationResponse {
   status: string;
   task_id: string;
@@ -13,38 +13,42 @@ interface MutationResponse {
 const AdminPanel: React.FC = () => {
   const [form] = Form.useForm();
   const { isAuthenticated } = useAuth();
-  const { data: users, refetch: refetchUsers } = useQuery<UserRead[], Error>({
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserRead | null>(null);
+
+  const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useQuery<UserRead[], Error>({
     queryKey: ['users'],
     queryFn: getUsers,
-    enabled: isAuthenticated, // Запрос выполняется только если пользователь аутентифицирован
+    enabled: isAuthenticated,
   });
 
   const { mutate: registerMutation, isPending: isRegisterLoading } = useMutation<UserRead, Error, UserCreate>({
     mutationFn: register,
     onSuccess: () => {
       message.success('Пользователь успешно зарегистрирован');
-      form.resetFields();
       refetchUsers();
+      setIsModalVisible(false); 
     },
-    onError: (error: any) => message.error(`Ошибка регистрации: ${error.response?.data?.error || error.message}`),
+    onError: (error: any) => message.error(`Ошибка регистрации: ${error.response?.data?.detail || error.message}`),
   });
 
-  const { mutate: updateUserMutation, isPending: isUpdateLoading } = useMutation<UserRead, Error, { id: number; data: Partial<UserCreate> }>({
+  const { mutate: updateUserMutation, isPending: isUpdateLoading } = useMutation<UserRead, Error, { id: number; data: Partial<UserUpdate> }>({
     mutationFn: ({ id, data }) => updateUser(id, data),
     onSuccess: () => {
       message.success('Пользователь обновлен');
       refetchUsers();
+      setIsModalVisible(false);
     },
-    onError: (error: any) => message.error(`Ошибка обновления: ${error.response?.data?.error || error.message}`),
+    onError: (error: any) => message.error(`Ошибка обновления: ${error.response?.data?.detail || error.message}`),
   });
 
-  const { mutate: deleteUserMutation, isPending: isDeleteLoading } = useMutation<void, Error, number>({
+  const { mutate: deleteUserMutation } = useMutation<void, Error, number>({
     mutationFn: deleteUser,
     onSuccess: () => {
       message.success('Пользователь удален');
       refetchUsers();
     },
-    onError: (error: any) => message.error(`Ошибка удаления: ${error.response?.data?.error || error.message}`),
+    onError: (error: any) => message.error(`Ошибка удаления: ${error.response?.data?.detail || error.message}`),
   });
 
   const { mutate: startScanMutation, isPending: isScanLoading } = useMutation<MutationResponse, Error, void>({
@@ -59,106 +63,134 @@ const AdminPanel: React.FC = () => {
     onError: (error) => message.error(`Ошибка: ${error.message}`),
   });
 
+  const handleAddNewUser = () => {
+    setEditingUser(null);
+    form.resetFields();
+    setIsModalVisible(true);
+  };
+
+  const handleEditUser = (record: UserRead) => {
+    setEditingUser(record);
+    form.setFieldsValue(record);
+    setIsModalVisible(true);
+  };
+
+  const handleCancel = () => {
+    setIsModalVisible(false);
+  };
+
+  const onFinish = (values: UserCreate) => {
+    if (editingUser) {
+      updateUserMutation({ id: editingUser.id, data: values });
+    } else {
+      registerMutation(values);
+    }
+  };
+
   const columns = [
-    { title: 'ID', dataIndex: 'id', key: 'id' },
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 50 },
     { title: 'Имя пользователя', dataIndex: 'username', key: 'username' },
     { title: 'Email', dataIndex: 'email', key: 'email' },
-    { title: 'Роль', dataIndex: 'role', key: 'role', render: (role: string | null) => role || 'Не указана' },
+    { title: 'Роль', dataIndex: 'role', key: 'role', render: (role: string | null) => role || 'user' },
     { title: 'Активен', dataIndex: 'is_active', key: 'is_active', render: (active: boolean) => (active ? 'Да' : 'Нет') },
     {
       title: 'Действия',
       key: 'actions',
       render: (_: any, record: UserRead) => (
-        <>
-          <Button
-            onClick={() => {
-              form.setFieldsValue({ username: record.username, email: record.email, role: record.role });
-              updateUserMutation({ id: record.id, data: { username: record.username, email: record.email, role: record.role } });
-            }}
-            style={{ marginRight: 8 }}
-            disabled={isUpdateLoading}
-          >
-            Редактировать
-          </Button>
+        <Space size="middle">
+          <Button onClick={() => handleEditUser(record)}>Редактировать</Button>
           <Popconfirm
-            title="Вы уверены, что хотите удалить пользователя?"
+            title="Вы уверены, что хотите удалить?"
             onConfirm={() => deleteUserMutation(record.id)}
             okText="Да"
             cancelText="Нет"
           >
-            <Button danger disabled={isDeleteLoading}>Удалить</Button>
+            <Button danger>Удалить</Button>
           </Popconfirm>
-        </>
+        </Space>
       ),
     },
   ];
 
   return (
-    <div style={{ padding: 12 }}>
-      <h1 style={{ marginTop: 0 }}> Администрирование </h1>
-      <Button
-        type="primary"
-        onClick={() => startScanMutation()}
-        loading={isScanLoading}
-        style={{ marginRight: '10px', marginBottom: 16 }}
-      >
-        Запустить инвентаризацию
-      </Button>
-      <Button
-        type="primary"
-        onClick={() => startADScanMutation()}
-        loading={isADScanLoading}
-        style={{ marginBottom: 16 }}
-      >
-        Опросить АД
-      </Button>
-
-      <h3>Регистрация нового пользователя</h3>
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={(values) => registerMutation(values)}
-        style={{ maxWidth: 400, marginBottom: 24 }}
-      >
-        <Form.Item
-          name="username"
-          label="Имя пользователя"
-          rules={[{ required: true, message: 'Введите имя пользователя' }]}
-        >
-          <Input />
-        </Form.Item>
-        <Form.Item
-          name="email"
-          label="Email"
-          rules={[{ required: true, type: 'email', message: 'Введите корректный email' }]}
-        >
-          <Input />
-        </Form.Item>
-        <Form.Item
-          name="password"
-          label="Пароль"
-          rules={[{ required: true, message: 'Введите пароль' }]}
-        >
-          <Input.Password />
-        </Form.Item>
-        <Form.Item name="role" label="Роль">
-          <Input placeholder="Например, user или admin" />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={isRegisterLoading}>
-            Зарегистрировать
+    <div style={{ padding: '16px 24px' }}>
+      <Flex justify="space-between" align="center" style={{ marginBottom: 24 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 0 }}>Администрирование</h1>
+        <Space>
+          <Button onClick={() => startScanMutation()} loading={isScanLoading}>
+            Запустить инвентаризацию
           </Button>
-        </Form.Item>
-      </Form>
+          <Button onClick={() => startADScanMutation()} loading={isADScanLoading}>
+            Опросить АД
+          </Button>
+        </Space>
+      </Flex>
 
-      <h3>Список пользователей</h3>
+      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
+        <h2>Список пользователей</h2>
+        {/*  Кнопка для добавления нового пользователя */}
+        <Button type="primary" onClick={handleAddNewUser}>
+          Добавить пользователя
+        </Button>
+      </Flex>
+      
       <Table
         dataSource={users}
         columns={columns}
         rowKey="id"
-        loading={!users && isAuthenticated}
+        loading={isUsersLoading}
         pagination={{ pageSize: 10 }}
       />
+
+      {/*  Модальное окно для создания и редактирования */}
+      <Modal
+        title={editingUser ? 'Редактирование пользователя' : 'Новый пользователь'}
+        open={isModalVisible}
+        onCancel={handleCancel}
+        footer={[
+          <Button key="back" onClick={handleCancel}>
+            Отмена
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={isRegisterLoading || isUpdateLoading}
+            onClick={() => form.submit()}
+          >
+            {editingUser ? 'Сохранить' : 'Создать'}
+          </Button>,
+        ]}
+      >
+        <Form form={form} layout="vertical" onFinish={onFinish} style={{marginTop: 24}}>
+          <Form.Item
+            name="username"
+            label="Имя пользователя"
+            rules={[{ required: true, message: 'Введите имя пользователя' }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[{ required: true, type: 'email', message: 'Введите корректный email' }]}
+          >
+            <Input />
+          </Form.Item>
+          {/*  Поле пароля показывается только при создании нового пользователя */}
+          {!editingUser && (
+            <Form.Item
+              name="password"
+              label="Пароль"
+              rules={[{ required: true, message: 'Введите пароль' }]}
+            >
+              <Input.Password />
+            </Form.Item>
+          )}
+          <Form.Item name="role" label="Роль">
+            <Input placeholder="Например, user или admin" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

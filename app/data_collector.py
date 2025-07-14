@@ -9,6 +9,7 @@ import asyncio
 import requests
 from contextlib import contextmanager
 from .settings import settings
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,27 @@ class ScriptCache:
                 logger.error(f"Ошибка при загрузке скрипта {file_path}: {e}", exc_info=True)
                 raise
         return self._cache[file_name]
+
+    def preload_scripts(self):
+        """
+        Предварительно загружает все .ps1 скрипты из папки SCRIPTS_DIR в кэш.
+        """
+        try:
+            scripts_dir = SCRIPTS_DIR
+            logger.debug(f"Предварительная загрузка скриптов из папки: {os.path.abspath(scripts_dir)}")
+            if not os.path.exists(scripts_dir):
+                logger.warning(f"Папка скриптов {scripts_dir} не существует")
+                return
+            
+            scripts = [f for f in os.listdir(scripts_dir) if f.endswith(".ps1")]
+            for script_name in scripts:
+                try:
+                    self.get(script_name)
+                    logger.info(f"Скрипт {script_name} предварительно загружен в кэш.")
+                except Exception as e:
+                    logger.error(f"Ошибка при предварительной загрузке скрипта {script_name}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}", exc_info=True)
 
     def clear(self):
         """Очищает кэш скриптов."""

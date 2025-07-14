@@ -598,3 +598,12 @@ class ComputerRepository:
         except SQLAlchemyError as e:
             logger.error(f"Ошибка очистки старых записей ПО: {str(e)}")
             raise
+        
+    async def get_all_hosts(self) -> List[str]:
+        """Получает список всех хостов из базы данных."""
+        try:
+            result = await self.db.execute(select(models.Computer.hostname))
+            return [row[0] for row in result.fetchall()]
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка получения хостов из БД: {str(e)}")
+            raise            

@@ -1,4 +1,3 @@
-# app/database.py
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import logging
@@ -33,6 +32,26 @@ async_session_factory = async_sessionmaker(
     expire_on_commit=False
 )
 
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Предоставляет асинхронную сессию базы данных для FastAPI Depends."""
+    session = async_session_factory()
+    logger.debug(f"Открытие новой сессии базы данных: {id(session)}")
+    try:
+        yield session
+        await session.commit()
+        logger.debug(f"Сессия {id(session)} успешно закоммичена")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
+        raise
+    finally:
+        await session.close()
+        logger.debug(f"Сессия {id(session)} базы данных закрыта")
+
+def get_db_session() -> AsyncSession:
+    """Возвращает сессию базы данных как асинхронный контекстный менеджер для lifespan."""
+    return async_session_factory()
+
 async def init_db():
     """Инициализация базы данных и создание таблиц."""
     try:
@@ -53,19 +72,3 @@ async def shutdown_db():
     except Exception as e:
         logger.error(f"Ошибка при закрытии пула соединений: {str(e)}", exc_info=True)
         raise
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Предоставляет асинхронную сессию базы данных."""
-    session = async_session_factory()
-    logger.debug(f"Открытие новой сессии базы данных: {id(session)}")
-    try:
-        yield session
-        await session.commit()
-        logger.debug(f"Сессия {id(session)} успешно закоммичена")
-    except Exception as e:
-        await session.rollback()
-        logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
-        raise
-    finally:
-        await session.close()
-        logger.debug(f"Сессия {id(session)} базы данных закрыта")

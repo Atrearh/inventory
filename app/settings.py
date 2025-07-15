@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     db_host: NonEmptyStr = "localhost"
     db_port: NonEmptyStr = "3306"
     db_name: NonEmptyStr = "inventory"
-    ad_server_url: str = ""
-    domain: str = ""
+    ad_server_url: NonEmptyStr = ""
+    domain: NonEmptyStr = ""
     ad_username: NonEmptyStr = "admin"
-    ad_password: NonEmptyStr = "password" 
-    api_url: str = ""
+    ad_password: NonEmptyStr = "password"
+    api_url: NonEmptyStr = ""
     test_hosts: str = ""
-    log_level: NonEmptyStr = "INFO" 
+    log_level: NonEmptyStr = "INFO"
     scan_max_workers: int = 10
     polling_days_threshold: int = 1
     winrm_operation_timeout: int = 20
@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     json_depth: int = 4
     server_port: int = 8000
     cors_allow_origins: NonEmptyStr = "http://localhost:8000,http://localhost:5173,http://localhost:8080,http://192.168.0.143:8080,http://192.168.0.143:8000,http://192.168.0.143:5173"
-    allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23" 
-    secret_key: str = os.getenv("SECRET_KEY", "your-very-secret-key-here")
+    allowed_ips: NonEmptyStr = "127.0.0.1,192.168.0.0/23"
+    secret_key: NonEmptyStr = os.getenv("SECRET_KEY", "your-very-secret-key-here")
+    encryption_key: NonEmptyStr = os.getenv("ENCRYPTION_KEY", "")
 
- 
     class Config:
         env_file = "app/.env"
         env_file_encoding = "utf-8"

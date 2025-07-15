@@ -8,17 +8,19 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from .database import engine, get_db, init_db, shutdown_db
+from .database import engine, get_db, get_db_session, init_db, shutdown_db
 from .settings import settings
+from .settings_manager import SettingsManager
 from .logging_config import setup_logging
 from .schemas import ErrorResponse
 from .routers import auth, computers, scan, statistics, scripts
-from .routers.settings import router as settings_router  # Импортируем только роутер
+from .routers.settings import router as settings_router
 from .data_collector import script_cache
+from app.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
-
 setup_logging(log_level=settings.log_level)
+settings_manager = SettingsManager(settings)
 
 shutdown_event = asyncio.Event()
 
@@ -36,6 +38,9 @@ async def lifespan(app: FastAPI):
             except ValueError as e:
                 logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
                 raise
+        async with get_db_session() as db:
+            await settings_manager.initialize_encryption_key(db)  # Инициализация ENCRYPTION_KEY
+            await settings_manager.load_from_db(db)  # Загружаем настройки из БД
         await init_db()
         yield
     finally:
@@ -43,6 +48,7 @@ async def lifespan(app: FastAPI):
         await shutdown_db()
 
 app = FastAPI(title="Inventory Management", lifespan=lifespan)
+encryption_service = EncryptionService(settings.encryption_key)
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,6 +152,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def startup_event():
+    global encryption_service
+    encryption_service = EncryptionService(settings.encryption_key)
     """Инициализация при запуске приложения."""
     logger.info("Запуск приложения...")
     try:
@@ -153,9 +161,8 @@ async def startup_event():
         logger.info(f"Все скрипты предварительно загружены в кэш. Кэш: {list(script_cache._cache.keys())}")
     except Exception as e:
         logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}", exc_info=True)
-        raise  # Поднимаем исключение, чтобы сервер не запускался при ошибке
+        raise
 
-# Подключение роутеров
 app.include_router(auth.router, prefix="/auth")
 app.include_router(auth.users_router, prefix="/api/users")
 app.include_router(computers.router, prefix="/api")

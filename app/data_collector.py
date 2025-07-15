@@ -10,7 +10,7 @@ import requests
 from contextlib import contextmanager
 from .settings import settings
 import os
-
+ 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent

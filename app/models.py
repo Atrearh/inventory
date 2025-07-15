@@ -5,12 +5,9 @@ import enum
 from .database import Base
 from typing import Optional, List
 from datetime import datetime
-from cryptography.fernet import Fernet
-import os
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
-from fastapi import HTTPException
 import logging
-
+from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 class CheckStatus(enum.Enum):
@@ -24,11 +21,8 @@ class ScanStatus(enum.Enum):
     completed = "completed"
     failed = "failed"
 
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
-if not ENCRYPTION_KEY:
-    logger.error("ENCRYPTION_KEY не найден в переменных окружения")
-    raise HTTPException(status_code=500, detail="ENCRYPTION_KEY не задан в переменных окружения")
-cipher = Fernet(ENCRYPTION_KEY)
+ENCRYPTION_KEY = None  
+cipher = None  
 
 class Domain(Base):
     __tablename__ = "domains"
@@ -37,19 +31,10 @@ class Domain(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     encrypted_password: Mapped[str] = mapped_column(String(255), nullable=False)
     last_updated: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    @property
-    def password(self) -> str:
-        return cipher.decrypt(self.encrypted_password.encode()).decode()
-
-    @password.setter
-    def password(self, value: str):
-        self.encrypted_password = cipher.encrypt(value.encode()).decode()
-
     __table_args__ = (
         Index('idx_domain_name', 'name'),
     )
-
+    
 class ADComputer(Base):
     __tablename__ = "ad_computers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -207,11 +192,10 @@ class ScanTask(Base):
 
 class User(SQLAlchemyBaseUserTable[int], Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True)
-    username = Column(String(50), nullable=False)  # Указываем длину 50 для VARCHAR
-    email = Column(String(255), nullable=False, unique=True)  # Длина 255 для email
-    hashed_password = Column(String(255), nullable=False)  # Длина 255 для хэша пароля
+    username = Column(String(50), nullable=False)
+    email = Column(String(255), nullable=False, unique=True)
+    hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)

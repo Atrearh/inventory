@@ -47,4 +47,24 @@ def validate_ip_address(cls, v: Optional[NonEmptyStr], field_name: str = "IP add
     return v
 
 def validate_hostname(cls, v: NonEmptyStr, field_name: str = "hostname") -> NonEmptyStr:
+    """Валидация hostname с поддержкой подчеркиваний для совместимости с реальными данными."""
+    if v is None:
+        raise ValueError(f"{field_name} не может быть None")
+    
+    # Проверка длины
+    if len(v) > 255:
+        raise ValueError(f"{field_name} превышает максимальную длину 255 символов")
+    
+    # Проверка формата (буквы, цифры, дефисы, подчеркивания, точки)
+    if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?)*$', v):
+        raise ValueError(f"{field_name} имеет неверный формат (допустимы буквы, цифры, дефисы, подчеркивания и точки)")
+    
+    # Проверка, что hostname не начинается и не заканчивается точкой
+    if v.startswith('.') or v.endswith('.'):
+        raise ValueError(f"{field_name} не может начинаться или заканчиваться точкой")
+    
+    # Предупреждение, если hostname не соответствует строгому RFC 1123 (например, содержит подчеркивания)
+    if '_' in v and not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$', v):
+        logger.warning(f"Hostname '{v}' содержит подчеркивания, что не соответствует RFC 1123, но допустимо для локальных сетей")
+    
     return v

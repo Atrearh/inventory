@@ -24,6 +24,7 @@ interface SettingsData {
   server_port?: number;
   cors_allow_origins?: string;
   allowed_ips?: string;
+  encryption_key?: string;  // Новое поле
 }
 
 const Settings: React.FC = () => {
@@ -55,7 +56,7 @@ const Settings: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      messageApi.success('Настройки успешно обновлены. Перезапустите сервер для применения изменений.');
+      messageApi.success('Настройки успешно обновлены и сохранены в базе данных. Перезапустите сервер для применения изменений.');
     },
     onError: (error: any) => {
       if (error.response?.status === 401) {
@@ -178,6 +179,13 @@ const Settings: React.FC = () => {
           rules={[{ message: 'Введите IP или диапазоны, разделённые запятыми, например: 127.0.0.1,192.168.1.0/24' }]}
         >
           <Input placeholder="Enter IPs or ranges, e.g. 127.0.0.1,192.168.1.0/24" />
+        </Form.Item>
+        <Form.Item
+          label="Encryption Key"
+          name="encryption_key"
+          rules={[{ required: false, message: 'Введите ключ шифрования (осторожно, изменение может повлиять на существующие данные)' }]}
+        >
+          <Input.Password placeholder="Оставьте пустым для сохранения текущего ключа" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={mutation.isPending} disabled={!isAuthenticated}>

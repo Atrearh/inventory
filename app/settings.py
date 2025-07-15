@@ -1,6 +1,5 @@
 import logging
 from pydantic_settings import BaseSettings
-from pydantic import Field
 from .utils import NonEmptyStr
 import os
 

@@ -316,13 +316,14 @@ class ErrorResponse(BaseModel):
     correlation_id: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
+# app/schemas.py
 class AppSettingUpdate(BaseModel):
-    ad_server_url: Optional[str] = None
-    domain: Optional[str] = None
+    ad_server_url: Optional[NonEmptyStr] = None
+    domain: Optional[NonEmptyStr] = None
     ad_username: Optional[NonEmptyStr] = None
     ad_password: Optional[NonEmptyStr] = None
-    api_url: Optional[str] = None
-    test_hosts: Optional[str] = None
+    api_url: Optional[NonEmptyStr] = None
+    test_hosts: Optional[NonEmptyStr] = None
     log_level: Optional[NonEmptyStr] = None
     scan_max_workers: Optional[int] = None
     polling_days_threshold: Optional[int] = None
@@ -336,18 +337,21 @@ class AppSettingUpdate(BaseModel):
     server_port: Optional[int] = None
     cors_allow_origins: Optional[NonEmptyStr] = None
     allowed_ips: Optional[NonEmptyStr] = None
+
     @field_validator('log_level')
     @classmethod
     def validate_log_level(cls, v):
         if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             raise ValueError("Log level должен быть одним из: DEBUG, INFO, WARNING, ERROR, CRITICAL")
         return v
+
     @field_validator('winrm_server_cert_validation')
     @classmethod
     def validate_cert_validation(cls, v):
         if v and v not in ["validate", "ignore"]:
             raise ValueError("winrm_server_cert_validation должен быть 'validate' или 'ignore'")
         return v
+
     @field_validator('cors_allow_origins')
     @classmethod
     def validate_cors_origins(cls, v):
@@ -359,6 +363,7 @@ class AppSettingUpdate(BaseModel):
                 if not origin.startswith(("http://", "https://")):
                     raise ValueError(f"Недопустимый origin: {origin}. Должен начинаться с http:// или https://")
         return v
+
     @field_validator('allowed_ips')
     @classmethod
     def validate_allowed_ips(cls, v):
@@ -375,6 +380,7 @@ class AppSettingUpdate(BaseModel):
                 except ValueError:
                     raise ValueError(f"Недопустимый IP или диапазон: {ip}")
         return v
+
     model_config = ConfigDict(from_attributes=True)
 
 class ComponentHistory(BaseModel):

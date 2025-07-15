@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends
+# app/routers/settings.py
+from fastapi import APIRouter, Depends, HTTPException
 from ..schemas import AppSettingUpdate
 from ..settings import settings
+from ..database import get_db
 from ..logging_config import setup_logging
 from .auth import get_current_user
 import logging
@@ -10,8 +12,9 @@ setup_logging(log_level=settings.log_level)
 router = APIRouter(tags=["settings"])
 
 @router.get("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
-async def get_settings():
+async def get_settings(db: AsyncSession = Depends(get_db)):
     logger.info("Получение текущих настроек")
+    await settings.load_from_db(db)  # Загружаем актуальные настройки из БД
     return AppSettingUpdate(
         ad_server_url=settings.ad_server_url,
         domain=settings.domain,
@@ -33,3 +36,12 @@ async def get_settings():
         cors_allow_origins=settings.cors_allow_origins,
         allowed_ips=settings.allowed_ips,
     )
+
+@router.post("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
+async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db)):
+    logger.info("Обновление настроек")
+    updates = update.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Не предоставлены данные для обновления")
+    await settings.save_to_db(db, updates)
+    return update

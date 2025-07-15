@@ -8,6 +8,10 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 import os
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
+from fastapi import HTTPException
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CheckStatus(enum.Enum):
     success = "success"
@@ -16,11 +20,14 @@ class CheckStatus(enum.Enum):
 
 class ScanStatus(enum.Enum):
     pending = "pending"
-    running = "running"
+    running = "running" 
     completed = "completed"
     failed = "failed"
 
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key())
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+if not ENCRYPTION_KEY:
+    logger.error("ENCRYPTION_KEY не найден в переменных окружения")
+    raise HTTPException(status_code=500, detail="ENCRYPTION_KEY не задан в переменных окружения")
 cipher = Fernet(ENCRYPTION_KEY)
 
 class Domain(Base):
@@ -208,3 +215,9 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)

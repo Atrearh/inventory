@@ -4,45 +4,29 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      enabled: false, // По умолчанию запросы отключены
+      enabled: false, // Запросы отключены по умолчанию
+      staleTime: 5 * 60 * 1000, // 5 минут
+      gcTime: 10 * 60 * 1000, // 10 минут
     },
   },
 });
 
-const AppWithAuth: React.FC = () => {
-  const { isAuthenticated } = useAuth();
-
-  React.useEffect(() => {
-    // Включаем запросы, только если пользователь аутентифицирован
-    queryClient.setDefaultOptions({
-      queries: {
-        retry: 1,
-        enabled: isAuthenticated,
-      },
-    });
-  }, [isAuthenticated]);
-
-  return (
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <App />
-    </BrowserRouter>
-  );
-};
-
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <AppWithAuth />
-        </AuthProvider>
-      </QueryClientProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <App />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );

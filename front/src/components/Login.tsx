@@ -12,8 +12,9 @@ const Login: React.FC = () => {
     try {
       await login(values.email, values.password);
       navigate('/');
-    } catch (err) {
-      setError('Неверные учетные данные');
+    } catch (err: any) {
+      const message = err.response?.data?.detail || 'Неверные учетные данные';
+      setError(message);
     }
   };
 

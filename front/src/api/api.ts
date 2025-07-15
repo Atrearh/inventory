@@ -15,10 +15,9 @@ export const authInstance = axios.create({
   },
 });
 
-// Интерцептор для добавления JWT-токена в заголовки
 const addTokenInterceptor = (instance: AxiosInstance) => {
   instance.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
       console.log('Токен добавлен в запрос:', token.substring(0, 10) + '...');
@@ -29,17 +28,25 @@ const addTokenInterceptor = (instance: AxiosInstance) => {
   });
 };
 
-// Применяем интерцептор к обоим инстансам
 addTokenInterceptor(apiInstance);
 addTokenInterceptor(authInstance);
 
-// Интерцептор для обработки ошибки 401
 apiInstance.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const newTokens = await refreshToken();
+        originalRequest.headers.Authorization = `Bearer ${newTokens.access_token}`;
+        return apiInstance(originalRequest);
+      } catch (refreshError) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
     }
     return Promise.reject(error);
   }
@@ -47,20 +54,62 @@ apiInstance.interceptors.response.use(
 
 authInstance.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const newTokens = await refreshToken();
+        originalRequest.headers.Authorization = `Bearer ${newTokens.access_token}`;
+        return authInstance(originalRequest);
+      } catch (refreshError) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
     }
     return Promise.reject(error);
   }
 );
 
-// Интерфейс для ответа на запрос сканирования хоста
 export interface ScanResponse {
   status: string;
   task_id: string;
 }
+
+export const login = async (credentials: { email: string; password: string }) => {
+  const formData = new URLSearchParams();
+  formData.append('username', credentials.email);
+  formData.append('password', credentials.password);
+  const response = await authInstance.post<{ access_token: string; refresh_token: string; token_type: string }>(
+    '/auth/jwt/login',
+    formData,
+    {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }
+  );
+  localStorage.setItem('access_token', response.data.access_token);
+  localStorage.setItem('refresh_token', response.data.refresh_token);
+  return response.data;
+};
+
+export const refreshToken = async () => {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+  const response = await authInstance.post<{ access_token: string; refresh_token: string; token_type: string }>(
+    '/auth/jwt/refresh',
+    { refresh_token: refreshToken },
+    {
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+  localStorage.setItem('access_token', response.data.access_token);
+  localStorage.setItem('refresh_token', response.data.refresh_token);
+  return response.data;
+};
 
 // Запуск сканирования Active Directory
 export const startADScan = async () => {
@@ -208,18 +257,6 @@ export const getScanStatus = async (taskId: string) => {
   return response.data;
 };
 
-// Аутентификация и управление пользователями
-export const login = async (credentials: { email: string; password: string }) => {
-  const formData = new URLSearchParams();
-  formData.append('username', credentials.email);
-  formData.append('password', credentials.password);
-  const response = await authInstance.post<{ access_token: string }>('/auth/jwt/login', formData, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  const token = response.data.access_token;
-  localStorage.setItem('token', token); // Сохраняем токен
-  return response.data;
-};
 
 export const register = async (user: UserCreate) => {
   const response = await authInstance.post<UserRead>('/auth/register', user, {

@@ -1,7 +1,8 @@
+// src/components/ComputerList.tsx
 import { useQuery } from '@tanstack/react-query';
 import { getComputers, getStatistics } from '../api/api';
 import { ComputersResponse, DashboardStats, ComputerListItem } from '../types/schemas';
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'; // Добавлен useMemo
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { notification, Skeleton, Input, Select, Table, Button } from 'antd';
 import { debounce } from 'lodash';
@@ -10,6 +11,7 @@ import { ITEMS_PER_PAGE } from '../config';
 import type { TableProps } from 'antd';
 import type { InputRef } from 'antd';
 import styles from './ComputerList.module.css';
+import { useAuth } from '../context/AuthContext'; // Добавляем useAuth
 
 interface Filters {
   hostname: string | undefined;
@@ -28,6 +30,7 @@ interface Sorter {
 }
 
 const ComputerListComponent: React.FC = () => {
+  const { isAuthenticated } = useAuth(); // Получаем isAuthenticated
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Filters>({
     hostname: searchParams.get('hostname') || undefined,
@@ -43,10 +46,13 @@ const ComputerListComponent: React.FC = () => {
 
   const isServerOs = (osName: string) => {
     const serverOsPatterns = [/server/i, /hyper-v/i];
-    return serverOsPatterns.some(pattern => pattern.test(osName.toLowerCase()));
+    return serverOsPatterns.some((pattern) => pattern.test(osName.toLowerCase()));
   };
 
-  const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<ComputersResponse, Error>({
+  const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<
+    ComputersResponse,
+    Error
+  >({
     queryKey: ['computers', { os_name: filters.os_name, check_status: filters.check_status, sort_by: filters.sort_by, sort_order: filters.sort_order, server_filter: filters.server_filter }],
     queryFn: () => {
       const params: Partial<Filters> = {
@@ -63,6 +69,7 @@ const ComputerListComponent: React.FC = () => {
       }
       return getComputers(params as Filters);
     },
+    enabled: isAuthenticated, // Запрос выполняется только после аутентификации
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 30 * 60 * 1000,
@@ -71,13 +78,14 @@ const ComputerListComponent: React.FC = () => {
 
   const { data: statsData, error: statsError, isLoading: isStatsLoading } = useQuery<DashboardStats, Error>({
     queryKey: ['statistics'],
-    queryFn: () => getStatistics({
-      metrics: ['os_distribution'],
-    }),
+    queryFn: () =>
+      getStatistics({
+        metrics: ['os_distribution'],
+      }),
+    enabled: isAuthenticated, // Запрос выполняется только после аутентификации
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 60 * 60 * 1000,
-    enabled: true,
   });
 
   const { handleExportCSV } = useExportCSV(filters);
@@ -118,23 +126,22 @@ const ComputerListComponent: React.FC = () => {
     setSearchParams(params, { replace: true });
   }, [filters, setSearchParams]);
 
-  // ✨ ОПТИМИЗАЦИЯ: Мемоизация фильтрации и сортировки
   const filteredComputers = useMemo(() => {
     let filtered = [...cachedComputers];
 
     if (filters.hostname) {
-      filtered = filtered.filter(comp => comp.hostname.toLowerCase().startsWith(filters.hostname!.toLowerCase()));
+      filtered = filtered.filter((comp) => comp.hostname.toLowerCase().startsWith(filters.hostname!.toLowerCase()));
     }
     if (filters.os_name) {
-      filtered = filtered.filter(comp => comp.os_name?.toLowerCase().includes(filters.os_name!.toLowerCase()));
+      filtered = filtered.filter((comp) => comp.os_name?.toLowerCase().includes(filters.os_name!.toLowerCase()));
     }
     if (filters.check_status) {
-      filtered = filtered.filter(comp => comp.check_status === filters.check_status);
+      filtered = filtered.filter((comp) => comp.check_status === filters.check_status);
     }
     if (filters.server_filter === 'server') {
-      filtered = filtered.filter(comp => comp.os_name && isServerOs(comp.os_name));
+      filtered = filtered.filter((comp) => comp.os_name && isServerOs(comp.os_name));
     } else if (filters.server_filter === 'client') {
-      filtered = filtered.filter(comp => comp.os_name && !isServerOs(comp.os_name));
+      filtered = filtered.filter((comp) => comp.os_name && !isServerOs(comp.os_name));
     }
 
     filtered.sort((a, b) => {
@@ -167,7 +174,6 @@ const ComputerListComponent: React.FC = () => {
     });
   };
 
-  // ✨ ИСПРАВЛЕНИЕ: Обработка ' ' как 'undefined' для сброса фильтра
   const handleFilterChange = (key: keyof Filters, value: string | undefined) => {
     const finalValue = value === '' ? undefined : value;
     setFilters({
@@ -233,11 +239,7 @@ const ComputerListComponent: React.FC = () => {
         <>
           <h2 className={styles.title}>
             Список компьютеров ({filteredComputers.total || 0})
-            <Button
-              type="primary"
-              onClick={handleExportCSV}
-              style={{ float: 'right', marginLeft: 8 }}
-            >
+            <Button type="primary" onClick={handleExportCSV} style={{ float: 'right', marginLeft: 8 }}>
               Экспорт в CSV
             </Button>
           </h2>
@@ -245,7 +247,6 @@ const ComputerListComponent: React.FC = () => {
             <Input
               ref={inputRef}
               placeholder="Фильтр по Hostname (поиск по началу)"
-              // ✨ Улучшение: используем defaultValue для uncontrolled-like поведения с дебаунсом
               defaultValue={filters.hostname}
               onChange={(e) => {
                 debouncedSetHostname(e.target.value);
@@ -254,7 +255,6 @@ const ComputerListComponent: React.FC = () => {
               allowClear
             />
             <Select
-              // ✨ ИСПРАВЛЕНИЕ: Используем `''` вместо `undefined` для значения Select
               value={filters.os_name || ''}
               onChange={(value) => handleFilterChange('os_name', value)}
               className={styles.filterSelect}
@@ -263,19 +263,16 @@ const ComputerListComponent: React.FC = () => {
               showSearch
               optionFilterProp="children"
             >
-              {/* ✨ ИСПРАВЛЕНИЕ: `value` теперь пустая строка */}
               <Select.Option value="">Все ОС</Select.Option>
-              {[...new Set([
-                ...(statsData?.os_stats.client_os.map(item => item.category) || []),
-                ...(statsData?.os_stats.server_os.map(item => item.category) || []),
-              ])].map((os: string) => (
-                <Select.Option key={os} value={os}>
-                  {os}
-                </Select.Option>
-              ))}
+              {[...new Set([...(statsData?.os_stats.client_os.map((item) => item.category) || []), ...(statsData?.os_stats.server_os.map((item) => item.category) || [])])].map(
+                (os: string) => (
+                  <Select.Option key={os} value={os}>
+                    {os}
+                  </Select.Option>
+                )
+              )}
             </Select>
             <Select
-              // ✨ ИСПРАВЛЕНИЕ: Используем `''` вместо `undefined`
               value={filters.check_status || ''}
               onChange={(value) => handleFilterChange('check_status', value)}
               className={styles.filterSelect}

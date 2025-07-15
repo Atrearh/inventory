@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, UseQueryOptions } from '@tanstack/react-query';
 import { Form, Input, Button, Select, message, Spin } from 'antd';
 import { apiInstance } from '../api/api';
+import { useAuth } from '../context/AuthContext';
 
 interface SettingsData {
   ad_server_url?: string;
@@ -26,6 +27,7 @@ interface SettingsData {
 }
 
 const Settings: React.FC = () => {
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -33,15 +35,10 @@ const Settings: React.FC = () => {
     queryKey: ['settings'],
     queryFn: async () => {
       const response = await apiInstance.get<SettingsData>('/settings');
+      console.log('Settings fetched:', response.data);
       return response.data;
     },
-    onError: (error: any) => {
-      if (error.response?.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-      }
-      messageApi.error(`Ошибка загрузки настроек: ${error.response?.data?.error || error.message}`);
-    },
+    enabled: isAuthenticated && !isAuthLoading,
   };
 
   const { data, isLoading, error } = useQuery(queryOptions);
@@ -54,6 +51,7 @@ const Settings: React.FC = () => {
         allowed_ips: values.allowed_ips?.trim(),
       };
       const response = await apiInstance.post('/settings', processedValues);
+      console.log('Settings updated:', response.data);
       return response.data;
     },
     onSuccess: () => {
@@ -61,7 +59,8 @@ const Settings: React.FC = () => {
     },
     onError: (error: any) => {
       if (error.response?.status === 401) {
-        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         window.location.href = '/login';
       }
       messageApi.error(`Ошибка обновления настроек: ${error.response?.data?.error || error.message}`);
@@ -75,11 +74,27 @@ const Settings: React.FC = () => {
   }, [data, form]);
 
   const onFinish = (values: SettingsData) => {
+    if (!isAuthenticated) {
+      messageApi.error('Пожалуйста, войдите в систему для изменения настроек');
+      return;
+    }
     mutation.mutate(values);
   };
 
-  if (isLoading) return <Spin size="large" />;
-  if (error) return <div>Ошибка загрузки настроек: {(error as any).message}</div>;
+  if (isAuthLoading) return <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div>;
+  if (!isAuthenticated) {
+    window.location.href = '/login';
+    return null;
+  }
+  if (isLoading) return <div style={{ textAlign: 'center', padding: '50px' }}><Spin size="large" /></div>;
+  if (error) {
+    if ((error as any).response?.status === 401) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      window.location.href = '/login';
+    }
+    return <div>Ошибка загрузки настроек: {(error as any).message}</div>;
+  }
 
   return (
     <>
@@ -165,7 +180,7 @@ const Settings: React.FC = () => {
           <Input placeholder="Enter IPs or ranges, e.g. 127.0.0.1,192.168.1.0/24" />
         </Form.Item>
         <Form.Item>
-          <Button type="primary" htmlType="submit" loading={mutation.isPending}>
+          <Button type="primary" htmlType="submit" loading={mutation.isPending} disabled={!isAuthenticated}>
             Сохранить
           </Button>
         </Form.Item>

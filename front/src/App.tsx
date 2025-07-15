@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Layout, Menu } from 'antd';
+import { Layout, Menu, Button } from 'antd';
 import { Link } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import ComputerList from './components/ComputerList';
@@ -9,17 +9,20 @@ import AdminPanel from './components/AdminPanel';
 import NotFound from './components/NotFound';
 import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
+import { useNavigate } from 'react-router-dom';
 
 const { Content, Sider } = Layout;
 
 const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <div>Загрузка...</div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 };
 
 const App: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading, logout } = useAuth();
+  const navigate = useNavigate();
 
   const menuItems = [
     { key: '1', label: <Link to="/">Статистика</Link> },
@@ -28,6 +31,13 @@ const App: React.FC = () => {
     { key: '4', label: <Link to="/admin">Адміністрування</Link> },
   ];
 
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  if (isLoading) return <div>Загрузка...</div>;
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -35,12 +45,19 @@ const App: React.FC = () => {
         <Route
           path="*"
           element={
-            <Layout style={{padding: 0 , minHeight: '100vh' }}>
+            <Layout style={{ padding: 0, minHeight: '100vh' }}>
               <Sider>
                 <Menu theme="dark" mode="inline" defaultSelectedKeys={['1']} items={menuItems} />
+                <Button
+                  type="primary"
+                  style={{ margin: '16px', width: 'calc(100% - 32px)' }}
+                  onClick={handleLogout}
+                >
+                  Вихід
+                </Button>
               </Sider>
               <Layout>
-                <Content style={{padding: 0, background: '#fff' }}>
+                <Content style={{ padding: 0, background: '#fff' }}>
                   <Routes>
                     <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/computers" element={<ProtectedRoute><ComputerList /></ProtectedRoute>} />

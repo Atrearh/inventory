@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { login, logout } from '../api/api';
-import { jwtDecode } from 'jwt-decode'; // Используем именованный импорт
+import { login, logout, refreshToken } from '../api/api';
+import { jwtDecode } from 'jwt-decode';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -16,32 +17,65 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const decoded: JwtPayload = jwtDecode(token); // Используем jwtDecode как функцию
-        const currentTime = Date.now() / 1000;
-        if (decoded.exp > currentTime) {
-          setIsAuthenticated(true);
-        } else {
-          console.warn('Token expired, clearing localStorage');
-          localStorage.removeItem('token');
+    const checkToken = async () => {
+      const accessToken = localStorage.getItem('access_token');
+      const refreshTokenValue = localStorage.getItem('refresh_token');
+      if (accessToken && refreshTokenValue) {
+        try {
+          const decoded: JwtPayload = jwtDecode(accessToken);
+          const currentTime = Date.now() / 1000;
+          if (decoded.exp > currentTime) {
+            setIsAuthenticated(true);
+          } else {
+            try {
+              await refreshToken();
+              setIsAuthenticated(true);
+            } catch (error) {
+              console.error('Failed to refresh token:', error);
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('refresh_token');
+              setIsAuthenticated(false);
+            }
+          }
+        } catch (error) {
+          console.error('Invalid access token:', error);
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
           setIsAuthenticated(false);
         }
-      } catch (error) {
-        console.error('Invalid token:', error);
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
       }
-    }
+      setIsLoading(false);
+    };
+
+    checkToken();
+
+    const interval = setInterval(async () => {
+      const accessToken = localStorage.getItem('access_token');
+      if (accessToken) {
+        try {
+          const decoded: JwtPayload = jwtDecode(accessToken);
+          const currentTime = Date.now() / 1000;
+          if (decoded.exp < currentTime + 300) { // Обновляем за 5 минут до истечения
+            await refreshToken();
+          }
+        } catch (error) {
+          console.error('Error checking token:', error);
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          setIsAuthenticated(false);
+        }
+      }
+    }, 5 * 60 * 1000); // Проверка каждые 5 минут
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogin = async (email: string, password: string) => {
     try {
-      const response = await login({ email, password });
-      localStorage.setItem('token', response.access_token);
+      await login({ email, password });
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Login failed:', error);
@@ -52,7 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleLogout = async () => {
     try {
       await logout();
-      localStorage.removeItem('token');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       setIsAuthenticated(false);
     } catch (error) {
       console.error('Logout failed:', error);
@@ -60,8 +95,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login: handleLogin, logout: handleLogout }}>
-      {children}
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, login: handleLogin, logout: handleLogout }}>
+      {isLoading ? <div>Загрузка...</div> : children}
     </AuthContext.Provider>
   );
 };

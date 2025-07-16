@@ -40,7 +40,6 @@ class SettingsManager:
             from .models import ENCRYPTION_KEY
             globals()['ENCRYPTION_KEY'] = self.settings.encryption_key
             globals()['cipher'] = Fernet(self.settings.encryption_key)
-            logger.info("Шифрование инициализировано с ENCRYPTION_KEY")
 
     async def load_from_db(self, db: AsyncSession):
         """Загружает настройки из базы данных."""

@@ -2,7 +2,7 @@ import logging
 import json
 import winrm
 from winrm.exceptions import WinRMError
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict,  Any
 from pathlib import Path
 from datetime import datetime
 import asyncio
@@ -45,9 +45,8 @@ class ScriptCache:
                     script = f.read().rstrip()
                 
                 self._cache[file_name] = script
-                logger.debug(f"Скрипт {file_name} загружен и кэширован. Длина: {len(script)} символов.")
                 
-                if len(script) > 2000:
+                if len(script) > 3000:
                     logger.warning(f"Скрипт {file_name} имеет большую длину: {len(script)} символов.")
 
             except Exception as e:
@@ -70,7 +69,6 @@ class ScriptCache:
             for script_name in scripts:
                 try:
                     self.get(script_name)
-                    logger.info(f"Скрипт {script_name} предварительно загружен в кэш.")
                 except Exception as e:
                     logger.error(f"Ошибка при предварительной загрузке скрипта {script_name}: {e}", exc_info=True)
         except Exception as e:

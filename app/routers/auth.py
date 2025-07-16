@@ -13,8 +13,7 @@ import logging
 from fastapi.security import OAuth2PasswordRequestForm
 from argon2 import PasswordHasher
 from fastapi_users.password import PasswordHelper
-from datetime import timedelta
-from fastapi.responses import JSONResponse
+
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -25,11 +24,9 @@ users_router = APIRouter(tags=["users"])
 bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 
 def get_jwt_strategy() -> JWTStrategy:
-    logger.info(f"Инициализация JWTStrategy с secret_key: {settings.secret_key[:4]}... (обрезано для логов)")
-    return JWTStrategy(secret=settings.secret_key, lifetime_seconds=604800)  # 7 дней для access token
+    return JWTStrategy(secret=settings.secret_key, lifetime_seconds=604800) 
 
 def get_refresh_jwt_strategy() -> JWTStrategy:
-    logger.info(f"Инициализация Refresh JWTStrategy с secret_key: {settings.secret_key[:4]}... (обрезано для логов)")
     return JWTStrategy(secret=settings.secret_key, lifetime_seconds=30 * 24 * 60 * 60)  # 30 дней для refresh token
 
 auth_backend = AuthenticationBackend(
@@ -42,7 +39,6 @@ class UserManager(BaseUserManager[User, int]):
     password_helper = PasswordHelper(PasswordHasher())
 
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
-        logger.debug(f"Received credentials: username={credentials.username}, password=***")
         async with self.user_db.session as session:
             result = await session.execute(
                 select(User).filter_by(email=credentials.username)
@@ -52,7 +48,6 @@ class UserManager(BaseUserManager[User, int]):
                 logger.debug(f"Found user: {user.email}, user type: {type(user)}")
                 try:
                     if self.password_helper.verify_and_update(credentials.password, user.hashed_password)[0]:
-                        logger.debug(f"Password verified for user: {user.email}")
                         return user
                     else:
                         logger.debug(f"Password verification failed for user: {user.email}")

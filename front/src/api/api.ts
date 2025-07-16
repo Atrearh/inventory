@@ -127,7 +127,13 @@ export const startHostScan = async (hostname: string) => {
 export const getStatistics = async (params: { metrics?: string[] } = {}) => {
   const response = await apiInstance.get<DashboardStats>('/statistics', {
     params: {
-      metrics: params.metrics || undefined,
+      metrics: params.metrics || [
+        'total_computers',
+        'os_distribution',
+        'low_disk_space_with_volumes',
+        'last_scan_time',
+        'status_stats',
+      ],
     },
     paramsSerializer: (params) => {
       const searchParams = new URLSearchParams();
@@ -141,13 +147,13 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
   });
   return response.data;
 };
-
 // Получение списка компьютеров с фильтрацией и пагинацией
 export const getComputers = async (params: {
   hostname?: string;
   hostname_startswith?: string;
   os_name?: string | null;
   check_status?: string;
+  ip_range?: string;
   sort_by?: string;
   sort_order?: string;
   page?: number;
@@ -159,6 +165,7 @@ export const getComputers = async (params: {
     hostname_startswith: params.hostname_startswith || undefined,
     os_name: params.os_name ?? undefined,
     check_status: params.check_status || undefined,
+    ip_range: params.ip_range || undefined,
     sort_by: params.sort_by || 'hostname',
     sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
     page: params.page || 1,

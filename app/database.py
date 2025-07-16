@@ -50,7 +50,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 def get_db_session() -> AsyncSession:
     """Возвращает сессию базы данных как асинхронный контекстный менеджер для lifespan."""
-    return async_session_factory()
+    return async_session_factory() 
 
 async def init_db():
     """Инициализация базы данных и создание таблиц."""

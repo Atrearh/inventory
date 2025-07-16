@@ -28,7 +28,9 @@ export interface AppSettingUpdate {
   server_port?: number | null;
   cors_allow_origins?: string | null;
   allowed_ips?: string | null;
+  encryption_key?: string | null;
 }
+export interface BaseSchema {}
 export interface ComponentChangeStats {
   component_type: string;
   changes_count: number;
@@ -40,53 +42,54 @@ export interface ComponentHistory {
   removed_on?: string | null;
 }
 export interface PhysicalDisk {
+  detected_on?: string | null;
+  removed_on?: string | null;
   id?: number | null;
   computer_id?: number | null;
   model?: string | null;
-  serial?: string;
+  serial: string;
   interface?: string | null;
   media_type?: string | null;
-  detected_on?: string | null;
-  removed_on?: string | null;
 }
 export interface LogicalDisk {
+  detected_on?: string | null;
+  removed_on?: string | null;
   device_id?: string | null;
   volume_label?: string | null;
   total_space: number;
   free_space?: number | null;
   parent_disk_serial?: string | null;
-  detected_on?: string | null;
-  removed_on?: string | null;
 }
 export interface Processor {
+  detected_on?: string | null;
+  removed_on?: string | null;
   name: string;
   number_of_cores: number;
   number_of_logical_processors: number;
-  detected_on?: string | null;
-  removed_on?: string | null;
 }
 export interface VideoCard {
+  detected_on?: string | null;
+  removed_on?: string | null;
+  id?: number | null;
   name: string;
   driver_version?: string | null;
-  detected_on?: string | null;
-  removed_on?: string | null;
 }
 export interface IPAddress {
-  address: string;
   detected_on?: string | null;
   removed_on?: string | null;
+  address: string;
 }
 export interface MACAddress {
-  address: string;
   detected_on?: string | null;
   removed_on?: string | null;
+  address: string;
 }
 export interface Software {
+  detected_on?: string | null;
+  removed_on?: string | null;
   DisplayName: string;
   DisplayVersion?: string | null;
   InstallDate?: string | null;
-  detected_on?: string | null;
-  removed_on?: string | null;
 }
 export interface Computer {
   hostname: string;
@@ -102,13 +105,15 @@ export interface Computer {
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  id: number;
-  last_updated: string;
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  id: number;
+  last_updated: string;
 }
 export interface Role {
+  detected_on?: string | null;
+  removed_on?: string | null;
   Name: string;
 }
 export interface ComputerBase {
@@ -125,6 +130,9 @@ export interface ComputerBase {
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
+  roles?: Role[];
+  software?: Software[];
+  video_cards?: VideoCard[];
 }
 export interface ComputerCreate {
   hostname: string;
@@ -133,7 +141,7 @@ export interface ComputerCreate {
   logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
-  processors?: Processor[];
+  processors?: Processor[] | null;
   ram?: number | null;
   mac_addresses?: MACAddress[];
   motherboard?: string | null;
@@ -151,24 +159,37 @@ export interface ComputerList {
   logical_disks?: LogicalDisk[];
   os_name?: string | null;
   os_version?: string | null;
-  processors?: Processor[];
+  processors?: Processor[] | null;
   ram?: number | null;
   mac_addresses?: MACAddress[];
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
+  roles?: Role[];
+  software?: Software[];
+  video_cards?: VideoCard[];
   id: number;
   last_updated: string;
-  software?: Software[];
-  roles?: Role[];
-  video_cards?: VideoCard[];
 }
 export interface ComputerListItem {
-  id: number;
   hostname: string;
+  ip_addresses?: IPAddress[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
   os_name?: string | null;
+  os_version?: string | null;
+  processors?: Processor[] | null;
+  ram?: number | null;
+  mac_addresses?: MACAddress[];
+  motherboard?: string | null;
+  last_boot?: string | null;
+  is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
+  roles?: Role[];
+  software?: Software[];
+  video_cards?: VideoCard[];
+  id: number;
   last_updated: string;
 }
 export interface ComputerUpdateCheckStatus {
@@ -230,6 +251,10 @@ export interface ScanTask {
   scanned_hosts: number;
   successful_hosts: number;
   error?: string | null;
+}
+export interface TrackableComponent {
+  detected_on?: string | null;
+  removed_on?: string | null;
 }
 export interface UserCreate {
   email: string;

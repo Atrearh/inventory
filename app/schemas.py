@@ -1,3 +1,4 @@
+# app/schemas.py
 from pydantic import BaseModel, field_validator, Field, ConfigDict
 from typing import Optional, List, Union
 from datetime import datetime
@@ -79,6 +80,7 @@ class DiskVolume(BaseSchema):
         return validate_hostname(cls, v)
 
 class VideoCard(TrackableComponent):
+    id: Optional[int] = None
     name: NonEmptyStr = Field(..., alias="name")
     driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
 
@@ -303,9 +305,6 @@ class UserUpdate(schemas.BaseUserUpdate):
     username: Optional[str] = None
     role: Optional[str] = None
 
-class ComputerListItem(BaseSchema):
+class ComputerListItem(ComputerBase):
     id: int
-    hostname: NonEmptyStr
-    os_name: Optional[str] = None
-    check_status: Optional[CheckStatus] = None
     last_updated: datetime

@@ -10,9 +10,8 @@ from typing_extensions import List as ListAny
 from functools import lru_cache
 import hashlib
 import time
+from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software,  ComputerCreate, ComputerList, ComputerListItem
 
-# Импортируем ComputerList для корректной валидации
-from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComponentHistory, ComputerCreate, ComputerList, ComputerListItem, ComputerUpdateCheckStatus
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")

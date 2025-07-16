@@ -234,10 +234,10 @@ class WinRMDataCollector:
                         result["disks"] = disk_data
                 
                 # --- Шаг 3: Сбор информации о ПО ---
-                software_script = "software_info.ps1" if mode == "Full" else "software_info_changes.ps1"
+                software_script = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
                 software_data = await self._execute_script(session, software_script, last_updated=last_updated)
                 if software_data:
-                    result["software"] = software_data
+                    result["software"] = software_data 
                 
                 # --- Шаг 4: Сбор информации о ролях (только для серверов) ---
                 if "server" in result.get("os_name", "").lower():

@@ -58,7 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const decoded: JwtPayload = jwtDecode(accessToken);
           const currentTime = Date.now() / 1000;
-          if (decoded.exp < currentTime + 300) { // Обновляем за 5 минут до истечения
+          if (decoded.exp < currentTime + 300) {
             await refreshToken();
           }
         } catch (error) {
@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsAuthenticated(false);
         }
       }
-    }, 5 * 60 * 1000); // Проверка каждые 5 минут
+    }, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, []);

@@ -41,10 +41,10 @@ const App: React.FC = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      {isAuthenticated ? (
-        <Route
-          path="*"
-          element={
+      <Route
+        path="*"
+        element={
+          isAuthenticated ? (
             <Layout style={{ padding: 0, minHeight: '100vh' }}>
               <Sider>
                 <Menu theme="dark" mode="inline" defaultSelectedKeys={['1']} items={menuItems} />
@@ -69,11 +69,11 @@ const App: React.FC = () => {
                 </Content>
               </Layout>
             </Layout>
-          }
-        />
-      ) : (
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      )}
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
     </Routes>
   );
 };

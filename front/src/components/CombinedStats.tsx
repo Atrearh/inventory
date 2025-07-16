@@ -7,15 +7,26 @@ import { useNavigate, Link } from 'react-router-dom';
 const { Title } = Typography;
 
 interface CombinedStatsProps {
-  totalComputers: number | undefined;
+  totalComputers: number | null | undefined;
   lastScanTime: string | null;
   clientOsData: DashboardStats['os_stats']['client_os'];
   serverOsData: DashboardStats['os_stats']['server_os'];
   statusStats: DashboardStats['scan_stats']['status_stats'];
-  lowDiskSpaceCount: number; // Додаємо проп для кількості комп'ютерів з низьким диском
+  lowDiskSpaceCount: number;
   onOsClick: (os: string, isClientOs: boolean) => void;
   onStatusClick: (status: string) => void;
 }
+
+const normalizeOsName = (name: string): string => {
+  const nameLower = name.toLowerCase();
+  if (nameLower.includes('windows 10') && (nameLower.includes('корпоративная') || nameLower.includes('enterprise') || nameLower.includes('ltsc'))) {
+    return 'Windows 10 Корпоративная';
+  }
+  if (nameLower.includes('hyper-v')) {
+    return 'Hyper-V Server';
+  }
+  return name;
+};
 
 const CombinedStats: React.FC<CombinedStatsProps> = ({
   totalComputers,
@@ -30,17 +41,17 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   const navigate = useNavigate();
 
   const clientOsChartData = {
-    labels: clientOsData.map(os => os.category) || [],
+    labels: clientOsData && Array.isArray(clientOsData) ? clientOsData.map(os => normalizeOsName(os.category)) : [],
     datasets: [{
-      data: clientOsData.map(os => os.count) || [],
+      data: clientOsData && Array.isArray(clientOsData) ? clientOsData.map(os => os.count) : [],
       backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
     }],
   };
 
   const serverOsChartData = {
-    labels: serverOsData.map(os => os.category) || [],
+    labels: serverOsData && Array.isArray(serverOsData) ? serverOsData.map(os => normalizeOsName(os.category)) : [],
     datasets: [{
-      data: serverOsData.map(os => os.count) || [],
+      data: serverOsData && Array.isArray(serverOsData) ? serverOsData.map(os => os.count) : [],
       backgroundColor: ['#FF9F40', '#FFCD56', '#C9CB3F', '#36A2EB'],
     }],
   };
@@ -70,7 +81,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   ];
 
   return (
-    <div style={{ padding: 0}}>
+    <div style={{ padding: 0 }}>
       <Card style={{ marginBottom: '16px' }}>
         <Row justify="space-between">
           <Col>
@@ -112,7 +123,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
                 />
               </div>
             ) : (
-              <p style={{ textAlign: 'center' }}>Немає даних</p>
+              <p style={{ textAlign: 'center' }}>Немає даних про клієнтські ОС</p>
             )}
           </Card>
         </Col>
@@ -136,7 +147,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
                 />
               </div>
             ) : (
-              <p style={{ textAlign: 'center' }}>Немає даних</p>
+              <p style={{ textAlign: 'center' }}>Немає даних про серверні ОС</p>
             )}
           </Card>
         </Col>
@@ -146,7 +157,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
         <Title level={4}>Статуси перевірки</Title>
         <Table
           columns={statusColumns}
-          dataSource={statusStats}
+          dataSource={statusStats && Array.isArray(statusStats) ? statusStats : []}
           rowKey="status"
           size="small"
           pagination={false}

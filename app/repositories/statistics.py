@@ -72,9 +72,10 @@ class StatisticsRepository:
             logger.debug(f"Полученные данные OS: {os_data}")
 
             client_os_map = {
-                "Windows 11": r"windows 11",
-                "Windows 10": r"windows 10(?![^,]*server|ltsc)",
-                "Windows 7": r"windows 7",
+                "Windows 11 Pro": r"windows 11 pro",
+                "Windows 10 Pro": r"windows 10 pro",
+                "Windows 10 Корпоративная": r"windows 10.*(корпоративная|enterprise|ltsc|ltsb)",
+                "Windows 7 Профессиональная": r"windows 7.*профессиональная",
                 "Ubuntu": r"ubuntu",
                 "CentOS": r"centos",
                 "Debian": r"debian",
@@ -113,7 +114,7 @@ class StatisticsRepository:
                             break
                     if not matched:
                         server_os_counts["Other Servers"] += count
-                        logger.debug("Сопоставлено как Other Servers")
+                        logger.debug(f"Сопоставлено как Other Servers: {category}")
                 else:
                     for name, pattern in client_os_map.items():
                         if re.search(pattern, category_lower, re.IGNORECASE):
@@ -123,7 +124,7 @@ class StatisticsRepository:
                             break
                     if not matched:
                         client_os_counts["Other Clients"] += count
-                        logger.debug("Сопоставлено как Other Clients")
+                        logger.debug(f"Сопоставлено як Other Clients: {category}")
 
             client_os = [
                 schemas.OsDistribution(category=cat, count=count)
@@ -140,7 +141,7 @@ class StatisticsRepository:
         except Exception as e:
             logger.error(f"Ошибка при получении распределения ОС: {str(e)}")
             raise
-
+        
     async def get_low_disk_space_with_volumes(self) -> List[schemas.DiskVolume]:
         logger.debug("Запрос логических дисков с низким свободным местом")
         try:
@@ -212,24 +213,10 @@ class StatisticsRepository:
             stats.total_computers = (await self.db.execute(select(func.count()).select_from(models.Computer))).scalar() or 0
 
         if "os_distribution" in metrics:
-            client_os_query = await self.db.execute(
-                select(models.Computer.os_name, func.count().label("count"))
-                .filter(~models.Computer.os_name.ilike("%server%"))
-                .group_by(models.Computer.os_name)
-            )
-            stats.os_stats.client_os = [
-                schemas.OsDistribution(category=row.os_name or "Unknown", count=row.count)
-                for row in client_os_query.all()
-            ]
-            server_os_query = await self.db.execute(
-                select(models.Computer.os_name, func.count().label("count"))
-                .filter(models.Computer.os_name.ilike("%server%"))
-                .group_by(models.Computer.os_name)
-            )
-            stats.os_stats.server_os = [
-                schemas.ServerDistribution(category=row.os_name or "Unknown", count=row.count)
-                for row in server_os_query.all()
-            ]
+            # Використовуємо get_os_distribution для коректного об'єднання ОС
+            os_stats = await self.get_os_distribution()
+            stats.os_stats.client_os = os_stats.client_os
+            stats.os_stats.server_os = os_stats.server_os
 
         if "low_disk_space_with_volumes" in metrics:
             low_disk_space_query = await self.db.execute(
@@ -250,7 +237,7 @@ class StatisticsRepository:
             ]
 
         if "last_scan_time" in metrics:
-            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by( models.ScanTask.updated_at.desc()))
+            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by(models.ScanTask.updated_at.desc()))
             last_scan_time = last_scan.scalars().first()
             stats.scan_stats.last_scan_time = last_scan_time
 
@@ -286,3 +273,4 @@ class StatisticsRepository:
                 )
 
         return stats
+ 

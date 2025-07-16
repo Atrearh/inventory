@@ -11,7 +11,7 @@ import { ITEMS_PER_PAGE } from '../config';
 import type { TableProps } from 'antd';
 import type { InputRef } from 'antd';
 import styles from './ComputerList.module.css';
-import { useAuth } from '../context/AuthContext'; // Добавляем useAuth
+import { useAuth } from '../context/AuthContext';
 
 interface Filters {
   hostname: string | undefined;
@@ -30,7 +30,7 @@ interface Sorter {
 }
 
 const ComputerListComponent: React.FC = () => {
-  const { isAuthenticated } = useAuth(); // Получаем isAuthenticated
+  const { isAuthenticated } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Filters>({
     hostname: searchParams.get('hostname') || undefined,
@@ -39,7 +39,7 @@ const ComputerListComponent: React.FC = () => {
     sort_by: searchParams.get('sort_by') || 'hostname',
     sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'asc',
     page: Number(searchParams.get('page')) || 1,
-    limit: Number(searchParams.get('limit')) || ITEMS_PER_PAGE,
+    limit: Number(searchParams.get('limit') || ITEMS_PER_PAGE),
   });
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
   const inputRef = useRef<InputRef>(null);
@@ -58,7 +58,7 @@ const ComputerListComponent: React.FC = () => {
       const params: Partial<Filters> = {
         ...filters,
         hostname: undefined, // Отключаем серверную фильтрацию по hostname
-        limit: 1000, // Загружаем до 1000 записей
+        limit: 1000,
       };
       if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
         params.os_name = 'unknown';
@@ -69,7 +69,7 @@ const ComputerListComponent: React.FC = () => {
       }
       return getComputers(params as Filters);
     },
-    enabled: isAuthenticated, // Запрос выполняется только после аутентификации
+    enabled: isAuthenticated,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 30 * 60 * 1000,
@@ -82,7 +82,7 @@ const ComputerListComponent: React.FC = () => {
       getStatistics({
         metrics: ['os_distribution'],
       }),
-    enabled: isAuthenticated, // Запрос выполняется только после аутентификации
+    enabled: isAuthenticated,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 60 * 60 * 1000,
@@ -91,15 +91,20 @@ const ComputerListComponent: React.FC = () => {
   const { handleExportCSV } = useExportCSV(filters);
 
   const debouncedSetHostname = useCallback(
-    debounce((value: string) => {
-      setFilters((prev) => ({
-        ...prev,
-        hostname: value || undefined,
-        page: 1,
-      }));
-    }, 300),
-    []
-  );
+  debounce((value: string) => {
+    setFilters({
+      hostname: value || undefined,
+      os_name: undefined, // Сбрасываем фильтр по OS
+      check_status: undefined, // Сбрасываем фильтр по статусу проверки
+      sort_by: 'hostname', // Сбрасываем сортировку на hostname
+      sort_order: 'asc', // Сбрасываем порядок сортировки на asc
+      page: 1, // Сбрасываем страницу на первую
+      limit: ITEMS_PER_PAGE, // Сбрасываем лимит на дефолтный
+      server_filter: undefined, // Сбрасываем фильтр по серверным ОС
+    });
+  }, 300),
+  []
+);
 
   useEffect(() => {
     if (computersData?.data) {
@@ -127,41 +132,77 @@ const ComputerListComponent: React.FC = () => {
   }, [filters, setSearchParams]);
 
   const filteredComputers = useMemo(() => {
-    let filtered = [...cachedComputers];
+  let filtered = [...cachedComputers];
 
-    if (filters.hostname) {
-      filtered = filtered.filter((comp) => comp.hostname.toLowerCase().startsWith(filters.hostname!.toLowerCase()));
-    }
-    if (filters.os_name) {
-      filtered = filtered.filter((comp) => comp.os_name?.toLowerCase().includes(filters.os_name!.toLowerCase()));
-    }
-    if (filters.check_status) {
-      filtered = filtered.filter((comp) => comp.check_status === filters.check_status);
-    }
-    if (filters.server_filter === 'server') {
-      filtered = filtered.filter((comp) => comp.os_name && isServerOs(comp.os_name));
-    } else if (filters.server_filter === 'client') {
-      filtered = filtered.filter((comp) => comp.os_name && !isServerOs(comp.os_name));
+  if (filters.hostname) {
+    filtered = filtered.filter((comp) => comp.hostname.toLowerCase().startsWith(filters.hostname!.toLowerCase()));
+  }
+  if (filters.os_name) {
+    filtered = filtered.filter((comp) => comp.os_name?.toLowerCase().includes(filters.os_name!.toLowerCase()));
+  }
+  if (filters.check_status) {
+    filtered = filtered.filter((comp) => comp.check_status === filters.check_status);
+  }
+  if (filters.server_filter === 'server') {
+    filtered = filtered.filter((comp) => comp.os_name && isServerOs(comp.os_name));
+  } else if (filters.server_filter === 'client') {
+    filtered = filtered.filter((comp) => comp.os_name && !isServerOs(comp.os_name));
+  }
+
+  filtered.sort((a, b) => {
+    const field = filters.sort_by as keyof ComputerListItem;
+    let aValue: string | number | boolean = '';
+    let bValue: string | number | boolean = '';
+    
+    if (field === 'ip_addresses') {
+      aValue = a.ip_addresses?.[0]?.address || '';
+      bValue = b.ip_addresses?.[0]?.address || '';
+    } else if (field === 'is_virtual') {
+      aValue = a.is_virtual ?? false;
+      bValue = b.is_virtual ?? false;
+    } else if (field === 'physical_disks') {
+      aValue = a.physical_disks?.[0]?.model || '';
+      bValue = b.physical_disks?.[0]?.model || '';
+    } else if (field === 'logical_disks') {
+      aValue = a.logical_disks?.[0]?.volume_label || '';
+      bValue = b.logical_disks?.[0]?.volume_label || '';
+    } else if (field === 'processors') {
+      aValue = a.processors?.[0]?.name || '';
+      bValue = b.processors?.[0]?.name || '';
+    } else if (field === 'mac_addresses') {
+      aValue = a.mac_addresses?.[0]?.address || '';
+      bValue = b.mac_addresses?.[0]?.address || '';
+    } else if (field === 'roles') {
+      aValue = a.roles?.[0]?.Name || '';
+      bValue = b.roles?.[0]?.Name || '';
+    } else if (field === 'software') {
+      aValue = a.software?.[0]?.DisplayName || '';
+      bValue = b.software?.[0]?.DisplayName || '';
+    } else if (field === 'video_cards') {
+      aValue = a.video_cards?.[0]?.name || '';
+      bValue = b.video_cards?.[0]?.name || '';
+    } else {
+      aValue = a[field] ?? '';
+      bValue = b[field] ?? '';
     }
 
-    filtered.sort((a, b) => {
-      const field = filters.sort_by as keyof ComputerListItem;
-      const aValue = a[field] || '';
-      const bValue = b[field] || '';
-      if (filters.sort_order === 'asc') {
-        return String(aValue).localeCompare(String(bValue));
-      } else {
-        return String(bValue).localeCompare(String(aValue));
-      }
-    });
+    if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+      return filters.sort_order === 'asc'
+        ? aValue === bValue ? 0 : aValue ? 1 : -1
+        : aValue === bValue ? 0 : aValue ? -1 : 1;
+    }
+    return filters.sort_order === 'asc'
+      ? String(aValue).localeCompare(String(bValue))
+      : String(bValue).localeCompare(String(aValue));
+  });
 
-    const start = (filters.page - 1) * filters.limit;
-    const end = start + filters.limit;
-    return {
-      data: filtered.slice(start, end),
-      total: filtered.length,
-    };
-  }, [cachedComputers, filters]);
+  const start = (filters.page - 1) * filters.limit;
+  const end = start + filters.limit;
+  return {
+    data: filtered.slice(start, end),
+    total: filtered.length,
+  };
+}, [cachedComputers, filters]);
 
   const handleTableChange: TableProps<ComputerListItem>['onChange'] = (pagination, _, sorter) => {
     const sorterResult = sorter as Sorter;
@@ -210,6 +251,14 @@ const ComputerListComponent: React.FC = () => {
           {text}
         </Link>
       ),
+    },
+    {
+      title: 'IP Address',
+      dataIndex: 'ip_addresses',
+      key: 'ip_addresses',
+      sorter: true,
+      sortOrder: filters.sort_by === 'ip_addresses' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+      render: (ip_addresses: ComputerListItem['ip_addresses']) => ip_addresses?.map(ip => ip.address).join(', ') || '-',
     },
     {
       title: 'OS Version',
@@ -301,6 +350,7 @@ const ComputerListComponent: React.FC = () => {
             onChange={handleTableChange}
             locale={{ emptyText: 'Нет данных для отображения' }}
             size="small"
+            showSorterTooltip={false}
           />
         </>
       )}

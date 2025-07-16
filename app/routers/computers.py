@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+# app/routers/computers.py
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from ..models import Computer, IPAddress, CheckStatus
 from ..database import get_db
 from ..services.computer_service import ComputerService
-from ..services.ad_service import ADService
 from ..repositories.computer_repository import ComputerRepository
-from ..schemas import Computer, ComputerCreate, ComputerUpdateCheckStatus, ComponentHistory, ComputersResponse, ComputerList
-from .. import models
+from ..schemas import Computer as ComputerSchema, ComputerCreate, ComputerUpdateCheckStatus, ComponentHistory, ComputersResponse, ComputerList
 from typing import List, Optional
 import logging
 import io
@@ -15,6 +17,7 @@ from ..logging_config import setup_logging
 from ..settings import settings
 from .auth import get_current_user
 import re
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -40,7 +43,6 @@ async def export_computers_to_csv(
         writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
         output.write('\ufeff')  # BOM для корректного отображения кириллицы в Excel
         
-        # Заголовки CSV файла (убираем логические диски)
         header = [ 
             'IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС',
             'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Процессор', 'Видеокарта'
@@ -52,7 +54,6 @@ async def export_computers_to_csv(
         output.truncate(0)
 
         repo = ComputerRepository(db)
-        # Список нежелательных видеокарт с использованием регулярного выражения
         unwanted_video_cards_pattern = re.compile(
             r'(?i)microsoft basic display adapter|'
             r'базовый видеоадаптер \(майкрософт\)|'
@@ -65,26 +66,17 @@ async def export_computers_to_csv(
         async for computer in repo.stream_computers(
             hostname=hostname,
             os_name=os_name,
-            check_status=check_status.value if check_status else None,
+            check_status=check_status,
             sort_by=sort_by,
             sort_order=sort_order,
             server_filter=server_filter
         ):
             try:
-                # Объединяем все IP-адреса в строку
                 ip_addresses = ', '.join(ip.address for ip in computer.ip_addresses) if computer.ip_addresses else ''
-                
-                # Объединяем все MAC-адреса в строку
                 mac_addresses = ', '.join(mac.address for mac in computer.mac_addresses) if computer.mac_addresses else ''
-                
-                # Формируем информацию только о физических дисках
                 disk_info = [pd.model for pd in computer.physical_disks if pd.model] if computer.physical_disks else []
                 disk_info_str = '; '.join(disk_info) if disk_info else ''
-                
-                # Формируем информацию о процессорах (только модель)
                 processor_info = ', '.join(proc.name for proc in computer.processors if proc.name) if computer.processors else ''
-                
-                # Фильтруем видеокарты с использованием регулярного выражения
                 video_cards = ', '.join(vc.name for vc in computer.video_cards if vc.name and not unwanted_video_cards_pattern.search(vc.name.lower())) if computer.video_cards else ''
                 
                 is_server = 'Сервер' if computer.os_name and 'server' in computer.os_name.lower() else 'Клиент'
@@ -123,7 +115,7 @@ async def export_computers_to_csv(
     }
     return StreamingResponse(generate_csv(), headers=headers)
 
-@router.post("/report", response_model=Computer, operation_id="create_computer_report", dependencies=[Depends(get_current_user)])
+@router.post("/report", response_model=ComputerSchema, operation_id="create_computer_report", dependencies=[Depends(get_current_user)])
 async def create_computer(
     comp_data: ComputerCreate,
     db: AsyncSession = Depends(get_db),
@@ -173,11 +165,13 @@ async def get_component_history(
     except Exception as e:
         logger_adapter.error(f"Помилка отримання історії компонентів для ID {computer_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
-    
+
 @router.get("/computers", response_model=ComputersResponse, operation_id="get_computers", dependencies=[Depends(get_current_user)])
 async def get_computers(
-    os_name: Optional[str] = Query(None),
-    check_status: Optional[str] = Query(None),
+    hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
+    ip_range: Optional[str] = Query(None, description="Фильтр по диапазону IP-адресов (например, '192.168.0.[0-1]' или 'none')"),
+    os_name: Optional[str] = Query(None, description="Фильтр по имени ОС"),
+    check_status: Optional[str] = Query(None, description="Фильтр по check_status"),
     sort_by: Optional[str] = Query("hostname", description="Поле для сортировки"),
     sort_order: Optional[str] = Query("asc", description="Порядок сортировки: asc или desc"),
     page: int = Query(1, ge=1, description="Номер страницы"),
@@ -185,25 +179,102 @@ async def get_computers(
     server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Получение списка компьютеров с фильтрацией и пагинацией."""
-    logger.info(f"Запрос списка компьютеров с параметрами: os_name={os_name}, check_status={check_status}, sort_by={sort_by}, sort_order={sort_order}, page={page}, limit={limit}, server_filter={server_filter}")
+    logger.info(f"Запрос списка компьютеров с параметрами: hostname={hostname}, ip_range={ip_range}, os_name={os_name}, check_status={check_status}, sort_by={sort_by}, sort_order={sort_order}, page={page}, limit={limit}, server_filter={server_filter}")
     try:
-        repo = ComputerRepository(db)
-        computers, total = await repo.get_computers(
-            os_name=os_name,
-            check_status=check_status,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            page=page,
-            limit=limit,
-            server_filter=server_filter
+        logger.debug(f"Using Computer class: {Computer}")
+        # Используем модель Computer из app.models
+        query = select(Computer).options(
+            selectinload(Computer.ip_addresses)
         )
-        return ComputersResponse(data=computers, total=total)
+
+        # Присоединяем таблицу ip_addresses с LEFT JOIN для включения компьютеров без IP
+        query = query.outerjoin(IPAddress, Computer.id == IPAddress.computer_id)
+
+        if hostname:
+            query = query.filter(Computer.hostname.ilike(f"%{hostname}%"))
+        if ip_range:
+            logger.debug(f"Processing ip_range filter: {ip_range}")
+            if ip_range == 'none':
+                logger.debug("Applying filter for computers without IP addresses")
+                query = query.filter(IPAddress.address.is_(None))
+            else:
+                try:
+                    logger.debug(f"Parsing ip_range: {ip_range}")
+                    base_ip, octet_range = ip_range.split('.[')
+                    start_octet, end_octet = map(int, octet_range.replace(']', '').split('-'))
+                    logger.debug(f"Applying IP filter: base_ip={base_ip}, start_octet={start_octet}, end_octet={end_octet}")
+                    query = query.filter(
+                        IPAddress.address.startswith(base_ip),
+                        IPAddress.address.between(f"{base_ip}.{start_octet}.0", f"{base_ip}.{end_octet}.255")
+                    )
+                except ValueError as e:
+                    logger.error(f"Некорректный формат ip_range: {ip_range}, ошибка: {str(e)}")
+                    raise HTTPException(status_code=400, detail=f"Некорректный формат ip_range: {ip_range}")
+        if os_name:
+            query = query.filter(Computer.os_name.ilike(f"%{os_name}%"))
+        if check_status:
+            try:
+                logger.debug(f"Validating check_status: {check_status}")
+                CheckStatus(check_status)
+            except ValueError:
+                logger.error(f"Некорректное значение check_status: {check_status}")
+                raise HTTPException(status_code=422, detail=f"Некорректное значение check_status: {check_status}")
+        if server_filter == "server":
+            query = query.filter(Computer.os_name.ilike("%server%"))
+        elif server_filter == "client":
+            query = query.filter(~Computer.os_name.ilike("%server%"))
+
+        if sort_by not in ["hostname", "os_name", "check_status", "last_updated"]:
+            sort_by = "hostname"
+        if sort_order not in ["asc", "desc"]:
+            sort_order = "asc"
+        
+        sort_column = getattr(Computer, sort_by)
+        if sort_order == "desc":
+            sort_column = sort_column.desc()
+        
+        # Логируем SQL-запрос для отладки
+        logger.debug(f"SQL Query: {str(query)}")
+        
+        total = await db.scalar(select(func.count()).select_from(query))
+        query = query.offset((page - 1) * limit).limit(limit).order_by(sort_column)
+        
+        computers = (await db.execute(query)).scalars().unique().all()
+        try:
+            computer_list = [
+                ComputerList(
+                    id=c.id,
+                    hostname=c.hostname,
+                    ip_addresses=[{"address": ip.address, "detected_on": ip.detected_on, "removed_on": ip.removed_on} for ip in c.ip_addresses if ip.removed_on is None] if c.ip_addresses else [],
+                    os_version=c.os_version,
+                    os_name=c.os_name,
+                    check_status=c.check_status.value,
+                    last_updated=c.last_updated,
+                    physical_disks=[],
+                    logical_disks=[],
+                    processors=[],
+                    mac_addresses=[],
+                    motherboard=c.motherboard,
+                    last_boot=c.last_boot,
+                    is_virtual=c.is_virtual,
+                    roles=[],
+                    software=[],
+                    video_cards=[],
+                ) for c in computers
+            ]
+        except ValidationError as ve:
+            logger.error(f"Ошибка валидации данных для ComputersResponse: {ve.errors()}", exc_info=True)
+            raise HTTPException(status_code=422, detail=f"Ошибка валидации данных: {ve.errors()}")
+        
+        logger.debug(f"Возвращено {len(computer_list)} компьютеров, всего: {total}")
+        return ComputersResponse(data=computer_list, total=total)
+    except HTTPException as e:
+        raise
     except Exception as e:
         logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
-
-@router.get("/computers/{computer_id}", response_model=Computer, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") 
+      
+@router.get("/computers/{computer_id}", response_model=ComputerSchema, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
 async def get_computer_by_id(
     computer_id: int,
     db: AsyncSession = Depends(get_db),

@@ -9,7 +9,7 @@ from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
 from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, CheckStatus, Computer, VideoCard, Processor, IPAddress, MACAddress
-from ..data_collector import WinRMDataCollector, winrm_session
+from ..data_collector import WinRMDataCollector
 from ..utils import validate_ip_address, validate_mac_address
 from ..database import async_session_factory 
 from sqlalchemy.exc import SQLAlchemyError

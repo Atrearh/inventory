@@ -142,7 +142,7 @@ const ComputerDetail: React.FC = () => {
       </Title>
       <Tabs defaultActiveKey="1" items={tabItems} />
     </div>
-  );
+  ); 
 };
 
-export default ComputerDetail;
+export default ComputerDetail; 

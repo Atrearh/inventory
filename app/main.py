@@ -1,12 +1,10 @@
-import asyncio
 import ipaddress
-import logging
+import structlog
 import uvicorn
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from .database import engine, get_db, get_db_session, init_db, shutdown_db
+from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
 from .settings_manager import SettingsManager
 from .logging_config import setup_logging
@@ -17,7 +15,7 @@ from .services.encryption_service import EncryptionService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 setup_logging(log_level=settings.log_level)
 settings_manager = SettingsManager(settings)
 
@@ -34,7 +32,7 @@ async def lifespan(app: FastAPI):
                 else:
                     app.state.allowed_ip_networks.append(ipaddress.ip_address(ip_range))
             except ValueError as e:
-                logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
+                logger.error(f"Неверный формат IP-диапазона {ip_range}", error=str(e))
                 raise
 
         # Инициализация encryption_service и загрузка скриптов
@@ -46,17 +44,20 @@ async def lifespan(app: FastAPI):
         
         # Предварительная загрузка скриптов
         try:
-            script_cache.preload_scripts()
-            logger.info(f"Все скрипты предварительно загружены в кэш. Кэш: {list(script_cache._cache.keys())}")
+            await script_cache.preload_scripts()
+            logger.info("Все скрипты предварительно загружены в кэш")
         except Exception as e:
-            logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}", exc_info=True)
+            logger.error(f"Ошибка при предварительной загрузке скриптов", error=str(e))
             raise
 
         yield
+    except Exception as e:
+        logger.error("Ошибка инициализации приложения", error=str(e))
+        raise
     finally:
         logger.info("Завершение работы...")
         await shutdown_db()
- 
+
 app = FastAPI(title="Inventory Management", lifespan=lifespan)
 
 # Регистрация middleware в правильном порядке

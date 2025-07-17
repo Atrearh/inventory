@@ -1,12 +1,11 @@
-# app/utils.py
-import logging
+import structlog
 import re
 import ipaddress
 from typing import Optional, Any
 from pydantic_core import core_schema
 from pydantic import GetCoreSchemaHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class NonEmptyStr(str):
     @classmethod
@@ -29,42 +28,42 @@ class NonEmptyStr(str):
         return json_schema
 
 def validate_mac_address(cls, v: Optional[NonEmptyStr], field_name: str = "MAC address") -> Optional[NonEmptyStr]:
-    """Валидация MAC-адреса: должен соответствовать формату XX:XX:XX:XX:XX:XX или быть None."""
+    """Валідація MAC-адреси: має відповідати формату XX:XX:XX:XX:XX:XX або бути None."""
     if v is None:
         return v
     if not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
-        raise ValueError(f"{field_name} имеет неверный формат")
+        raise ValueError(f"{field_name} має невірний формат")
     return v
 
 def validate_ip_address(cls, v: Optional[NonEmptyStr], field_name: str = "IP address") -> Optional[NonEmptyStr]:
-    """Валидация IP-адреса: должен быть валидным IPv4/IPv6 или None."""
+    """Валідація IP-адреси: має бути валідною IPv4/IPv6 або None."""
     if v is None:
         return v
     try:
         ipaddress.ip_address(v)
     except ValueError:
-        raise ValueError(f"{field_name} имеет неверный формат")
+        raise ValueError(f"{field_name} має невірний формат")
     return v
 
 def validate_hostname(cls, v: NonEmptyStr, field_name: str = "hostname") -> NonEmptyStr:
-    """Валидация hostname с поддержкой подчеркиваний для совместимости с реальными данными."""
+    """Валідація hostname з підтримкою підкреслень для сумісності з реальними даними."""
     if v is None:
-        raise ValueError(f"{field_name} не может быть None")
+        raise ValueError(f"{field_name} не може бути None")
     
-    # Проверка длины
+    # Перевірка довжини
     if len(v) > 255:
-        raise ValueError(f"{field_name} превышает максимальную длину 255 символов")
+        raise ValueError(f"{field_name} перевищує максимальну довжину 255 символів")
     
-    # Проверка формата (буквы, цифры, дефисы, подчеркивания, точки)
+    # Перевірка формату (букви, цифри, дефіси, підкреслення, крапки)
     if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?)*$', v):
-        raise ValueError(f"{field_name} имеет неверный формат (допустимы буквы, цифры, дефисы, подчеркивания и точки)")
+        raise ValueError(f"{field_name} має невірний формат (допустимі букви, цифри, дефіси, підкреслення і крапки)")
     
-    # Проверка, что hostname не начинается и не заканчивается точкой
+    # Перевірка, що hostname не починається і не закінчується крапкою
     if v.startswith('.') or v.endswith('.'):
-        raise ValueError(f"{field_name} не может начинаться или заканчиваться точкой")
+        raise ValueError(f"{field_name} не може починатися або закінчуватися крапкою")
     
-    # Предупреждение, если hostname не соответствует строгому RFC 1123 (например, содержит подчеркивания)
+    # Попередження, якщо hostname не відповідає строгому RFC 1123 (наприклад, містить підкреслення)
     if '_' in v and not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$', v):
-        logger.warning(f"Hostname '{v}' содержит подчеркивания, что не соответствует RFC 1123, но допустимо для локальных сетей")
+        logger.warning(f"Hostname '{v}' містить підкреслення, що не відповідає RFC 1123, але допустимо для локальних мереж")
     
     return v

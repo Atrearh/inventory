@@ -6,16 +6,16 @@ from ..settings_manager import SettingsManager
 from ..database import get_db
 from ..logging_config import setup_logging
 from .auth import get_current_user
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 setup_logging(log_level=settings.log_level)
 router = APIRouter(tags=["settings"])
 settings_manager = SettingsManager(settings)
 
 @router.get("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
 async def get_settings(db: AsyncSession = Depends(get_db)):
-    logger.info("Получение текущих настроек")
+    logger.info("Отримання поточних налаштувань")
     await settings_manager.load_from_db(db)
     return AppSettingUpdate(
         ad_server_url=settings.ad_server_url,
@@ -37,17 +37,17 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         server_port=settings.server_port,
         cors_allow_origins=settings.cors_allow_origins,
         allowed_ips=settings.allowed_ips,
-        encryption_key="********",  # Не возвращаем реальный ключ
+        encryption_key="********",  # Не повертаємо реальний ключ
     )
 
 @router.post("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
 async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db)):
-    logger.info("Обновление настроек: %s", update.model_dump(exclude_unset=True))
+    logger.info("Оновлення налаштувань", updates=update.model_dump(exclude_unset=True))
     updates = update.model_dump(exclude_unset=True)
     if not updates:
-        raise HTTPException(status_code=400, detail="Не предоставлены данные для обновления")
+        raise HTTPException(status_code=400, detail="Не надано даних для оновлення")
     if "encryption_key" in updates:
-        logger.warning("Обновление ENCRYPTION_KEY может сделать существующие зашифрованные данные нечитаемыми")
+        logger.warning("Оновлення ENCRYPTION_KEY може зробити існуючі зашифровані дані нечитабельними")
     await settings_manager.save_to_db(db, updates)
-    logger.info("Настройки успешно обновлены: %s", updates)
+    logger.info("Налаштування успішно оновлено", updates=updates)
     return update

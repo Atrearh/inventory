@@ -1,4 +1,3 @@
-# app/routers/computers.py
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +8,8 @@ from ..database import get_db
 from ..services.computer_service import ComputerService
 from ..repositories.computer_repository import ComputerRepository
 from ..schemas import Computer as ComputerSchema, ComputerCreate, ComputerUpdateCheckStatus, ComponentHistory, ComputersResponse, ComputerList
-from typing import List, Optional
-import logging
+from typing import List, Optional, Dict, Any
+import structlog
 import io
 import csv
 from ..logging_config import setup_logging
@@ -19,7 +18,7 @@ from .auth import get_current_user
 import re
 from pydantic import ValidationError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 setup_logging(log_level=settings.log_level)
 
 router = APIRouter(tags=["computers"])
@@ -36,7 +35,7 @@ async def export_computers_to_csv(
     server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
 ):
     """Экспорт компьютеров в CSV с потоковой передачей данных."""
-    logger.info(f"Экспорт компьютеров в CSV с параметрами: hostname={hostname}, os_name={os_name}, os_version={os_version}, check_status={check_status}, server_filter={server_filter}")
+    logger.info("Экспорт компьютеров в CSV", hostname=hostname, os_name=os_name, os_version=os_version, check_status=check_status, server_filter=server_filter)
     
     async def generate_csv():
         output = io.StringIO()
@@ -103,8 +102,8 @@ async def export_computers_to_csv(
                 output.truncate(0)
 
             except Exception as e:
-                logger.error(f"Ошибка при обработке компьютера {computer.hostname} для CSV: {e}", exc_info=True)
-                logger.debug(f"Данные компьютера: {computer.model_dump()}")
+                logger.error("Ошибка при обработке компьютера для CSV", hostname=computer.hostname, error=str(e))
+                logger.debug("Данные компьютера", computer=computer.model_dump())
                 continue
 
         output.close()
@@ -121,13 +120,14 @@ async def create_computer(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Получен отчет для hostname: {comp_data.hostname}")
+    # Використовуйте request.state.logger, який вже містить correlation_id
+    request_logger = request.state.logger.bind(hostname=comp_data.hostname)
+    request_logger.info("Получен отчет для hostname")
     try:
         computer_service = ComputerService(db)
         return await computer_service.upsert_computer_from_schema(comp_data, comp_data.hostname)
     except Exception as e:
-        logger_adapter.error(f"Ошибка создания/обновления компьютера {comp_data.hostname}: {str(e)}", exc_info=True)
+        request_logger.error("Ошибка создания/обновления компьютера", error=str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 @router.post("/update_check_status", operation_id="update_computer_check_status", dependencies=[Depends(get_current_user)])
@@ -136,8 +136,7 @@ async def update_check_status(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Обновление check_status для {data.hostname}")
+    logger.info("Обновление check_status", hostname=data.hostname)
     try:
         repo = ComputerRepository(db)
         db_computer = await repo.async_update_computer_check_status(data.hostname, data.check_status)
@@ -147,23 +146,23 @@ async def update_check_status(
     except HTTPException:
         raise
     except Exception as e:
-        logger_adapter.error(f"Ошибка обновления check_status для {data.hostname}: {str(e)}", exc_info=True)
+        logger.error("Ошибка обновления check_status", hostname=data.hostname, error=str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
-@router.get("/computers/{computer_id}/history", response_model=List[ComponentHistory], dependencies=[Depends(get_current_user)])
-async def get_component_history(
-    computer_id: int,
-    db: AsyncSession = Depends(get_db),
-    request: Request = None,
-):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Отримання історії компонентів для комп’ютера з ID: {computer_id}")
+@router.get("/{computer_id}/history")
+async def get_component_history(computer_id: int, db: AsyncSession = Depends(get_db), request: Request = None) -> List[Dict[str, Any]]:
+    """Получает историю компонентов для компьютера по ID."""
+    request_logger = request.state.logger.bind(computer_id=computer_id)
     try:
-        repo = ComputerRepository(db)
-        history = await repo.get_component_history(computer_id)
+        service = ComputerService(db)
+        history = await service.computer_repo.get_component_history(computer_id)
+        if not history:
+            request_logger.warning("История компонентов не найдена")
+            raise HTTPException(status_code=404, detail="История компонентов не найдена")
+        request_logger.info(f"Получено {len(history)} записей истории компонентов")
         return history
     except Exception as e:
-        logger_adapter.error(f"Помилка отримання історії компонентів для ID {computer_id}: {str(e)}", exc_info=True)
+        request_logger.error("Ошибка получения истории компонентов", error=str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 @router.get("/computers", response_model=ComputersResponse, operation_id="get_computers", dependencies=[Depends(get_current_user)])
@@ -179,45 +178,43 @@ async def get_computers(
     server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info(f"Запрос списка компьютеров с параметрами: hostname={hostname}, ip_range={ip_range}, os_name={os_name}, check_status={check_status}, sort_by={sort_by}, sort_order={sort_order}, page={page}, limit={limit}, server_filter={server_filter}")
+    logger.info("Запрос списка компьютеров", hostname=hostname, ip_range=ip_range, os_name=os_name, check_status=check_status, sort_by=sort_by, sort_order=sort_order, page=page, limit=limit, server_filter=server_filter)
     try:
-        logger.debug(f"Using Computer class: {Computer}")
-        # Используем модель Computer из app.models
+        logger.debug("Using Computer class", computer_class=str(Computer))
         query = select(Computer).options(
             selectinload(Computer.ip_addresses)
         )
 
-        # Присоединяем таблицу ip_addresses с LEFT JOIN для включения компьютеров без IP
         query = query.outerjoin(IPAddress, Computer.id == IPAddress.computer_id)
 
         if hostname:
             query = query.filter(Computer.hostname.ilike(f"%{hostname}%"))
         if ip_range:
-            logger.debug(f"Processing ip_range filter: {ip_range}")
+            logger.debug("Processing ip_range filter", ip_range=ip_range)
             if ip_range == 'none':
                 logger.debug("Applying filter for computers without IP addresses")
                 query = query.filter(IPAddress.address.is_(None))
             else:
                 try:
-                    logger.debug(f"Parsing ip_range: {ip_range}")
+                    logger.debug("Parsing ip_range", ip_range=ip_range)
                     base_ip, octet_range = ip_range.split('.[')
                     start_octet, end_octet = map(int, octet_range.replace(']', '').split('-'))
-                    logger.debug(f"Applying IP filter: base_ip={base_ip}, start_octet={start_octet}, end_octet={end_octet}")
+                    logger.debug("Applying IP filter", base_ip=base_ip, start_octet=start_octet, end_octet=end_octet)
                     query = query.filter(
                         IPAddress.address.startswith(base_ip),
                         IPAddress.address.between(f"{base_ip}.{start_octet}.0", f"{base_ip}.{end_octet}.255")
                     )
                 except ValueError as e:
-                    logger.error(f"Некорректный формат ip_range: {ip_range}, ошибка: {str(e)}")
+                    logger.error("Некорректный формат ip_range", ip_range=ip_range, error=str(e))
                     raise HTTPException(status_code=400, detail=f"Некорректный формат ip_range: {ip_range}")
         if os_name:
             query = query.filter(Computer.os_name.ilike(f"%{os_name}%"))
         if check_status:
             try:
-                logger.debug(f"Validating check_status: {check_status}")
+                logger.debug("Validating check_status", check_status=check_status)
                 CheckStatus(check_status)
             except ValueError:
-                logger.error(f"Некорректное значение check_status: {check_status}")
+                logger.error("Некорректное значение check_status", check_status=check_status)
                 raise HTTPException(status_code=422, detail=f"Некорректное значение check_status: {check_status}")
         if server_filter == "server":
             query = query.filter(Computer.os_name.ilike("%server%"))
@@ -233,8 +230,7 @@ async def get_computers(
         if sort_order == "desc":
             sort_column = sort_column.desc()
         
-        # Логируем SQL-запрос для отладки
-        logger.debug(f"SQL Query: {str(query)}")
+        logger.debug("SQL Query", query=str(query))
         
         total = await db.scalar(select(func.count()).select_from(query))
         query = query.offset((page - 1) * limit).limit(limit).order_by(sort_column)
@@ -263,15 +259,15 @@ async def get_computers(
                 ) for c in computers
             ]
         except ValidationError as ve:
-            logger.error(f"Ошибка валидации данных для ComputersResponse: {ve.errors()}", exc_info=True)
+            logger.error("Ошибка валидации данных для ComputersResponse", errors=ve.errors())
             raise HTTPException(status_code=422, detail=f"Ошибка валидации данных: {ve.errors()}")
         
-        logger.debug(f"Возвращено {len(computer_list)} компьютеров, всего: {total}")
+        logger.debug("Возвращено компьютеров", count=len(computer_list), total=total)
         return ComputersResponse(data=computer_list, total=total)
     except HTTPException as e:
         raise
     except Exception as e:
-        logger.error(f"Ошибка получения списка компьютеров: {str(e)}", exc_info=True)
+        logger.error("Ошибка получения списка компьютеров", error=str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") 
       
 @router.get("/computers/{computer_id}", response_model=ComputerSchema, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
@@ -280,17 +276,18 @@ async def get_computer_by_id(
     db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
-    logger_adapter = request.state.logger if request else logger
-    logger_adapter.info(f"Получение данных компьютера с ID: {computer_id}")
+    # Ось виправлення
+    request_logger = request.state.logger.bind(computer_id=computer_id)
     try:
         repo = ComputerRepository(db)
         computer = await repo.async_get_computer_by_id(computer_id)
         if not computer:
-            logger_adapter.warning(f"Компьютер с ID {computer_id} не найден")
+            request_logger.warning("Компьютер не найден")
             raise HTTPException(status_code=404, detail="Компьютер не найден")
+        request_logger.info("Компьютер успешно получен")
         return computer
     except HTTPException:
         raise
     except Exception as e:
-        logger_adapter.error(f"Ошибка получения компьютера с ID {computer_id}: {str(e)}", exc_info=True)
+        request_logger.error("Ошибка получения компьютера", error=str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")

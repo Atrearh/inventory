@@ -2,15 +2,16 @@ from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from .schemas import ErrorResponse
 from .settings import settings
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 async def global_exception_handler(request: Request, exc: Exception):
-    """Глобальный обработчик исключений для приложения."""
+    """Глобальний обробник винятків для додатка."""
     correlation_id = getattr(request.state, 'correlation_id', "unknown")
-    logger = request.state.logger if hasattr(request.state, 'logger') else logging.getLogger(__name__)
-    logger.error(f"Необработанное исключение: {exc}, correlation_id={correlation_id}", exc_info=True)
+    request_logger = request.state.logger if hasattr(request.state, 'logger') else logger
+    request_logger = request_logger.bind(correlation_id=correlation_id)
+    request_logger.error(f"Необроблений виняток: {exc}", exc_info=True)
 
     from winrm.exceptions import WinRMTransportError, WinRMError
     from sqlalchemy.exc import SQLAlchemyError
@@ -21,16 +22,16 @@ async def global_exception_handler(request: Request, exc: Exception):
             error_message = detail
         case SQLAlchemyError():
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Ошибка базы данных"
+            error_message = "Помилка бази даних"
         case WinRMTransportError() | WinRMError():
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            error_message = "Ошибка подключения к WinRM"
+            error_message = "Помилка підключення до WinRM"
         case ValueError():
             status_code = status.HTTP_400_BAD_REQUEST
             error_message = str(exc)
         case _:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Внутренняя ошибка сервера"
+            error_message = "Внутрішня помилка сервера"
 
     response = ErrorResponse(
         error=error_message,

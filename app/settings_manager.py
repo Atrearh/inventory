@@ -3,38 +3,38 @@ from sqlalchemy import select
 from .models import AppSetting
 from .settings import Settings
 from cryptography.fernet import Fernet
-import logging
+import structlog
 from fastapi import HTTPException
 import os
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class SettingsManager:
-    """Класс для управления настройками приложения, включая загрузку и сохранение в базу данных."""
+    """Клас для управління налаштуваннями додатка, включаючи завантаження та збереження в базу даних."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
 
     async def initialize_encryption_key(self, db: AsyncSession):
-        """Инициализирует ENCRYPTION_KEY, если он отсутствует."""
+        """Ініціалізує ENCRYPTION_KEY, якщо він відсутній."""
         if not self.settings.encryption_key:
-            # Проверяем в базе данных
+            # Перевіряємо в базі даних
             existing = await db.execute(select(AppSetting).filter_by(key="encryption_key"))
             existing_setting = existing.scalar_one_or_none()
             if existing_setting:
                 self.settings.encryption_key = existing_setting.value
-                logger.info("ENCRYPTION_KEY загружен из базы данных")
+                logger.info("ENCRYPTION_KEY завантажено з бази даних")
             else:
-                # Генерируем новый ключ и сохраняем в .env и БД
+                # Генеруємо новий ключ і зберігаємо в .env та БД
                 self.settings.encryption_key = Fernet.generate_key().decode()
                 new_setting = AppSetting(key="encryption_key", value=self.settings.encryption_key)
                 db.add(new_setting)
                 await db.commit()
-                # Сохраняем в .env
+                # Зберігаємо в .env
                 env_file = os.path.join(os.path.dirname(__file__), ".env")
                 with open(env_file, "a", encoding="utf-8") as f:
                     f.write(f"\nENCRYPTION_KEY={self.settings.encryption_key}\n")
-                logger.info("ENCRYPTION_KEY сгенерирован и сохранен в .env и базе данных")
+                logger.info("ENCRYPTION_KEY згенеровано та збережено в .env і базі даних")
         from .models import cipher
         if cipher is None:
             from .models import ENCRYPTION_KEY
@@ -42,15 +42,15 @@ class SettingsManager:
             globals()['cipher'] = Fernet(self.settings.encryption_key)
 
     async def load_from_db(self, db: AsyncSession):
-        """Загружает настройки из базы данных."""
+        """Завантажує налаштування з бази даних."""
         try:
-            await self.initialize_encryption_key(db)  # Убедимся, что ключ шифрования инициализирован
+            await self.initialize_encryption_key(db)  # Переконаємося, що ключ шифрування ініціалізовано
             settings = await db.execute(select(AppSetting))
             settings_dict = {setting.key: setting.value for setting in settings.scalars().all()}
             for key, value in settings_dict.items():
                 if hasattr(self.settings, key):
                     try:
-                        # Приведение типов для числовых полей
+                        # Приведення типів для числових полів
                         if key in [
                             "scan_max_workers",
                             "polling_days_threshold",
@@ -63,20 +63,20 @@ class SettingsManager:
                         ]:
                             setattr(self.settings, key, int(value))
                         elif key == "test_hosts" and value == "":
-                            # Используем значение по умолчанию, если в БД пустая строка
+                            # Використовуємо значення за замовчуванням, якщо в БД порожній рядок
                             setattr(self.settings, key, "localhost")
-                            logger.debug(f"Пустое значение test_hosts в БД, использовано значение по умолчанию: localhost")
+                            logger.debug(f"Порожнє значення test_hosts в БД, використано значення за замовчуванням: localhost")
                         else:
                             setattr(self.settings, key, value)
                     except ValueError as e:
-                        logger.error(f"Ошибка преобразования настройки {key}: {value}, ошибка: {e}")
-            logger.info("Настройки успешно загружены из базы данных")
+                        logger.error(f"Помилка перетворення налаштування {key}: {value}, помилка: {e}")
+            logger.info("Налаштування успішно завантажено з бази даних")
         except Exception as e:
-            logger.error(f"Ошибка загрузки настроек из базы данных: {str(e)}")
-            raise HTTPException(status_code=500, detail="Ошибка загрузки настроек из базы данных")
+            logger.error(f"Помилка завантаження налаштувань з бази даних: {str(e)}")
+            raise HTTPException(status_code=500, detail="Помилка завантаження налаштувань з бази даних")
 
     async def save_to_db(self, db: AsyncSession, updates: dict):
-        """Сохраняет обновленные настройки в базу данных."""
+        """Зберігає оновлені налаштування в базу даних."""
         try:
             for key, value in updates.items():
                 if value is not None and hasattr(self.settings, key):
@@ -89,8 +89,8 @@ class SettingsManager:
                         db.add(new_setting)
                     setattr(self.settings, key, value)
             await db.commit()
-            logger.info("Настройки успешно сохранены в базу данных")
+            logger.info("Налаштування успішно збережено в базу даних")
         except Exception as e:
             await db.rollback()
-            logger.error(f"Ошибка сохранения настроек в базу данных: {str(e)}")
-            raise HTTPException(status_code=500, detail="Ошибка сохранения настроек в базу данных")
+            logger.error(f"Помилка збереження налаштувань в базу даних: {str(e)}")
+            raise HTTPException(status_code=500, detail="Помилка збереження налаштувань в базу даних")

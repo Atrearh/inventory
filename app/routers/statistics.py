@@ -7,24 +7,24 @@ from typing import List
 from ..logging_config import setup_logging
 from ..settings import settings
 from .auth import get_current_user
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 setup_logging(log_level=settings.log_level)
 
 router = APIRouter(tags=["statistics"])
 
 @router.get("/statistics", response_model=DashboardStats, operation_id="get_statistics", dependencies=[Depends(get_current_user)])
 async def get_statistics(
-    metrics: List[str] = Query(None, description="Список метрик для получения статистики"),
+    metrics: List[str] = Query(None, description="Список метрик для отримання статистики"),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info(f"Запрос статистики с метриками: {metrics}")
+    logger.info(f"Запит статистики з метриками: {metrics}")
     try:
         repo = StatisticsRepository(db)
         if metrics is None:
             metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats"]
         return await repo.get_statistics(metrics)
     except Exception as e:
-        logger.error(f"Ошибка получения статистики: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+        logger.error(f"Помилка отримання статистики: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Помилка сервера: {str(e)}")

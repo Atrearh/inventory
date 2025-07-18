@@ -1,4 +1,4 @@
-# generate_ts_types.py
+# File: generate_ts_types.py
 import os
 import logging
 import sys
@@ -9,38 +9,31 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 def generate_ts_types():
-    """Генерирует TypeScript-типы из Pydantic-схем с использованием pydantic-to-typescript."""
+    """Генерує TypeScript-типи з SQLModel моделей."""
     try:
-        # Определяем корневую директорию проекта (C:\Users\semen\inv)
         project_root = os.path.dirname(os.path.abspath(__file__))
-        
-        # Добавляем корневую директорию в sys.path для импорта как пакета
         sys.path.insert(0, project_root)
         
-        # Формируем путь к модулю schemas
-        module_path = os.path.join(project_root, "app", "schemas.py")
+        module_path = os.path.join(project_root, "app", "models.py")
         output_file = os.path.join(project_root, "front", "src", "types", "schemas.ts")
         
-        logger.info(f"Генерация TypeScript-типов из {module_path} в {output_file}")
+        logger.info(f"Генерація TypeScript-типів з {module_path} до {output_file}")
         
-        # Создаем директорию для выходного файла
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        # Динамический импорт модуля
-        spec = importlib.util.spec_from_file_location("app.schemas", module_path)
+        spec = importlib.util.spec_from_file_location("app.models", module_path)
         if spec is None:
-            raise ImportError(f"Не удалось найти модуль по пути: {module_path}")
+            raise ImportError(f"Не вдалося знайти модуль за шляхом: {module_path}")
         module = importlib.util.module_from_spec(spec)
-        sys.modules["app.schemas"] = module
+        sys.modules["app.models"] = module
         spec.loader.exec_module(module)
         
-        # Генерируем TypeScript-типы
-        generate_typescript_defs("app.schemas", output_file)
+        generate_typescript_defs("app.models", output_file)
         
-        logger.info(f"TypeScript-типы успешно сгенерированы в {output_file}")
+        logger.info(f"TypeScript-типи успішно згенеровано в {output_file}")
         
     except Exception as e:
-        logger.error(f"Ошибка при генерации TypeScript-типов: {str(e)}")
+        logger.error(f"Помилка при генерації TypeScript-типів: {str(e)}")
         raise
 
 if __name__ == "__main__":

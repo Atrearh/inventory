@@ -1,44 +1,32 @@
 {
   "name": "inv-vite",
+  "private": true,
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "type": "module", 
   "scripts": {
-    "dev": "concurrently \"vite\" \"npm run generate:ts\"",
+    "dev": "vite", 
     "build": "npm run generate:ts && vite build",
     "preview": "vite preview",
-    "generate:ts": "python ../generate_ts_types.py",
-    "generate:ts:watch": "watchmedo shell-command --patterns='*.py' --recursive --command='python ../generate_ts_types.py' ."
+    "generate:ts": "python ../generate_ts_types.py"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@tanstack/react-query": "^5.80.6",
     "antd": "^5.26.0",
     "axios": "^1.9.0",
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
-    "prop-types": "^15.8.1",
+    "jwt-decode": "^4.0.0", 
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.0",
-    "react-csv": "^2.2.2",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0"
   },
   "devDependencies": {
-    "@types/axios": "^0.9.36",
-    "@types/chart.js": "^2.9.41",
-    "@types/date-fns": "^2.5.3",
     "@types/node": "^24.0.1",
     "@types/react": "^18.3.12",
-    "@types/react-csv": "^1.1.10",
     "@types/react-dom": "^18.3.1",
-    "@types/react-router-dom": "^5.3.3",
     "@vitejs/plugin-react": "^4.3.3",
-    "concurrently": "^9.1.2",
-    "vite": "^6.3.5",
-    "vite-plugin-run": "^0.6.1"
+    "typescript": "^5.2.2", 
+    "vite": "^6.3.5"
   }
 }

@@ -38,9 +38,9 @@ class Domain(Base):
 class ADComputer(Base):
     __tablename__ = "ad_computers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    os_name: Mapped[Optional[str]] = mapped_column(String)
-    object_guid: Mapped[Optional[str]] = mapped_column(String)
+    hostname: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)  # Указываем длину 255
+    os_name: Mapped[Optional[str]] = mapped_column(String(255))  # Указываем длину для других строковых полей
+    object_guid: Mapped[Optional[str]] = mapped_column(String(36))  # GUID обычно 36 символов
     when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean)

@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger, Column
+from sqlalchemy import Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger, Column, Text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
 from .database import Base
@@ -35,16 +35,6 @@ class Domain(Base):
         Index('idx_domain_name', 'name'),
     )
     
-class ADComputer(Base):
-    __tablename__ = "ad_computers"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    hostname: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)  # Указываем длину 255
-    os_name: Mapped[Optional[str]] = mapped_column(String(255))  # Указываем длину для других строковых полей
-    object_guid: Mapped[Optional[str]] = mapped_column(String(36))  # GUID обычно 36 символов
-    when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
-    last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
 
 class Processor(Base):
     __tablename__ = "processors"
@@ -87,18 +77,26 @@ class MACAddress(Base):
 class Computer(Base):
     __tablename__ = "computers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    hostname: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)  # Видалено unique=True
     physical_disks: Mapped[List["PhysicalDisk"]] = relationship("PhysicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    os_name: Mapped[Optional[str]] = mapped_column(String)
-    os_version: Mapped[Optional[str]] = mapped_column(String)
+    os_name: Mapped[Optional[str]] = mapped_column(String(255))
+    os_version: Mapped[Optional[str]] = mapped_column(String(50))
     ram: Mapped[Optional[int]] = mapped_column(Integer)
-    motherboard: Mapped[Optional[str]] = mapped_column(String)
+    motherboard: Mapped[Optional[str]] = mapped_column(String(255))
     last_boot: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
     check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), default=CheckStatus.success, nullable=False)
+    # Нові поля для AD
+    object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)
+    when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
+    ad_notes: Mapped[Optional[str]] = mapped_column(Text)
+    local_notes: Mapped[Optional[str]] = mapped_column(Text)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
@@ -106,7 +104,9 @@ class Computer(Base):
     video_cards: Mapped[List["VideoCard"]] = relationship("VideoCard", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     processors: Mapped[List["Processor"]] = relationship("Processor", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     __table_args__ = (
-        Index('idx_computer_hostname', 'hostname'),
+        Index('idx_object_guid', 'object_guid', unique=True),
+        Index('idx_computers_last_updated', 'last_updated'),
+        Index('idx_computers_filters', 'os_name', 'check_status', 'last_updated'),
     )
 
 class Role(Base):

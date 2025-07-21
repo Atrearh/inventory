@@ -10,6 +10,7 @@ from pathlib import Path
 logger = structlog.get_logger(__name__)
 
 class Settings(BaseSettings):
+    ad_base_dn: str | None = None
     database_url: Optional[NonEmptyStr] = None
     ad_server_url: Optional[NonEmptyStr] = None
     domain: Optional[NonEmptyStr] = None

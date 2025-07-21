@@ -1,10 +1,10 @@
-# app/services/ad_service.py
 import logging
 from ldap3 import Server, Connection, ALL
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
+from ..models import Computer, CheckStatus
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class ADService:
             conn.search(
                 search_base=base_dn,
                 search_filter="(objectClass=computer)",
-                attributes=["dNSHostName", "operatingSystem", "objectGUID", "whenCreated", "whenChanged", "userAccountControl"]
+                attributes=["dNSHostName", "operatingSystem", "objectGUID", "whenCreated", "whenChanged", "userAccountControl", "description"]
             )
             logger.debug(f"Найдено записей: {len(conn.entries)}")
 
@@ -46,7 +46,8 @@ class ADService:
                     "object_guid": object_guid,
                     "when_created": entry.whenCreated.value if entry.whenCreated else None,
                     "when_changed": entry.whenChanged.value if entry.whenChanged else None,
-                    "enabled": enabled
+                    "enabled": enabled,
+                    "ad_notes": entry.description.value if entry.description else None
                 })
                 logger.debug(f"Найден хост: {dns_hostname}, enabled: {enabled}, object_guid: {object_guid}")
             logger.info(f"Найдено {len(computers)} компьютеров в AD")
@@ -62,6 +63,32 @@ class ADService:
         """Сканирует AD и обновляет базу данных."""
         logger.info("Начало сканирования и обновления AD")
         computers = self.get_ad_computers()
+        ad_guids = {c["object_guid"] for c in computers}
+
+        # Обновление или создание записей
         for computer_data in computers:
-            await self.repo.async_upsert_ad_computer(computer_data)  # Убрали db, так как метод уже использует сессию из repo
+            computer = await self.repo.get_computer_by_guid(db, computer_data["object_guid"])
+            if computer:
+                # Проверка на переименование
+                if computer.hostname != computer_data["hostname"]:
+                    logger.info(f"Переименование комп’ютера: {computer.hostname} -> {computer_data['hostname']}")
+                computer_data["is_deleted"] = not computer_data["enabled"]
+                await self.repo.async_update_computer_by_guid(db, computer_data["object_guid"], computer_data)
+            else:
+                computer_data["is_deleted"] = not computer_data["enabled"]
+                computer_data["check_status"] = CheckStatus.unreachable
+                await self.repo.async_create_computer(db, computer_data)
+
+        # Пометка удаленных компьютеров
+        existing_computers = await self.repo.get_all_computers_with_guid(db)
+        for computer in existing_computers:
+            if computer.object_guid and computer.object_guid not in ad_guids:
+                logger.info(f"Компьютер {computer.hostname} удален из AD")
+                await self.repo.async_update_computer_by_guid(
+                    db,
+                    computer.object_guid,
+                    {"is_deleted": True, "enabled": False}
+                )
+
+        await db.commit()
         logger.info(f"Успешно обработано {len(computers)} компьютеров AD")

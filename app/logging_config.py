@@ -25,8 +25,8 @@ def setup_logging(log_level: str = "DEBUG"):
             TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
             structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.UnicodeDecoder(),  # Додаємо декодування Unicode
-            JSONRenderer(indent=2, ensure_ascii=False)  # Вимикаємо ескейпінг ASCII
+            structlog.processors.UnicodeDecoder(),
+            JSONRenderer(ensure_ascii=False)  # Убрали indent для однострочного JSON
         ],
         context_class=dict,
         logger_factory=LoggerFactory(),
@@ -38,13 +38,16 @@ def setup_logging(log_level: str = "DEBUG"):
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
 
+    # Форматтер для однострочного вывода
+    log_formatter = logging.Formatter(
+        '%(asctime)s,%(msecs)03d %(levelname)s:%(name)s:%(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
     # Налаштування обробника для консолі
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(getattr(logging, log_level))
-    console_handler.setFormatter(logging.Formatter(
-        '%(asctime)s,%(msecs)03d %(levelname)s:%(name)s:%(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
+    console_handler.setFormatter(log_formatter)
 
     # Налаштування обробника для файлу з ротацією
     file_handler = TimedRotatingFileHandler(
@@ -55,10 +58,7 @@ def setup_logging(log_level: str = "DEBUG"):
         encoding='utf-8'
     )
     file_handler.setLevel(getattr(logging, log_level))
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s,%(msecs)03d %(levelname)s:%(name)s:%(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
+    file_handler.setFormatter(log_formatter)
 
     # Додаємо обробники до стандартного логера, який використовується structlog
     stdlib_logger = logging.getLogger()

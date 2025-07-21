@@ -20,6 +20,85 @@ class ComputerRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def get_computer_by_guid(self, db: AsyncSession, object_guid: str) -> Optional[models.Computer]:
+        """Отримує комп'ютер за object_guid."""
+        bound_logger = logger.bind(object_guid=object_guid)
+        try:
+            result = await db.execute(
+                select(models.Computer)
+                .options(
+                    joinedload(models.Computer.ip_addresses),
+                    joinedload(models.Computer.mac_addresses),
+                    joinedload(models.Computer.processors),
+                    joinedload(models.Computer.physical_disks),
+                    joinedload(models.Computer.logical_disks),
+                    joinedload(models.Computer.video_cards),
+                    joinedload(models.Computer.software),
+                    joinedload(models.Computer.roles)
+                )
+                .filter(models.Computer.object_guid == object_guid)
+            )
+            computer = result.scalars().first()
+            bound_logger.debug("Комп'ютер отримано за object_guid" if computer else "Комп'ютер не знайдено")
+            return computer
+        except SQLAlchemyError as e:
+            bound_logger.error("Помилка отримання комп'ютера за object_guid", error=str(e))
+            raise
+
+    async def async_update_computer_by_guid(self, db: AsyncSession, object_guid: str, data: Dict[str, Any]) -> None:
+        """Оновлює комп'ютер за object_guid."""
+        bound_logger = logger.bind(object_guid=object_guid)
+        try:
+            await db.execute(
+                update(models.Computer)
+                .where(models.Computer.object_guid == object_guid)
+                .values(**data)
+            )
+            bound_logger.debug("Комп'ютер оновлено за object_guid")
+        except SQLAlchemyError as e:
+            bound_logger.error("Помилка оновлення комп'ютера за object_guid", error=str(e))
+            await db.rollback()
+            raise
+
+    async def async_create_computer(self, db: AsyncSession, data: Dict[str, Any]) -> models.Computer:
+        """Створює новий комп'ютер."""
+        bound_logger = logger.bind(hostname=data.get("hostname"))
+        try:
+            computer = models.Computer(**data)
+            db.add(computer)
+            await db.flush()
+            bound_logger.debug(f"Комп'ютер створено з ID {computer.id}")
+            return computer
+        except SQLAlchemyError as e:
+            bound_logger.error("Помилка створення комп'ютера", error=str(e))
+            await db.rollback()
+            raise
+
+    async def get_all_computers_with_guid(self, db: AsyncSession) -> List[models.Computer]:
+        """Отримує всі комп'ютери з ненульовим object_guid."""
+        bound_logger = logger.bind()
+        try:
+            result = await db.execute(
+                select(models.Computer)
+                .options(
+                    joinedload(models.Computer.ip_addresses),
+                    joinedload(models.Computer.mac_addresses),
+                    joinedload(models.Computer.processors),
+                    joinedload(models.Computer.physical_disks),
+                    joinedload(models.Computer.logical_disks),
+                    joinedload(models.Computer.video_cards),
+                    joinedload(models.Computer.software),
+                    joinedload(models.Computer.roles)
+                )
+                .filter(models.Computer.object_guid.isnot(None))
+            )
+            computers = result.scalars().all()
+            bound_logger.debug(f"Отримано {len(computers)} комп'ютерів з object_guid")
+            return computers
+        except SQLAlchemyError as e:
+            bound_logger.error("Помилка отримання комп'ютерів з object_guid", error=str(e))
+            raise
+
     async def _get_or_create_computer(self, computer_data: dict, hostname: str) -> models.Computer:
         """Получает или создает компьютер в базе данных по hostname."""
         bound_logger = logger.bind(hostname=hostname)
@@ -47,7 +126,8 @@ class ComputerRepository:
             computer_data = computer.model_dump(
                 include={
                     "hostname", "os_name", "os_version", "ram",
-                    "motherboard", "last_boot", "is_virtual", "check_status"
+                    "motherboard", "last_boot", "is_virtual", "check_status",
+                    "object_guid", "when_created", "when_changed", "enabled", "ad_notes", "local_notes", "is_deleted"
                 }
             )
             bound_logger.debug(f"Дані для оновлення: {computer_data}")
@@ -103,7 +183,7 @@ class ComputerRepository:
             query = query.filter(models.Computer.os_name.ilike("%server%"))
         elif server_filter == "client":
             query = query.filter(~models.Computer.os_name.ilike("%server%"))
-        if sort_by in ["hostname", "os_name", "last_updated", "check_status"]:
+        if sort_by in ["hostname", "os_name", "last_updated", "check_status", "enabled", "is_deleted"]:
             order_column = getattr(models.Computer, sort_by)
             if sort_order.lower() == "desc":
                 order_column = order_column.desc()
@@ -111,20 +191,6 @@ class ComputerRepository:
         else:
             query = query.order_by(models.Computer.hostname)
         return query
-
-    def _generate_cache_key(
-        self,
-        os_name: Optional[str],
-        check_status: Optional[str],
-        sort_by: str,
-        sort_order: str,
-        page: int,
-        limit: int,
-        server_filter: Optional[str]
-    ) -> str:
-        """Генерирует ключ для кэширования на основе параметров запроса."""
-        params = f"{os_name}|{check_status}|{sort_by}|{sort_order}|{page}|{limit}|{server_filter}"
-        return hashlib.md5(params.encode()).hexdigest()
 
     @lru_cache(maxsize=100)
     async def get_computers(

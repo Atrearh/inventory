@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..repositories.statistics import StatisticsRepository
@@ -6,7 +6,7 @@ from ..schemas import DashboardStats
 from typing import List
 from ..logging_config import setup_logging
 from ..settings import settings
-from .auth import get_current_user
+from .auth import get_current_user 
 import structlog
 
 logger = structlog.get_logger(__name__)

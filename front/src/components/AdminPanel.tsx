@@ -1,9 +1,11 @@
+// src/components/AdminPanel.tsx
 import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex } from 'antd';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react'; 
-import { startScan, startADScan, register, getUsers, updateUser, deleteUser } from '../api/api';
+import { useMutation } from '@tanstack/react-query';
+import { useState } from 'react';
+import { startScan, startADScan, register, updateUser, deleteUser } from '../api/api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
+import { useUsers } from '../hooks/useApiQueries'; // Новий імпорт
 
 interface MutationResponse {
   status: string;
@@ -16,18 +18,14 @@ const AdminPanel: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRead | null>(null);
 
-  const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useQuery<UserRead[], Error>({
-    queryKey: ['users'],
-    queryFn: getUsers,
-    enabled: isAuthenticated,
-  });
+  const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useUsers();
 
   const { mutate: registerMutation, isPending: isRegisterLoading } = useMutation<UserRead, Error, UserCreate>({
     mutationFn: register,
     onSuccess: () => {
       message.success('Пользователь успешно зарегистрирован');
       refetchUsers();
-      setIsModalVisible(false); 
+      setIsModalVisible(false);
     },
     onError: (error: any) => message.error(`Ошибка регистрации: ${error.response?.data?.detail || error.message}`),
   });
@@ -128,12 +126,11 @@ const AdminPanel: React.FC = () => {
 
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <h2>Список пользователей</h2>
-        {/*  Кнопка для добавления нового пользователя */}
         <Button type="primary" onClick={handleAddNewUser}>
           Добавить пользователя
         </Button>
       </Flex>
-      
+
       <Table
         dataSource={users}
         columns={columns}
@@ -142,7 +139,6 @@ const AdminPanel: React.FC = () => {
         pagination={{ pageSize: 10 }}
       />
 
-      {/*  Модальное окно для создания и редактирования */}
       <Modal
         title={editingUser ? 'Редактирование пользователя' : 'Новый пользователь'}
         open={isModalVisible}
@@ -161,7 +157,7 @@ const AdminPanel: React.FC = () => {
           </Button>,
         ]}
       >
-        <Form form={form} layout="vertical" onFinish={onFinish} style={{marginTop: 24}}>
+        <Form form={form} layout="vertical" onFinish={onFinish} style={{ marginTop: 24 }}>
           <Form.Item
             name="username"
             label="Имя пользователя"
@@ -176,7 +172,6 @@ const AdminPanel: React.FC = () => {
           >
             <Input />
           </Form.Item>
-          {/*  Поле пароля показывается только при создании нового пользователя */}
           {!editingUser && (
             <Form.Item
               name="password"

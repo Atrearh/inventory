@@ -1,7 +1,5 @@
 // src/components/Dashboard.tsx
-import { useQuery } from '@tanstack/react-query';
-import { getComputers, getStatistics } from '../api/api';
-import { ComputerList, ComputersResponse, DashboardStats } from '../types/schemas';
+import { useStatistics, useComputers } from '../hooks/useApiQueries';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Modal, Table, notification } from 'antd';
@@ -11,7 +9,8 @@ import SubnetStats from './SubnetStats';
 import DashboardMenu from './DashboardMenu';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { AxiosError } from 'axios';
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
+import { ComputerList, ComputersResponse, DashboardStats } from '../types/schemas';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -29,52 +28,25 @@ const Dashboard: React.FC = () => {
   const [filters, setFilters] = useState({ page: 1, limit: 10 });
   const [filteredComputers, setFilteredComputers] = useState<ComputerList[]>([]);
 
-  const { data, error: statsError, isLoading, refetch: refetchStats } = useQuery<DashboardStats, Error>({
-    enabled: isAuthenticated, 
-    queryKey: ['statistics'],
-    queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
-    refetchOnWindowFocus: false,
-    staleTime: 60 * 60 * 1000,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
-  });
+  const { data, error: statsError, isLoading, refetch: refetchStats } = useStatistics([
+    'total_computers',
+    'os_distribution',
+    'low_disk_space_with_volumes',
+    'last_scan_time',
+    'status_stats',
+  ]);
 
-  const { data: computersData, isLoading: isComputersLoading, error: computersError, refetch: refetchComputers } = useQuery<
-    ComputersResponse,
-    Error
-  >({
-    queryKey: ['computers', selectedOs, selectedSubnet, filters.page, filters.limit],
-    queryFn: () => {
-      console.log('Query params:', { selectedOs, selectedSubnet, page: filters.page, limit: filters.limit });
-      const params: any = { page: filters.page, limit: filters.limit };
-      if (selectedSubnet) {
-        if (selectedSubnet === 'Неизвестно') {
-          // Фильтр для компьютеров без IP-адресов
-          params.ip_range = 'none'; // Специальный параметр для бэкенда
-          console.log('Applying filter for computers without IP addresses');
-        } else {
-          const match = selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/);
-          if (match) {
-            const baseIp = match[1];
-            const thirdOctet = parseInt(match[2], 10);
-            const ipFilter = `${baseIp}.[${thirdOctet}-${thirdOctet + 1}]`;
-            console.log('Applying ip_range filter:', ipFilter);
-            params.ip_range = ipFilter;
-          } else {
-            console.warn('Invalid subnet format:', selectedSubnet);
-            params.ip_range = undefined;
-          }
-        }
-      } else if (selectedOs) {
-        const isServerOs = selectedOs === 'Other Servers';
-        params.os_name = selectedOs === 'Unknown' || isServerOs ? undefined : selectedOs;
-        params.server_filter = isServerOs ? 'server' : undefined;
-      }
-      return getComputers(params);
-    },
-    enabled: !!(selectedOs || selectedSubnet),
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  const { data: computersData, isLoading: isComputersLoading, error: computersError, refetch: refetchComputers } = useComputers({
+    page: filters.page,
+    limit: filters.limit,
+    os_name: selectedOs && selectedOs !== 'Unknown' && selectedOs !== 'Other Servers' ? selectedOs : undefined,
+    server_filter: selectedOs === 'Other Servers' ? 'server' : undefined,
+    ip_range:
+      selectedSubnet && selectedSubnet !== 'Неизвестно'
+        ? selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[1] + `.[${parseInt(selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[2] || '0', 10)}-${parseInt(selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[2] || '0', 10) + 1}]`
+        : selectedSubnet === 'Неизвестно'
+        ? 'none'
+        : undefined,
   });
 
   useEffect(() => {
@@ -108,14 +80,14 @@ const Dashboard: React.FC = () => {
         });
       }
     }
-    if (computersData?.data) {
+    if (computersData?.data && (selectedOs || selectedSubnet)) {
       console.log('Filtered computers:', computersData.data.slice(0, 5));
       setFilteredComputers(computersData.data);
-      setIsModalVisible(true);
+      setIsModalVisible(true); // Відкриваємо модальне вікно лише якщо вибрано OS або підмережу
     } else {
       setFilteredComputers([]);
     }
-  }, [statsError, computersError, computersData]);
+  }, [statsError, computersError, computersData, selectedOs, selectedSubnet]);
 
   useEffect(() => {
     if (selectedOs || selectedSubnet) {

@@ -74,7 +74,7 @@ async def scan_status(
         logger_adapter.error(f"Помилка отримання статусу задачі {task_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Помилка сервера")
 
-@router.post("/api/ad/scan")
+@router.post("/ad/scan")
 async def start_ad_scan(
     background_tasks: BackgroundTasks,
     service: ComputerService = Depends(get_computer_service),

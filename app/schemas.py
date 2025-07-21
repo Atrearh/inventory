@@ -122,6 +122,14 @@ class ComputerBase(BaseSchema):
     roles: List[Role] = []
     software: List[Software] = []
     video_cards: List[VideoCard] = []
+    # Нові поля
+    object_guid: Optional[NonEmptyStr] = None
+    when_created: Optional[datetime] = None
+    when_changed: Optional[datetime] = None
+    enabled: Optional[bool] = None
+    ad_notes: Optional[NonEmptyStr] = None
+    local_notes: Optional[NonEmptyStr] = None
+    is_deleted: Optional[bool] = None
 
     @field_validator('hostname')
     @classmethod

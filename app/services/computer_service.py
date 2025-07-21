@@ -13,9 +13,8 @@ from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk,
 from ..data_collector import WinRMDataCollector
 from ..utils import validate_ip_address, validate_mac_address
 from ..database import async_session_factory 
-import structlog
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class ComputerService:
     def __init__(self, db: AsyncSession):
@@ -346,7 +345,7 @@ class ComputerService:
             return False
 
     async def create_scan_task(self, task_id: str) -> Optional[models.ScanTask]:
-        logger = logger.bind(task_id=task_id)
+        logger_with_task = logger.bind(task_id=task_id)  # Используем локальную переменную для привязки task_id
         try:
             result = await self.computer_repo.db.execute(
                 select(models.ScanTask).filter(models.ScanTask.id == task_id)
@@ -354,11 +353,11 @@ class ComputerService:
             existing_task = result.scalars().first()
             if existing_task:
                 if existing_task.status in [models.ScanStatus.completed, models.ScanStatus.failed]:
-                    logger.warning(f"Задача {task_id} існує зі статусом {existing_task.status}, видаляємо")
+                    logger_with_task.warning(f"Задача {task_id} існує зі статусом {existing_task.status}, видаляємо")
                     await self.computer_repo.db.delete(existing_task)
                     await self.computer_repo.db.flush()
                 else:
-                    logger.warning(f"Задача {task_id} існує зі статусом {existing_task.status}")
+                    logger_with_task.warning(f"Задача {task_id} існує зі статусом {existing_task.status}")
                     return existing_task
 
             db_task = models.ScanTask(
@@ -370,77 +369,77 @@ class ComputerService:
             self.computer_repo.db.add(db_task)
             await self.computer_repo.db.flush()
             await self.computer_repo.db.refresh(db_task)
-            logger.info("Создана новая задача сканирования")
+            logger_with_task.info("Создана новая задача сканирования")
             return db_task
         except Exception as e:
-            logger.error("Помилка створення задачі", error=str(e))
+            logger_with_task.error("Помилка створення задачі", error=str(e))
             await self.computer_repo.db.rollback()
             raise
 
-    async def run_scan_task(self, task_id: str, logger_adapter: logging.LoggerAdapter, hostname: Optional[str] = None):
-        logger = logger.bind(task_id=task_id)
-        hosts = []
-        successful = 0
-        try:
-            task = await self.create_scan_task(task_id)
-            if not task:
-                logger.error("Не вдалося створити задачу")
-                return
+async def run_scan_task(self, task_id: str, logger_adapter: logging.LoggerAdapter, hostname: Optional[str] = None):
+    logger_with_task = logger.bind(task_id=task_id)  # Используем локальную переменную для привязки task_id
+    hosts = []
+    successful = 0
+    try:
+        task = await self.create_scan_task(task_id)
+        if not task:
+            logger_with_task.error("Не вдалося створити задачу")
+            return
 
-            if hostname:
-                hosts = [hostname]
-                logger.info(f"Сканування одного хоста: {hostname}")
-                all_hosts = await self.get_hosts_to_scan()
-                if hostname not in all_hosts:
-                    logger.warning(f"Хост {hostname} не знайдено")
-                    await self.update_scan_task_status(
-                        task_id=task_id,
-                        status=models.ScanStatus.failed,
-                        scanned_hosts=0,
-                        successful_hosts=0,
-                        error=f"Хост {hostname} не знайдено"
-                    )
-                    return
-            else:
-                hosts = await self.get_hosts_to_scan()
-                logger.info(f"Отримано {len(hosts)} хостів")
-
-            if not hosts:
-                logger.warning("Список хостів порожній")
+        if hostname:
+            hosts = [hostname]
+            logger_with_task.info(f"Сканування одного хоста: {hostname}")
+            all_hosts = await self.get_hosts_to_scan()
+            if hostname not in all_hosts:
+                logger_with_task.warning(f"Хост {hostname} не знайдено")
                 await self.update_scan_task_status(
-                    task_id=task_id, 
-                    status=models.ScanStatus.completed, 
-                    scanned_hosts=0, 
-                    successful_hosts=0
+                    task_id=task_id,
+                    status=models.ScanStatus.failed,
+                    scanned_hosts=0,
+                    successful_hosts=0,
+                    error=f"Хост {hostname} не знайдено"
                 )
                 return
+        else:
+            hosts = await self.get_hosts_to_scan()
+            logger_with_task.info(f"Отримано {len(hosts)} хостів")
 
-            async def process_host_with_semaphore(host: str):
-                async with self.semaphore:
-                    result = await self.process_single_host(host, logger_adapter)
-                    if result:
-                        nonlocal successful
-                        successful += 1
-
-            tasks = [process_host_with_semaphore(host) for host in hosts]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
+        if not hosts:
+            logger_with_task.warning("Список хостів порожній")
             await self.update_scan_task_status(
                 task_id=task_id, 
                 status=models.ScanStatus.completed, 
-                scanned_hosts=len(hosts), 
-                successful_hosts=successful
+                scanned_hosts=0, 
+                successful_hosts=0
             )
-            logger.info(f"Сканування завершено: {successful}/{len(hosts)} хостів успішно")
-        
-        except Exception as e:
-            logger.error("Критична помилка в задачі", error=str(e))
-            await self.computer_repo.db.rollback()
-            await self.update_scan_task_status(
-                task_id=task_id,
-                status=models.ScanStatus.failed,
-                scanned_hosts=len(hosts),
-                successful_hosts=successful,
-                error=str(e)
-            )
-            raise
+            return
+
+        async def process_host_with_semaphore(host: str):
+            async with self.semaphore:
+                result = await self.process_single_host(host, logger_adapter)
+                if result:
+                    nonlocal successful
+                    successful += 1
+
+        tasks = [process_host_with_semaphore(host) for host in hosts]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        await self.update_scan_task_status(
+            task_id=task_id, 
+            status=models.ScanStatus.completed, 
+            scanned_hosts=len(hosts), 
+            successful_hosts=successful
+        )
+        logger_with_task.info(f"Сканування завершено: {successful}/{len(hosts)} хостів успішно")
+    
+    except Exception as e:
+        logger_with_task.error("Критична помилка в задачі", error=str(e))
+        await self.computer_repo.db.rollback()
+        await self.update_scan_task_status(
+            task_id=task_id,
+            status=models.ScanStatus.failed,
+            scanned_hosts=len(hosts),
+            successful_hosts=successful,
+            error=str(e)
+        )
+        raise

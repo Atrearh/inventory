@@ -1,5 +1,5 @@
 import ipaddress
-import structlog
+import logging
 import uvicorn
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ from .services.encryption_service import EncryptionService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
 settings_manager = SettingsManager(settings)
 
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
                 else:
                     app.state.allowed_ip_networks.append(ipaddress.ip_address(ip_range))
             except ValueError as e:
-                logger.error(f"Неверный формат IP-диапазона {ip_range}", error=str(e))
+                logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
                 raise
 
         # Инициализация encryption_service и загрузка скриптов
@@ -41,18 +41,18 @@ async def lifespan(app: FastAPI):
             await settings_manager.load_from_db(db)
         app.state.encryption_service = EncryptionService(settings.encryption_key)
         await init_db()
-        
+
         # Предварительная загрузка скриптов
         try:
             await script_cache.preload_scripts()
             logger.info("Все скрипты предварительно загружены в кэш")
         except Exception as e:
-            logger.error(f"Ошибка при предварительной загрузке скриптов", error=str(e))
+            logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}")
             raise
 
         yield
     except Exception as e:
-        logger.error("Ошибка инициализации приложения", error=str(e))
+        logger.error(f"Ошибка инициализации приложения: {str(e)}")
         raise
     finally:
         logger.info("Завершение работы...")

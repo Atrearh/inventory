@@ -2,18 +2,18 @@
 from sqlalchemy import Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger, Column, Text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
-from .database import Base
+from app.database import Base 
 from typing import Optional, List
 from datetime import datetime
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 import logging
-from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 class CheckStatus(enum.Enum):
     success = "success"
     failed = "failed"
     unreachable = "unreachable"
+    partially_successful = "partially_successful"
 
 class ScanStatus(enum.Enum):
     pending = "pending"
@@ -113,7 +113,7 @@ class Role(Base):
     __tablename__ = "roles"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
-    name: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="roles")
     detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -140,9 +140,9 @@ class PhysicalDisk(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
     model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    serial: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    interface: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    media_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    serial: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    interface: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    media_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="physical_disks")
@@ -156,7 +156,7 @@ class LogicalDisk(Base):
     computer_id: Mapped[int] = mapped_column(Integer, ForeignKey("computers.id"), nullable=False)
     physical_disk_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("physical_disks.id"), nullable=True)
     device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    volume_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    volume_label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     total_space: Mapped[int] = mapped_column(BigInteger, nullable=False)
     free_space: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -182,11 +182,11 @@ class VideoCard(Base):
 
 class ScanTask(Base):
     __tablename__ = "scan_tasks"
-    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     status: Mapped[ScanStatus] = mapped_column(Enum(ScanStatus), default=ScanStatus.pending, nullable=False)
     scanned_hosts: Mapped[int] = mapped_column(Integer, default=0)
     successful_hosts: Mapped[int] = mapped_column(Integer, default=0)
-    error: Mapped[Optional[str]] = mapped_column(String)
+    error: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
 

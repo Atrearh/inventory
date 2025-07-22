@@ -4,7 +4,8 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
-from ..models import Computer, CheckStatus
+from ..models import CheckStatus
+from datetime import datetime 
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class ADService:
 
         # Обновление или создание записей
         for computer_data in computers:
+            computer_data["last_updated"] = datetime.utcnow()  # Додаємо поле last_updated
             computer = await self.repo.get_computer_by_guid(db, computer_data["object_guid"])
             if computer:
                 # Проверка на переименование
@@ -87,7 +89,7 @@ class ADService:
                 await self.repo.async_update_computer_by_guid(
                     db,
                     computer.object_guid,
-                    {"is_deleted": True, "enabled": False}
+                    {"is_deleted": True, "enabled": False, "last_updated": datetime.utcnow()}  # Додаємо last_updated
                 )
 
         await db.commit()

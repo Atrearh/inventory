@@ -8,6 +8,7 @@ import logging
 from fastapi_users import schemas
 from pydantic import EmailStr
 import ipaddress
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,12 @@ class BaseSchema(BaseModel):
 class TrackableComponent(BaseSchema):
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
+
+class CheckStatus(str, Enum):
+    success = "success"
+    failed = "failed"
+    unreachable = "unreachable"
+    partially_successful = "partially_successful"
 
 class Role(TrackableComponent):
     name: NonEmptyStr = Field(..., alias="Name")
@@ -53,7 +60,7 @@ class PhysicalDisk(TrackableComponent):
 
 class LogicalDisk(TrackableComponent):
     device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", max_length=255)
-    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
+    volume_label: Optional[str] = Field(None, alias="volume_label", max_length=255)
     total_space: int = Field(ge=0, alias="total_space")
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
     parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)
@@ -158,7 +165,7 @@ class ComputerBase(BaseSchema):
 
 class ComputerList(ComputerBase):
     id: int
-    last_updated: datetime
+    last_updated: Optional[datetime] = None
 
 class Computer(ComputerBase):
     id: int

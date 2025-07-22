@@ -21,7 +21,7 @@ async def get_statistics(
 ):
     logger.info(f"Запит статистики з метриками: {metrics}")
     try:
-        repo = StatisticsRepository(db)
+        repo = StatisticsRepository(db) 
         if metrics is None:
             metrics = ["total_computers", "os_distribution", "low_disk_space_with_volumes", "last_scan_time", "status_stats"]
         return await repo.get_statistics(metrics)

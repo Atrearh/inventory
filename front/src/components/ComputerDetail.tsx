@@ -1,93 +1,148 @@
-import { Descriptions, Button, Modal, Input, notification } from 'antd';
-import { useState } from 'react';
-import { Computer } from '../types/schemas';
-import { EditOutlined } from '@ant-design/icons';
-import { apiInstance } from '../api/api';
+// src/components/ComputerDetail.tsx
+import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
+import { getComputerById, getHistory } from '../api/api';
+import { Skeleton, Typography, Tabs, Card, Table, Space } from 'antd';
+import GeneralInfo from './GeneralInfo';
+import ActionPanel from './ActionPanel';
+import HardwareInfo from './HardwareInfo';
+import styles from './ComputerDetail.module.css';
+import { differenceInDays } from 'date-fns';
+import { ComponentHistory, Software } from '../types/schemas';
+import { useAuth } from '../context/AuthContext';
 
-interface GeneralInfoProps {
-  computer: Computer;
-  lastCheckDate: Date | null;
-  lastCheckColor: string;
-}
+const { Title } = Typography;
 
-const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, lastCheckColor }) => {
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [localNotes, setLocalNotes] = useState(computer.local_notes || '');
+const ComputerDetail: React.FC = () => {
+  const { computerId } = useParams<{ computerId: string }>();
+  const computerIdNum = Number(computerId);
+  const { isAuthenticated } = useAuth();
 
-  const handleEditNotes = () => {
-    setLocalNotes(computer.local_notes || '');
-    setIsModalVisible(true);
-  };
+  const { data: computer, error: compError, isLoading: compLoading } = useQuery({
+    queryKey: ['computer', computerIdNum],
+    queryFn: () => getComputerById(computerIdNum),
+    enabled: !isNaN(computerIdNum) && isAuthenticated,
+  });
 
-  const handleSaveNotes = async () => {
-    try {
-      await apiInstance.put(`/computers/${computer.id}/local_notes`, { local_notes: localNotes });
-      notification.success({ message: 'Локальні примітки збережено' });
-      setIsModalVisible(false);
-    } catch (error) {
-      notification.error({ message: 'Помилка збереження приміток', description: (error as Error).message });
-    }
-  };
+  const { data: history = [], error: histError, isLoading: histLoading } = useQuery({
+    queryKey: ['history', computerIdNum],
+    queryFn: () => getHistory(computerIdNum),
+    enabled: !isNaN(computerIdNum) && isAuthenticated,
+  });
+
+  if (isNaN(computerIdNum)) {
+    return <div className={styles.error}>Неверный ID компьютера</div>;
+  }
+
+  if (compLoading) {
+    return <Skeleton active />;
+  }
+
+  if (compError) {
+    return <div className={styles.error}>Ошибка: {compError.message}</div>;
+  }
+
+  if (!computer) {
+    return <div className={styles.error}>Компьютер не найден</div>;
+  }
+
+  const lastCheckDate = computer.last_updated ? new Date(computer.last_updated) : null;
+  const daysDiff = lastCheckDate ? differenceInDays(new Date(), lastCheckDate) : Infinity;
+  const lastCheckColor = daysDiff <= 7 ? '#52c41a' : daysDiff <= 30 ? '#faad14' : '#ff4d4f';
+
+  const softwareColumns = [
+    {
+      title: 'Название',
+      dataIndex: 'DisplayName',
+      key: 'DisplayName',
+      sorter: (a: Software, b: Software) => a.DisplayName.localeCompare(b.DisplayName),
+    },
+    { title: 'Версия', dataIndex: 'DisplayVersion', key: 'DisplayVersion' },
+    {
+      title: 'Дата установки',
+      dataIndex: 'InstallDate',
+      key: 'InstallDate',
+      render: (val: string) => (val ? new Date(val).toLocaleDateString('uk-UA') : '-'),
+      sorter: (a: Software, b: Software) => new Date(a.InstallDate || 0).getTime() - new Date(b.InstallDate || 0).getTime(),
+    },
+  ];
+
+  const historyColumns = [
+    { title: 'Тип компонента', dataIndex: 'component_type', key: 'component_type' },
+    { title: 'Детали', key: 'details', render: (_: any, rec: ComponentHistory) => JSON.stringify(rec.data) },
+    {
+      title: 'Дата обнаружения',
+      dataIndex: 'detected_on',
+      key: 'detected_on',
+      render: (val: string) => (val ? new Date(val).toLocaleString('uk-UA') : '-'),
+    },
+    {
+      title: 'Дата удаления',
+      dataIndex: 'removed_on',
+      key: 'removed_on',
+      render: (val: string) => (val ? new Date(val).toLocaleString('uk-UA') : '-'),
+    },
+  ];
+
+  const tabItems = [
+    {
+      key: '1',
+      label: 'Обзор',
+      children: (
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <Card title="Общая информация">
+            <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
+          </Card>
+          <Card title="Действия">
+            <ActionPanel hostname={computer.hostname} />
+          </Card>
+        </Space>
+      ),
+    },
+    {
+      key: '2',
+      label: 'Оборудование',
+      children: <HardwareInfo computer={computer} />,
+    },
+    {
+      key: '3',
+      label: 'Программы',
+      children: (
+        <Card>
+          <Table
+            dataSource={computer.software}
+            columns={softwareColumns}
+            rowKey={(rec) => `${rec.DisplayName}-${rec.DisplayVersion}`}
+            pagination={{ pageSize: 15 }}
+          />
+        </Card>
+      ),
+    },
+    {
+      key: '4',
+      label: 'История',
+      children: (
+        <Card>
+          <Table
+            dataSource={history}
+            columns={historyColumns}
+            rowKey={(rec) => `${rec.component_type}-${rec.detected_on || ''}-${rec.removed_on || ''}`} // Уникальный ключ без индекса
+            loading={histLoading}
+            pagination={{ pageSize: 15 }}
+          />
+        </Card>
+      ),
+    },
+  ];
 
   return (
-    <>
-      <Descriptions title="Характеристики" bordered column={2} size="small" style={{ marginBottom: 24 }}>
-        <Descriptions.Item label="IP">{computer.ip_addresses && computer.ip_addresses.length > 0 ? computer.ip_addresses[0].address : '-'}</Descriptions.Item>
-        <Descriptions.Item label="Назва ОС">{computer.os_name ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Версія ОС">{computer.os_version ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Процесор">{computer.processors && computer.processors.length > 0 ? computer.processors[0].name : '-'}</Descriptions.Item>
-        <Descriptions.Item label="RAM">{computer.ram ?? '-'} МБ</Descriptions.Item>
-        <Descriptions.Item label="MAC">{computer.mac_addresses && computer.mac_addresses.length > 0 ? computer.mac_addresses[0].address : '-'}</Descriptions.Item>
-        <Descriptions.Item label="Материнська плата">{computer.motherboard ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Перезавантажений">
-          {computer.last_boot ? new Date(computer.last_boot).toLocaleString('uk-UA') : '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="Остання перевірка">
-          {lastCheckDate ? (
-            <span style={{ color: lastCheckColor }}>
-              {lastCheckDate.toLocaleString('uk-UA')}
-            </span>
-          ) : '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="Дата створення в AD">
-          {computer.when_created ? new Date(computer.when_created).toLocaleString('uk-UA') : '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="Дата зміни в AD">
-          {computer.when_changed ? new Date(computer.when_changed).toLocaleString('uk-UA') : '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="AD Enabled">{computer.enabled !== null ? (computer.enabled ? 'Так' : 'Ні') : '-'}</Descriptions.Item>
-        {computer.is_deleted && (
-          <Descriptions.Item label="Видалено">{computer.is_deleted ? 'Так' : '-'}</Descriptions.Item>
-        )}
-        <Descriptions.Item label="Примітки AD">{computer.ad_notes ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Локальні примітки" span={2}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {computer.local_notes ?? '-'}
-            <Button
-              icon={<EditOutlined />}
-              onClick={handleEditNotes}
-              style={{ marginLeft: 8 }}
-            />
-          </div>
-        </Descriptions.Item>
-      </Descriptions>
-      <Modal
-        title={`Редагування локальних приміток для ${computer.hostname}`}
-        open={isModalVisible}
-        onOk={handleSaveNotes}
-        onCancel={() => setIsModalVisible(false)}
-        okText="Зберегти"
-        cancelText="Скасувати"
-      >
-        <Input.TextArea
-          value={localNotes}
-          onChange={(e) => setLocalNotes(e.target.value)}
-          rows={4}
-          placeholder="Введіть локальні примітки"
-        />
-      </Modal>
-    </>
-  );
+    <div className={styles.container}>
+      <Title level={2} className={styles.title}>
+        {computer.hostname}
+      </Title>
+      <Tabs defaultActiveKey="1" items={tabItems} />
+    </div>
+  ); 
 };
 
-export default GeneralInfo;
+export default ComputerDetail; 

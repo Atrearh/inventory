@@ -2,12 +2,12 @@ from pydantic_settings import BaseSettings
 from pydantic import ConfigDict, field_validator
 from typing import Optional, List
 from app.utils import NonEmptyStr
-import structlog
 import ipaddress
 import os
 from pathlib import Path
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     ad_base_dn: str | None = None

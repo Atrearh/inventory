@@ -1,3 +1,4 @@
+// src/components/GeneralInfo.tsx
 import { Descriptions, Button, Modal, Input, notification } from 'antd';
 import { useState } from 'react';
 import { Computer } from '../types/schemas';
@@ -5,14 +6,20 @@ import { EditOutlined } from '@ant-design/icons';
 import { apiInstance } from '../api/api';
 
 interface GeneralInfoProps {
-  computer: Computer;
+  computer: Computer | undefined; // Изменяем тип, чтобы разрешить undefined
   lastCheckDate: Date | null;
   lastCheckColor: string;
 }
 
 const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, lastCheckColor }) => {
+  // Если computer === undefined, устанавливаем localNotes в пустую строку
+  const [localNotes, setLocalNotes] = useState(computer?.local_notes || '');
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [localNotes, setLocalNotes] = useState(computer.local_notes || '');
+
+  // Проверяем наличие computer перед использованием
+  if (!computer) {
+    return <div>Данные о компьютере недоступны</div>;
+  }
 
   const handleEditNotes = () => {
     setLocalNotes(computer.local_notes || '');

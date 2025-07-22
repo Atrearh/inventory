@@ -5,3 +5,4 @@ __pycache__/
 logs/
 **.log
 node_modules/
+merged_output/

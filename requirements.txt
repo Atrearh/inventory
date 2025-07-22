@@ -1,7 +1,6 @@
 # --- Core Framework ---
 fastapi==0.111.0
 uvicorn==0.30.1
-structlog # Використовується для логування, версія має бути закріплена
 
 # --- Database & ORM ---
 sqlalchemy==2.0.31

@@ -2,15 +2,14 @@ from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from .schemas import ErrorResponse
 from .settings import settings
-import structlog
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальний обробник винятків для додатка."""
     correlation_id = getattr(request.state, 'correlation_id', "unknown")
     request_logger = request.state.logger if hasattr(request.state, 'logger') else logger
-    request_logger = request_logger.bind(correlation_id=correlation_id)
     request_logger.error(f"Необроблений виняток: {exc}", exc_info=True)
 
     from winrm.exceptions import WinRMTransportError, WinRMError

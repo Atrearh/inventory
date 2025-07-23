@@ -1,17 +1,17 @@
+// front/src/App.tsx
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Layout, Menu, Button } from 'antd';
-import { Link } from 'react-router-dom';
-import Dashboard from './components/Dashboard';
-import ComputerList from './components/ComputerList';
-import ComputerDetail from './components/ComputerDetail';
-import Settings from './components/Settings';
-import AdminPanel from './components/AdminPanel';
-import NotFound from './components/NotFound';
 import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
-import { useNavigate } from 'react-router-dom';
+import NotFound from './components/NotFound';
+import Layout from './components/Layout';
 
-const { Content, Sider } = Layout;
+// Ледаче завантаження компонентів
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const ComputerList = lazy(() => import('./components/ComputerList'));
+const ComputerDetail = lazy(() => import('./components/ComputerDetail'));
+const Settings = lazy(() => import('./components/Settings'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
 const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -21,20 +21,7 @@ const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
 };
 
 const App: React.FC = () => {
-  const { isAuthenticated, isLoading, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const menuItems = [
-    { key: '1', label: <Link to="/">Статистика</Link> },
-    { key: '2', label: <Link to="/computers">Комп'ютери</Link> },
-    { key: '3', label: <Link to="/settings">Налаштування</Link> },
-    { key: '4', label: <Link to="/admin">Адміністрування</Link> },
-  ];
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) return <div>Загрузка...</div>;
 
@@ -45,30 +32,18 @@ const App: React.FC = () => {
         path="*"
         element={
           isAuthenticated ? (
-            <Layout style={{ padding: 0, minHeight: '100vh' }}>
-              <Sider>
-                <Menu theme="dark" mode="inline" defaultSelectedKeys={['1']} items={menuItems} />
-                <Button
-                  type="primary"
-                  style={{ margin: '16px', width: 'calc(100% - 32px)' }}
-                  onClick={handleLogout}
-                >
-                  Вихід
-                </Button>
-              </Sider>
+            <Suspense fallback={<div>Загрузка...</div>}>
               <Layout>
-                <Content style={{ padding: 0, background: '#fff' }}>
-                  <Routes>
-                    <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                    <Route path="/computers" element={<ProtectedRoute><ComputerList /></ProtectedRoute>} />
-                    <Route path="/computer/:computerId" element={<ProtectedRoute><ComputerDetail /></ProtectedRoute>} />
-                    <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                    <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Content>
+                <Routes>
+                  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/computers" element={<ProtectedRoute><ComputerList /></ProtectedRoute>} />
+                  <Route path="/computer/:computerId" element={<ProtectedRoute><ComputerDetail /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
               </Layout>
-            </Layout>
+            </Suspense>
           ) : (
             <Navigate to="/login" replace />
           )

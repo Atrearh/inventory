@@ -1,3 +1,4 @@
+# app/main.py
 import ipaddress
 import logging
 import uvicorn
@@ -14,6 +15,7 @@ from .data_collector import script_cache
 from .services.encryption_service import EncryptionService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
+from .routers.auth import auth_backend
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -82,13 +84,23 @@ def get_encryption_service(request: Request) -> EncryptionService:
     return request.app.state.encryption_service
 
 # Подключение маршрутов
-app.include_router(auth.router, prefix="/auth")
+app.include_router(auth.router, prefix="/api/auth")
 app.include_router(auth.users_router, prefix="/api/users")
 app.include_router(computers.router, prefix="/api")
 app.include_router(scan.router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
 app.include_router(scripts.router, prefix="")
+
+# Діагностичне логування для перевірки маршрутів
+@app.get("/debug/routes")
+async def get_routes():
+    routes = [
+        {"path": str(route.path), "methods": list(route.methods), "name": route.name}
+        for route in app.routes
+    ]
+    logger.info(f"Зареєстровані маршрути: {routes}")
+    return routes
 
 if __name__ == "__main__":
     logger.info("Запуск приложения")

@@ -223,6 +223,10 @@ class ComponentChangeStats(BaseSchema):
     component_type: str
     changes_count: int
 
+class ScanResponse(BaseSchema):
+    status: NonEmptyStr
+    task_id: NonEmptyStr
+     
 class DashboardStats(BaseSchema):
     total_computers: Optional[int] = None
     os_stats: OsStats

@@ -5,7 +5,7 @@
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export type CheckStatus = "success" | "failed" | "unreachable";
+export type CheckStatus = "success" | "failed" | "unreachable" | "partially_successful";
 export type ScanStatus = "pending" | "running" | "completed" | "failed";
 
 export interface AppSettingUpdate {
@@ -198,7 +198,7 @@ export interface ComputerList {
   local_notes?: string | null;
   is_deleted?: boolean | null;
   id: number;
-  last_updated: string;
+  last_updated?: string | null;
 }
 export interface ComputerListItem {
   hostname: string;
@@ -277,6 +277,10 @@ export interface ErrorResponse {
   error: string;
   detail?: string | null;
   correlation_id?: string | null;
+}
+export interface ScanResponse {
+  status: string;
+  task_id: string;
 }
 export interface ScanTask {
   id: string;

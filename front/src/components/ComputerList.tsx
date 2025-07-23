@@ -70,7 +70,11 @@ const ComputerListComponent: React.FC = () => {
 
   useEffect(() => {
     if (computersData?.data) {
-      setCachedComputers(computersData.data.slice(0, 1000));
+      const transformedComputers = computersData.data.slice(0, 1000).map(computer => ({
+        ...computer,
+        last_updated: computer.last_updated || '', // Преобразуем null/undefined в пустую строку
+      }));
+      setCachedComputers(transformedComputers);
       if (computersData.total > 1000) {
         notification.warning({
           message: 'Ограничение данных',

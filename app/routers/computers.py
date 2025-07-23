@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from ..models import Computer, IPAddress, CheckStatus
+from ..models import Computer, IPAddress, CheckStatus, MACAddress, PhysicalDisk, Processor, VideoCard
 from ..database import get_db
 from ..services.computer_service import ComputerService
 from ..repositories.computer_repository import ComputerRepository
@@ -45,8 +45,7 @@ async def export_computers_to_csv(
             'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Процессор', 'Видеокарта'
         ]
         writer.writerow(header)
-        
-        yield output.getvalue() 
+        yield output.getvalue()
         output.seek(0)
         output.truncate(0)
 
@@ -60,30 +59,70 @@ async def export_computers_to_csv(
             r'@oem\d+\.inf,%dwmirrordrv% 64-bit'
         )
 
-        async for computer in repo.stream_computers(
-            hostname=hostname,
-            os_name=os_name,
-            check_status=check_status,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            server_filter=server_filter
-        ):
+        # Проверка корректности sort_by
+        valid_sort_fields = ["hostname", "os_name", "check_status", "last_updated"]
+        sort_by_value = sort_by if sort_by in valid_sort_fields else "hostname"
+        sort_order_value = sort_order if sort_order in ["asc", "desc"] else "asc"
+
+        # Запрос без selectinload
+        query = select(Computer)
+        if hostname:
+            query = query.filter(Computer.hostname.ilike(f"%{hostname}%"))
+        if os_name:
+            query = query.filter(Computer.os_name.ilike(f"%{os_name}%"))
+        if check_status:
             try:
-                ip_addresses = ', '.join(ip.address for ip in computer.ip_addresses) if computer.ip_addresses else ''
-                mac_addresses = ', '.join(mac.address for mac in computer.mac_addresses) if computer.mac_addresses else ''
-                disk_info = [pd.model for pd in computer.physical_disks if pd.model] if computer.physical_disks else []
+                CheckStatus(check_status)
+                query = query.filter(Computer.check_status == check_status)
+            except ValueError:
+                logger.error("Некорректное значение check_status", extra={"check_status": check_status})
+                raise HTTPException(status_code=422, detail=f"Некорректное значение check_status: {check_status}")
+        if server_filter == "server":
+            query = query.filter(Computer.os_name.ilike("%server%"))
+        elif server_filter == "client":
+            query = query.filter(~Computer.os_name.ilike("%server%"))
+
+        sort_column = getattr(Computer, sort_by_value)
+        if sort_order_value == "desc":
+            sort_column = sort_column.desc()
+        
+        query = query.order_by(sort_column)
+        
+        # Логирование количества записей
+        total = await db.scalar(select(func.count()).select_from(query))
+        logger.info("Найдено компьютеров для экспорта", extra={"total": total})
+
+        row_count = 0
+        async for computer in (await db.stream(query)).scalars():
+            try:
+                # Ручная загрузка связанных данных
+                ip_addresses_query = select(IPAddress).where(IPAddress.computer_id == computer.id, IPAddress.removed_on.is_(None))
+                mac_addresses_query = select(MACAddress).where(MACAddress.computer_id == computer.id, MACAddress.removed_on.is_(None))
+                physical_disks_query = select(PhysicalDisk).where(PhysicalDisk.computer_id == computer.id)
+                processors_query = select(Processor).where(Processor.computer_id == computer.id)
+                video_cards_query = select(VideoCard).where(VideoCard.computer_id == computer.id)
+
+                ip_addresses = (await db.execute(ip_addresses_query)).scalars().all()
+                mac_addresses = (await db.execute(mac_addresses_query)).scalars().all()
+                physical_disks = (await db.execute(physical_disks_query)).scalars().all()
+                processors = (await db.execute(processors_query)).scalars().all()
+                video_cards = (await db.execute(video_cards_query)).scalars().all()
+
+                ip_addresses_str = ', '.join(ip.address for ip in ip_addresses) if ip_addresses else ''
+                mac_addresses_str = ', '.join(mac.address for mac in mac_addresses) if mac_addresses else ''
+                disk_info = [pd.model for pd in physical_disks if pd.model] if physical_disks else []
                 disk_info_str = '; '.join(disk_info) if disk_info else ''
-                processor_info = ', '.join(proc.name for proc in computer.processors if proc.name) if computer.processors else ''
-                video_cards = ', '.join(vc.name for vc in computer.video_cards if vc.name and not unwanted_video_cards_pattern.search(vc.name.lower())) if computer.video_cards else ''
+                processor_info = ', '.join(proc.name for proc in processors if proc.name) if processors else ''
+                video_cards_str = ', '.join(vc.name for vc in video_cards if vc.name and not unwanted_video_cards_pattern.search(vc.name.lower())) if video_cards else ''
                 
                 is_server = 'Сервер' if computer.os_name and 'server' in computer.os_name.lower() else 'Клиент'
                 virtualization = 'Виртуальный' if computer.is_virtual else 'Физический'
 
                 row_data = [
-                    ip_addresses,
+                    ip_addresses_str,
                     computer.hostname or '',
                     str(computer.ram) if computer.ram is not None else '',
-                    mac_addresses,
+                    mac_addresses_str,
                     computer.motherboard or '',
                     computer.os_name or '',
                     computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else '',
@@ -91,10 +130,10 @@ async def export_computers_to_csv(
                     virtualization,
                     disk_info_str,
                     processor_info,
-                    video_cards
+                    video_cards_str
                 ]
                 writer.writerow(row_data)
-
+                row_count += 1
                 yield output.getvalue()
                 output.seek(0)
                 output.truncate(0)
@@ -104,6 +143,7 @@ async def export_computers_to_csv(
                 logger.debug("Данные компьютера", extra={"computer": computer.__dict__})
                 continue
 
+        logger.info("Экспорт завершён", extra={"rows_written": row_count})
         output.close()
 
     headers = {

@@ -28,6 +28,8 @@ class CheckStatus(str, Enum):
     failed = "failed"
     unreachable = "unreachable"
     partially_successful = "partially_successful"
+    disabled = "disabled"
+    is_deleted = "is_deleted"  # Новое значение для удаленных компьютеров
 
 class Role(TrackableComponent):
     name: NonEmptyStr = Field(..., alias="Name")
@@ -129,14 +131,13 @@ class ComputerBase(BaseSchema):
     roles: List[Role] = []
     software: List[Software] = []
     video_cards: List[VideoCard] = []
-    # Нові поля
+    last_logon: Optional[datetime] = None
     object_guid: Optional[NonEmptyStr] = None
     when_created: Optional[datetime] = None
     when_changed: Optional[datetime] = None
     enabled: Optional[bool] = None
     ad_notes: Optional[NonEmptyStr] = None
     local_notes: Optional[NonEmptyStr] = None
-    is_deleted: Optional[bool] = None
 
     @field_validator('hostname')
     @classmethod

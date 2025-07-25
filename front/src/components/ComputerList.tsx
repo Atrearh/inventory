@@ -4,38 +4,40 @@ import { getComputers, getStatistics } from '../api/api';
 import { ComputersResponse, DashboardStats, ComputerListItem } from '../types/schemas';
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { notification, Skeleton, Input, Select, Table, Button } from 'antd';
+import { notification, Skeleton, Input, Select, Table, Button, Checkbox } from 'antd';
 import { useExportCSV } from '../hooks/useExportCSV';
 import { ITEMS_PER_PAGE } from '../config';
 import type { TableProps } from 'antd';
 import type { InputRef } from 'antd';
 import styles from './ComputerList.module.css';
 import { useAuth } from '../context/AuthContext';
-import { useComputerFilters, Filters } from '../hooks/useComputerFilters'; // Импортируем Filters
+import { useComputerFilters, Filters } from '../hooks/useComputerFilters';
 
+// Компонент для відображення списку комп’ютерів
 const ComputerListComponent: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
   const inputRef = useRef<InputRef>(null);
 
+  // Функція для перевірки, чи є ОС серверною
   const isServerOs = (osName: string) => {
     const serverOsPatterns = [/server/i, /hyper-v/i];
     return serverOsPatterns.some((pattern) => pattern.test(osName.toLowerCase()));
   };
 
-  // Перемещаем useComputerFilters выше useComputers
   const { filters, filteredComputers, debouncedSetHostname, handleFilterChange, clearAllFilters, handleTableChange } =
     useComputerFilters(cachedComputers);
 
+  // Запит для отримання списку комп’ютерів
   const { data: computersData, error: computersError, isLoading: isComputersLoading, refetch } = useQuery<
     ComputersResponse,
     Error
   >({
-    queryKey: ['computers', { os_name: filters.os_name, check_status: filters.check_status, sort_by: filters.sort_by, sort_order: filters.sort_order, server_filter: filters.server_filter }],
+    queryKey: ['computers', { os_name: filters.os_name, check_status: filters.check_status, show_disabled: filters.show_disabled, sort_by: filters.sort_by, sort_order: filters.sort_order, server_filter: filters.server_filter }],
     queryFn: () => {
       const params: Partial<Filters> = {
         ...filters,
-        hostname: undefined, // Отключаем серверную фильтрацию по hostname
+        hostname: undefined, // Вимикаємо серверну фільтрацію по hostname
         limit: 1000,
       };
       if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
@@ -54,6 +56,7 @@ const ComputerListComponent: React.FC = () => {
     gcTime: 60 * 60 * 1000,
   });
 
+  // Запит для отримання статистики
   const { data: statsData, error: statsError, isLoading: isStatsLoading } = useQuery<DashboardStats, Error>({
     queryKey: ['statistics'],
     queryFn: () =>
@@ -68,25 +71,31 @@ const ComputerListComponent: React.FC = () => {
 
   const { handleExportCSV } = useExportCSV(filters);
 
+  // Оновлення кешованих комп’ютерів при зміні даних
   useEffect(() => {
     if (computersData?.data) {
-      const transformedComputers = computersData.data.slice(0, 1000).map(computer => ({
+      // Видаляємо дублікати за id
+      const uniqueComputers = Array.from(
+        new Map(computersData.data.map((comp) => [comp.id, comp])).values()
+      );
+      const transformedComputers = uniqueComputers.slice(0, 1000).map(computer => ({
         ...computer,
-        last_updated: computer.last_updated || '', // Преобразуем null/undefined в пустую строку
+        last_updated: computer.last_updated || '',
       }));
       setCachedComputers(transformedComputers);
       if (computersData.total > 1000) {
         notification.warning({
-          message: 'Ограничение данных',
-          description: 'Отображается только первые 1000 компьютеров. Используйте фильтры для точного поиска.',
+          message: 'Обмеження даних',
+          description: 'Відображається лише перші 1000 комп’ютерів. Використовуйте фільтри для точного пошуку.',
         });
       }
     }
   }, [computersData]);
 
+  // Колонки таблиці
   const columns: TableProps<ComputerListItem>['columns'] = [
     {
-      title: 'Hostname',
+      title: 'Ім’я хоста',
       dataIndex: 'hostname',
       key: 'hostname',
       sorter: true,
@@ -98,7 +107,7 @@ const ComputerListComponent: React.FC = () => {
       ),
     },
     {
-      title: 'IP Address',
+      title: 'IP-адреса',
       dataIndex: 'ip_addresses',
       key: 'ip_addresses',
       sorter: true,
@@ -106,7 +115,7 @@ const ComputerListComponent: React.FC = () => {
       render: (ip_addresses: ComputerListItem['ip_addresses']) => ip_addresses?.map(ip => ip.address).join(', ') || '-',
     },
     {
-      title: 'OS Version',
+      title: 'Версія ОС',
       dataIndex: 'os_name',
       key: 'os_name',
       sorter: true,
@@ -114,12 +123,22 @@ const ComputerListComponent: React.FC = () => {
       render: (text: string) => text ?? '-',
     },
     {
-      title: 'Check Status',
+      title: 'Статус перевірки',
       dataIndex: 'check_status',
       key: 'check_status',
       sorter: true,
       sortOrder: filters.sort_by === 'check_status' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
-      render: (text: string) => text ?? '-',
+      render: (text: string) => {
+        const statusMap: Record<string, string> = {
+          success: 'Успішно',
+          failed: 'Невдало',
+          unreachable: 'Недоступно',
+          partially_successful: 'Частково успішно',
+          disabled: 'Відключено',
+          is_deleted: 'Видалено',
+        };
+        return statusMap[text] || text || '-';
+      },
     },
   ];
 
@@ -128,19 +147,19 @@ const ComputerListComponent: React.FC = () => {
       {isComputersLoading || isStatsLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : computersError || statsError ? (
-        <div className={styles.error}>Ошибка: {(computersError || statsError)?.message}</div>
+        <div className={styles.error}>Помилка: {(computersError || statsError)?.message}</div>
       ) : (
         <>
           <h2 className={styles.title}>
-            Список компьютеров ({filteredComputers.total || 0})
+            Список комп’ютерів ({filteredComputers.total || 0})
             <Button type="primary" onClick={handleExportCSV} style={{ float: 'right', marginLeft: 8 }}>
-              Экспорт в CSV
+              Експорт у CSV
             </Button>
           </h2>
           <div className={styles.filters}>
             <Input
               ref={inputRef}
-              placeholder="Фильтр по Hostname (поиск по началу)"
+              placeholder="Фільтр за ім’ям хоста (пошук за початком)"
               defaultValue={filters.hostname}
               onChange={(e) => debouncedSetHostname(e.target.value)}
               className={styles.filterInput}
@@ -150,12 +169,12 @@ const ComputerListComponent: React.FC = () => {
               value={filters.os_name || ''}
               onChange={(value) => handleFilterChange('os_name', value)}
               className={styles.filterSelect}
-              placeholder="Выберите ОС"
+              placeholder="Оберіть ОС"
               loading={isStatsLoading}
               showSearch
               optionFilterProp="children"
             >
-              <Select.Option value="">Все ОС</Select.Option>
+              <Select.Option value="">Усі ОС</Select.Option>
               {[...new Set([...(statsData?.os_stats.client_os.map((item) => item.category) || []), ...(statsData?.os_stats.server_os.map((item) => item.category) || [])])].map(
                 (os: string) => (
                   <Select.Option key={os} value={os}>
@@ -168,15 +187,25 @@ const ComputerListComponent: React.FC = () => {
               value={filters.check_status || ''}
               onChange={(value) => handleFilterChange('check_status', value)}
               className={styles.filterSelect}
-              placeholder="Все проверки"
+              placeholder="Усі статуси"
             >
-              <Select.Option value="">Все проверки</Select.Option>
-              <Select.Option value="success">Success</Select.Option>
-              <Select.Option value="failed">Failed</Select.Option>
-              <Select.Option value="unreachable">Unreachable</Select.Option>
+              <Select.Option value="">Усі статуси</Select.Option>
+              <Select.Option value="success">Успішно</Select.Option>
+              <Select.Option value="failed">Невдало</Select.Option>
+              <Select.Option value="unreachable">Недоступно</Select.Option>
+              <Select.Option value="partially_successful">Частково успішно</Select.Option>
+              {filters.show_disabled && <Select.Option value="disabled">Відключено</Select.Option>}
+              {filters.show_disabled && <Select.Option value="is_deleted">Видалено</Select.Option>}
             </Select>
+            <Checkbox
+              checked={filters.show_disabled}
+              onChange={(e) => handleFilterChange('show_disabled', e.target.checked)}
+              style={{ marginLeft: 8 }}
+            >
+              Показувати відключені та видалені
+            </Checkbox>
             <Button onClick={clearAllFilters} style={{ marginLeft: 8 }}>
-              Очистить все фильтры
+              Очистити всі фільтри
             </Button>
           </div>
           <Table
@@ -191,7 +220,7 @@ const ComputerListComponent: React.FC = () => {
               showQuickJumper: false,
             }}
             onChange={handleTableChange}
-            locale={{ emptyText: 'Нет данных для отображения' }}
+            locale={{ emptyText: 'Немає даних для відображення' }}
             size="small"
             showSorterTooltip={false}
           />
@@ -200,5 +229,4 @@ const ComputerListComponent: React.FC = () => {
     </div>
   );
 };
-
 export default ComputerListComponent;

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
-import { login, logout, refreshToken, getUsers } from '../api/auth.api';
+import { login, logout, getUsers } from '../api/auth.api';
 import { UserRead } from '../types/schemas';
 
 interface AuthContextType {
@@ -32,31 +32,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
-  setIsLoading(true);
-  try {
-    // Просто робимо запит на захищений ендпоінт.
-    // Браузер автоматично надішле cookie 'access_token'.
-    // Якщо сесія валідна, ми отримаємо дані. В іншому випадку - помилку 401.
-    const users = await getUsers();
-    
-    // В ідеалі, тут має бути запит до /api/users/me, що повертає одного користувача.
-    // Але для поточної структури перевіряємо, чи повернувся масив.
-    if (users && users.length > 0) {
-      setUser(users[0]);
-      setIsAuthenticated(true);
-      console.log('Auth check successful: User is authenticated.');
-    } else {
+    setIsLoading(true);
+    try {
+      const users = await getUsers();
+      if (users && users.length > 0) {
+        setUser(users[0]);
+        setIsAuthenticated(true);
+        console.log('Auth check successful: User is authenticated.');
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    } catch (error: any) {
+      console.error('Auth check failed:', error.response?.data || error.message);
       setUser(null);
       setIsAuthenticated(false);
+      // Якщо отримали 401, виконуємо логаут
+      if (error.response?.status === 401) {
+        console.log('Access token expired or invalid, performing logout');
+        await handleLogout();
+      }
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error) {
-    console.error('Auth check failed: User is not authenticated.', error);
-    setUser(null);
-    setIsAuthenticated(false);
-  } finally {
-    setIsLoading(false);
-  }
-}, []);
+  }, []);
 
   useEffect(() => {
     checkAuth();
@@ -64,9 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleLogin = async (email: string, password: string) => {
     try {
-      const response = await login({ email, password });
-      console.log('Login response:', response);
-      localStorage.setItem('refresh_token', response.refresh_token); // Переконайтеся, що сервер повертає refresh_token
+      await login({ email, password });
       await checkAuth();
     } catch (error) {
       console.error('Login failed:', error);
@@ -74,16 +71,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await logout();
       setUser(null);
       setIsAuthenticated(false);
+      console.log('Logout successful');
     } catch (error) {
       console.error('Logout failed:', error);
       throw error;
     }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider

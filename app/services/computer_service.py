@@ -13,6 +13,7 @@ from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk,
 from ..data_collector import WinRMDataCollector
 from ..utils import validate_ip_address, validate_mac_address
 from ..database import async_session_factory 
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -234,19 +235,24 @@ class ComputerService:
             logger.error(f"Помилка підготовки даних: {str(e)}", extra={"hostname": hostname})
             raise
 
-    async def upsert_computer_from_schema(self, comp_data: ComputerCreate, hostname: str) -> Computer:
+    async def upsert_computer_from_schema(self, computer: ComputerCreate, hostname: str) -> Computer:
+        """Создаёт или обновляет компьютер в базе данных на основе предоставленных данных."""
+        logger.info(f"Начало обработки компьютера: {hostname}")
         try:
-            computer_id = await self.computer_repo.async_upsert_computer(comp_data, hostname)
-            db_computer = await self.computer_repo.async_get_computer_by_id(computer_id)
-            if not db_computer:
-                logger.error("Комп’ютер не знайдено після збереження", extra={"hostname": hostname})
-                raise ValueError("Комп’ютер не знайдено після збереження")
-            await self.computer_repo.update_related_entities(db_computer, comp_data)
-            logger.info(f"Комп’ютер збережено з ID {computer_id}", extra={"hostname": hostname})
-            return Computer.model_validate(db_computer, from_attributes=True)
+            computer_id = await self.computer_repo.async_upsert_computer(computer, hostname)
+            await self.computer_repo.update_related_entities(
+                await self.computer_repo._get_or_create_computer(computer.model_dump(), hostname),
+                computer
+            )
+            computer_db = await self.computer_repo.async_get_computer_by_id(computer_id)
+            if not computer_db:
+                logger.error("Компьютер не найден после сохранения", extra={"hostname": hostname, "computer_id": computer_id})
+                raise HTTPException(status_code=404, detail="Компьютер не найден после сохранения")
+            logger.info(f"Компьютер успешно сохранён: {hostname}, ID: {computer_id}")
+            return computer_db
         except Exception as e:
-            logger.error(f"Помилка збереження комп’ютера: {str(e)}", extra={"hostname": hostname})
-            raise
+            logger.error(f"Ошибка сохранения компьютера: {str(e)}", extra={"hostname": hostname})
+            raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
     async def get_hosts_to_scan(self) -> List[str]:
         logger.info("Отримання хостів для сканування")

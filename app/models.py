@@ -14,6 +14,8 @@ class CheckStatus(enum.Enum):
     failed = "failed"
     unreachable = "unreachable"
     partially_successful = "partially_successful"
+    disabled = "disabled"
+    is_deleted = "is_deleted"  # Новое значение для удаленных компьютеров
 
 class ScanStatus(enum.Enum):
     pending = "pending"
@@ -35,7 +37,6 @@ class Domain(Base):
         Index('idx_domain_name', 'name'),
     )
     
-
 class Processor(Base):
     __tablename__ = "processors"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -77,7 +78,7 @@ class MACAddress(Base):
 class Computer(Base):
     __tablename__ = "computers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    hostname: Mapped[str] = mapped_column(String(255), nullable=False)  # Видалено unique=True
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     physical_disks: Mapped[List["PhysicalDisk"]] = relationship("PhysicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     os_name: Mapped[Optional[str]] = mapped_column(String(255))
@@ -89,14 +90,13 @@ class Computer(Base):
     last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
     check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), default=CheckStatus.success, nullable=False)
-    # Нові поля для AD
     object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)
     when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
     ad_notes: Mapped[Optional[str]] = mapped_column(Text)
+    last_logon: Mapped[Optional[datetime]] = mapped_column(DateTime)
     local_notes: Mapped[Optional[str]] = mapped_column(Text)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")

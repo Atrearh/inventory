@@ -34,21 +34,9 @@ export const logout = async () => {
   }
 };
 
-// Функція для оновлення токена (використовується інтерсепторами)
-export const refreshToken = async () => {
-  try {
-    const response = await apiInstance.post('/auth/jwt/refresh', {});
-    return response.data;
-  } catch (error: any) {
-    console.error('Refresh token error:', error.response?.data || error.message);
-    throw error;
-  }
-};
-
 // Функція для отримання списку користувачів
 export const getUsers = async (): Promise<UserRead[]> => {
   try {
-    // Шлях /users/ відповідає префіксу /api/users з main.py
     const response = await apiInstance.get<UserRead[]>('/users/');
     return response.data;
   } catch (error: any) {
@@ -57,22 +45,19 @@ export const getUsers = async (): Promise<UserRead[]> => {
   }
 };
 
-// ✅ НОВА ФУНКЦІЯ: Реєстрація нового користувача
+// Реєстрація нового користувача
 export const register = async (userData: UserCreate): Promise<UserRead> => {
-  // Шлях /auth/jwt/register відповідає /api/auth/jwt/register
   const response = await apiInstance.post<UserRead>('/auth/jwt/register', userData);
   return response.data;
 };
 
-// ✅ НОВА ФУНКЦІЯ: Оновлення даних користувача
+// Оновлення даних користувача
 export const updateUser = async (id: number, userData: Partial<UserUpdate>): Promise<UserRead> => {
-  // Шлях /users/:id відповідає /api/users/:id
   const response = await apiInstance.patch<UserRead>(`/users/${id}`, userData);
   return response.data;
 };
 
-// ✅ НОВА ФУНКЦІЯ: Видалення користувача
+// Видалення користувача
 export const deleteUser = async (id: number): Promise<void> => {
-  // Шлях /users/:id відповідає /api/users/:id
   await apiInstance.delete<void>(`/users/${id}`);
 };

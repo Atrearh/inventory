@@ -1,5 +1,5 @@
 import os
-import structlog
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
@@ -10,7 +10,7 @@ from typing import List, Dict
 from ..data_collector import WinRMDataCollector, winrm_session, SCRIPTS_DIR
 from pydantic import BaseModel, ValidationError
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["scripts"], prefix="/api/scripts")
 

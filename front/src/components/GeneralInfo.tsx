@@ -37,7 +37,12 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
   };
 
   return (
-    <>
+  <>
+      {!computer.enabled && computer.when_changed && (
+        <div style={{ color: '#faad14', marginBottom: 16, fontWeight: 'bold' }}>
+          Відключено в AD з {new Date(computer.when_changed).toLocaleString('uk-UA')}
+        </div>
+      )}
       <Descriptions title="Характеристики" bordered column={2} size="small" style={{ marginBottom: 24 }}>
         <Descriptions.Item label="IP">{computer.ip_addresses && computer.ip_addresses.length > 0 ? computer.ip_addresses[0].address : '-'}</Descriptions.Item>
         <Descriptions.Item label="Назва ОС">{computer.os_name ?? '-'}</Descriptions.Item>
@@ -49,6 +54,7 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
         <Descriptions.Item label="Перезавантажений">
           {computer.last_boot ? new Date(computer.last_boot).toLocaleString('uk-UA') : '-'}
         </Descriptions.Item>
+        <Descriptions.Item label="Останній вхід в AD"> {computer.last_logon ? new Date(computer.last_logon).toLocaleString('uk-UA') : '-'} </Descriptions.Item>
         <Descriptions.Item label="Остання перевірка">
           {lastCheckDate ? (
             <span style={{ color: lastCheckColor }}>
@@ -62,11 +68,10 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
         <Descriptions.Item label="Дата зміни в AD">
           {computer.when_changed ? new Date(computer.when_changed).toLocaleString('uk-UA') : '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="AD Enabled">{computer.enabled !== null ? (computer.enabled ? 'Так' : 'Ні') : '-'}</Descriptions.Item>
         {computer.is_deleted && (
           <Descriptions.Item label="Видалено">{computer.is_deleted ? 'Так' : '-'}</Descriptions.Item>
         )}
-        <Descriptions.Item label="Примітки AD">{computer.ad_notes ?? '-'}</Descriptions.Item>
+        {computer.ad_notes && ( <Descriptions.Item label="Примітки AD">{computer.ad_notes}</Descriptions.Item> )}
         <Descriptions.Item label="Локальні примітки" span={2}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {computer.local_notes ?? '-'}

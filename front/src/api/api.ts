@@ -1,6 +1,6 @@
 // front/src/api/api.ts
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import { refreshToken } from './auth.api';
+
 
 // Розширення типу AxiosRequestConfig для додавання _retry
 interface CustomAxiosRequestConfig extends AxiosRequestConfig {
@@ -19,7 +19,6 @@ apiInstance.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        await refreshToken();
         return apiInstance(originalRequest);
       } catch (refreshError) {
         window.location.href = '/login';

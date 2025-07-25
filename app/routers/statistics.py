@@ -7,9 +7,9 @@ from typing import List
 from ..logging_config import setup_logging
 from ..settings import settings
 from .auth import get_current_user 
-import structlog
+import logging
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
 
 router = APIRouter(tags=["statistics"])

@@ -119,7 +119,7 @@ class ComputerRepository:
                 include={
                     "hostname", "os_name", "os_version", "ram",
                     "motherboard", "last_boot", "is_virtual", "check_status",
-                    "object_guid", "when_created", "when_changed", "enabled", "ad_notes", "local_notes", "is_deleted"
+                    "object_guid", "when_created", "when_changed", "enabled", "ad_notes", "local_notes"
                 }
             )
             logger.debug(f"Дані для оновлення: {computer_data}", extra={"hostname": hostname})
@@ -186,7 +186,7 @@ class ComputerRepository:
             query = query.filter(models.Computer.os_name.ilike("%server%"))
         elif server_filter == "client":
             query = query.filter(~models.Computer.os_name.ilike("%server%"))
-        if sort_by in ["hostname", "os_name", "last_updated", "check_status", "enabled", "is_deleted"]:
+        if sort_by in ["hostname", "os_name", "last_updated", "check_status", "enabled"]:
             order_column = getattr(models.Computer, sort_by)
             if sort_order.lower() == "desc":
                 order_column = order_column.desc()

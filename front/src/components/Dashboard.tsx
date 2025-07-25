@@ -14,6 +14,7 @@ import { ComputerList, ComputersResponse, DashboardStats } from '../types/schema
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
+// Компонент для відображення дашборду зі статистикою
 const Dashboard: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
@@ -28,6 +29,7 @@ const Dashboard: React.FC = () => {
   const [filters, setFilters] = useState({ page: 1, limit: 10 });
   const [filteredComputers, setFilteredComputers] = useState<ComputerList[]>([]);
 
+  // Запит для отримання статистики
   const { data, error: statsError, isLoading, refetch: refetchStats } = useStatistics([
     'total_computers',
     'os_distribution',
@@ -36,92 +38,129 @@ const Dashboard: React.FC = () => {
     'status_stats',
   ]);
 
-  const { data: computersData, isLoading: isComputersLoading, error: computersError, refetch: refetchComputers } = useComputers({
+  // Запит для отримання списку комп’ютерів
+const { data: computersData, isLoading: isComputersLoading, error: computersError, refetch: refetchComputers } = useComputers({
     page: filters.page,
     limit: filters.limit,
+    hostname: undefined,
     os_name: selectedOs && selectedOs !== 'Unknown' && selectedOs !== 'Other Servers' ? selectedOs : undefined,
+    check_status: undefined,
+    show_disabled: false,
+    sort_by: 'hostname',
+    sort_order: 'asc',
     server_filter: selectedOs === 'Other Servers' ? 'server' : undefined,
-    ip_range:
-      selectedSubnet && selectedSubnet !== 'Неизвестно'
-        ? selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[1] + `.[${parseInt(selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[2] || '0', 10)}-${parseInt(selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/)?.[2] || '0', 10) + 1}]`
-        : selectedSubnet === 'Неизвестно'
+    ip_range: selectedSubnet
+      ? selectedSubnet === 'Невідомо'
         ? 'none'
-        : undefined,
+        : (() => {
+            const match = selectedSubnet.match(/^(\d+\.\d+)\.(\d+)\.0\/23$/);
+            if (!match) {
+              console.error('Некоректний формат підмережі:', selectedSubnet);
+              return undefined;
+            }
+            const baseIp = match[1];
+            const thirdOctet = parseInt(match[2], 10);
+            const ipRange = `${baseIp}.[${thirdOctet}-${thirdOctet + 1}]`;
+            console.log('Сформований ip_range:', ipRange);
+            return ipRange;
+          })()
+      : undefined,
   });
 
+  // Обробка помилок та оновлення фільтрованих комп’ютерів
   useEffect(() => {
     if (statsError) {
-      console.error('Statistics error:', statsError);
+      console.error('Помилка статистики:', statsError);
       if (statsError instanceof AxiosError && statsError.response?.data) {
-        console.error('Server error details:', JSON.stringify(statsError.response.data, null, 2));
+        console.error('Деталі помилки сервера:', JSON.stringify(statsError.response.data, null, 2));
         notification.error({
-          message: 'Ошибка загрузки статистики',
-          description: `Не удалось загрузить статистику: ${JSON.stringify(statsError.response.data.detail || statsError.message)}`,
+          message: 'Помилка завантаження статистики',
+          description: `Не вдалося завантажити статистику: ${JSON.stringify(statsError.response.data.detail || statsError.message)}`,
         });
       } else {
         notification.error({
-          message: 'Ошибка загрузки статистики',
-          description: `Не удалось загрузить статистику: ${statsError.message}`,
+          message: 'Помилка завантаження статистики',
+          description: `Не вдалося завантажити статистику: ${statsError.message}`,
         });
       }
     }
     if (computersError) {
-      console.error('Computers error:', computersError);
+      console.error('Помилка комп’ютерів:', computersError);
       if (computersError instanceof AxiosError && computersError.response?.data) {
-        console.error('Server error details:', JSON.stringify(computersError.response.data, null, 2));
+        console.error('Деталі помилки сервера:', JSON.stringify(computersError.response.data, null, 2));
         notification.error({
-          message: 'Ошибка загрузки данных компьютеров',
-          description: `Не удалось загрузить данные компьютеров: ${JSON.stringify(computersError.response.data.detail || computersError.message)}`,
+          message: 'Помилка завантаження даних комп’ютерів',
+          description: `Не вдалося завантажити дані комп’ютерів: ${JSON.stringify(computersError.response.data.detail || computersError.message)}`,
         });
       } else {
         notification.error({
-          message: 'Ошибка загрузки данных компьютеров',
-          description: `Не удалось загрузить данные компьютеров: ${computersError.message}`,
+          message: 'Помилка завантаження даних комп’ютерів',
+          description: `Не вдалося завантажити дані комп’ютерів: ${computersError.message}`,
         });
       }
     }
     if (computersData?.data && (selectedOs || selectedSubnet)) {
-      console.log('Filtered computers:', computersData.data.slice(0, 5));
+      console.log('Фільтровані комп’ютери:', computersData.data.slice(0, 5));
       setFilteredComputers(computersData.data);
-      setIsModalVisible(true); // Відкриваємо модальне вікно лише якщо вибрано OS або підмережу
+      setIsModalVisible(true);
     } else {
       setFilteredComputers([]);
     }
   }, [statsError, computersError, computersData, selectedOs, selectedSubnet]);
 
+  // Оновлення даних комп’ютерів при зміні фільтрів
   useEffect(() => {
     if (selectedOs || selectedSubnet) {
-      console.log('Refetching computers for:', { selectedOs, selectedSubnet });
+      console.log('Оновлення комп’ютерів для:', { selectedOs, selectedSubnet });
       refetchComputers();
     }
   }, [selectedOs, selectedSubnet, refetchComputers]);
 
-  if (isLoading) return <div>Загрузка...</div>;
-  if (statsError) return <div style={{ color: 'red' }}>Ошибка: {statsError.message}</div>;
-  if (!data) return <div style={{ color: 'red' }}>Данные отсутствуют</div>;
+  if (isLoading) return <div>Завантаження...</div>;
+  if (statsError) return <div style={{ color: 'red' }}>Помилка: {statsError.message}</div>;
+  if (!data) return <div style={{ color: 'red' }}>Дані відсутні</div>;
 
+  // Зміна вкладки
   const handleTabChange = (tab: string) => {
     navigate(`?tab=${tab}`);
   };
 
+  // Колонки для таблиці комп’ютерів у модальному вікні
   const computerColumns = [
-    { title: 'Hostname', dataIndex: 'hostname', key: 'hostname' },
+    { title: 'Ім’я хоста', dataIndex: 'hostname', key: 'hostname' },
     {
-      title: 'IP',
+      title: 'IP-адреса',
       dataIndex: 'ip_addresses',
       key: 'ip',
       render: (ip_addresses: ComputerList['ip_addresses']) => ip_addresses?.map((ip) => ip.address).join(', ') || '-',
     },
     { title: 'ОС', dataIndex: 'os_version', key: 'os_version' },
-    { title: 'Статус', dataIndex: 'check_status', key: 'check_status' },
+    {
+      title: 'Статус',
+      dataIndex: 'check_status',
+      key: 'check_status',
+      render: (status: string) => {
+        const statusTranslations: Record<string, string> = {
+          success: 'Успішно',
+          partially_successful: 'Частково успішно',
+          failed: 'Невдало',
+          unreachable: 'Недоступно',
+          disabled: 'Відключено',
+          is_deleted: 'Видалено',
+        };
+        return statusTranslations[status] || status || '-';
+      },
+    },
   ];
 
+  // Обробка кліку по ОС
   const handleOsClick = (os: string) => {
     setSelectedOs(os);
     setSelectedSubnet(null);
     setFilters({ page: 1, limit: 10 });
   };
 
+  // Обробка кліку по підмережі
   const handleSubnetClick = (subnet: string) => {
     setSelectedSubnet(subnet);
     setSelectedOs(null);
@@ -149,7 +188,7 @@ const Dashboard: React.FC = () => {
       {activeTab === 'subnets' && <SubnetStats onSubnetClick={handleSubnetClick} />}
 
       <Modal
-        title={selectedOs ? selectedOs.replace('%', '') : selectedSubnet ? selectedSubnet : 'Не выбрано'}
+        title={selectedOs ? selectedOs.replace('%', '') : selectedSubnet ? selectedSubnet : 'Не вибрано'}
         open={isModalVisible}
         onCancel={() => {
           setIsModalVisible(false);
@@ -161,9 +200,9 @@ const Dashboard: React.FC = () => {
         width={600}
       >
         {isComputersLoading ? (
-          <div>Загрузка...</div>
+          <div>Завантаження...</div>
         ) : computersError ? (
-          <div style={{ color: 'red' }}>Ошибка: {computersError.message}</div>
+          <div style={{ color: 'red' }}>Помилка: {computersError.message}</div>
         ) : (
           <Table
             columns={computerColumns}

@@ -1,3 +1,4 @@
+// src/components/CombinedStats.tsx
 import { Card, Row, Col, Table, Typography } from 'antd';
 import { Pie } from 'react-chartjs-2';
 import { Chart, ActiveElement } from 'chart.js';
@@ -17,6 +18,7 @@ interface CombinedStatsProps {
   onStatusClick: (status: string) => void;
 }
 
+// Нормалізація назви ОС для відображення
 const normalizeOsName = (name: string): string => {
   const nameLower = name.toLowerCase();
   if (nameLower.includes('windows 10') && (nameLower.includes('корпоративная') || nameLower.includes('enterprise') || nameLower.includes('ltsc'))) {
@@ -26,6 +28,16 @@ const normalizeOsName = (name: string): string => {
     return 'Hyper-V Server';
   }
   return name;
+};
+
+// Переклади статусів перевірки
+const statusTranslations: Record<string, string> = {
+  success: 'Успішно',
+  partially_successful: 'Частково успішно',
+  failed: 'Невдало',
+  unreachable: 'Недоступно',
+  disabled: 'Відключено',
+  is_deleted: 'Видалено',
 };
 
 const CombinedStats: React.FC<CombinedStatsProps> = ({
@@ -40,6 +52,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
 }) => {
   const navigate = useNavigate();
 
+  // Дані для діаграми клієнтських ОС
   const clientOsChartData = {
     labels: clientOsData && Array.isArray(clientOsData) ? clientOsData.map(os => normalizeOsName(os.category)) : [],
     datasets: [{
@@ -48,6 +61,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     }],
   };
 
+  // Дані для діаграми серверних ОС
   const serverOsChartData = {
     labels: serverOsData && Array.isArray(serverOsData) ? serverOsData.map(os => normalizeOsName(os.category)) : [],
     datasets: [{
@@ -56,6 +70,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     }],
   };
 
+  // Обробка кліку по діаграмі
   const handlePieClick = (elements: ActiveElement[], chart: Chart, isClientOs: boolean) => {
     if (!elements.length) return;
     const index = elements[0].index;
@@ -63,6 +78,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     if (typeof os === 'string') onOsClick(os, isClientOs);
   };
 
+  // Колонки для таблиці статусів
   const statusColumns = [
     {
       title: 'Статус',
@@ -73,7 +89,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
           onStatusClick(status);
           navigate(`/computers?check_status=${encodeURIComponent(status)}`);
         }} style={{ cursor: 'pointer', color: '#1890ff' }}>
-          {status}
+          {statusTranslations[status] || status}
         </a>
       ),
     },
@@ -85,7 +101,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
       <Card style={{ marginBottom: '16px' }}>
         <Row justify="space-between">
           <Col>
-            <strong>Всього комп'ютерів:</strong> {totalComputers ?? '-'}
+            <strong>Всього комп’ютерів:</strong> {totalComputers ?? '-'}
           </Col>
           <Col>
             <strong>Остання перевірка:</strong>{' '}
@@ -96,7 +112,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
           <Row style={{ marginTop: 8 }}>
             <Col>
               <Link to="/?tab=low_disk_space" style={{ color: 'red' }}>
-                Увага: {lowDiskSpaceCount} комп'ютерів з низьким залишком вільного місця на диску
+                Увага: {lowDiskSpaceCount} комп’ютерів з низьким залишком вільного місця на диску
               </Link>
             </Col>
           </Row>
@@ -157,7 +173,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
         <Title level={4}>Статуси перевірки</Title>
         <Table
           columns={statusColumns}
-          dataSource={statusStats && Array.isArray(statusStats) ? statusStats : []}
+          dataSource={statusStats && Array.isArray(statusStats) ? statusStats.filter(stat => stat.count > 0) : []}
           rowKey="status"
           size="small"
           pagination={false}

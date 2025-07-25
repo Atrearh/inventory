@@ -13,17 +13,15 @@ from fastapi.security import OAuth2PasswordRequestForm
 from argon2 import PasswordHasher
 from fastapi_users.password import PasswordHelper
 
-# Налаштування логування
 logger = logging.getLogger(__name__)
 
-# Визначаємо роутер без префікса, оскільки /api/auth додається в main.py
 router = APIRouter(tags=["auth"])
 users_router = APIRouter(tags=["users"])
 
 # Налаштування транспорту для access_token
 cookie_transport = CookieTransport(
     cookie_name="access_token",
-    cookie_max_age=3600,  # 1 година
+    cookie_max_age=3600,
     cookie_httponly=True,
     cookie_secure=False,  # Для локальної розробки
     cookie_samesite="lax",
@@ -132,39 +130,11 @@ router.include_router(
     prefix="/jwt",
 )
 
-# Кастомний ендпоінт для оновлення токена
-@router.post("/jwt/refresh")
-async def refresh_token(
-    response: Response,
-    user: User = Depends(get_current_user),
-    strategy: JWTStrategy = Depends(get_jwt_strategy),
-):
-    logger.info(f"Refreshing token for user: {user.email}")
-    try:
-        new_access_token = await strategy.write_token(user)
-        response.set_cookie(
-            key="access_token",
-            value=new_access_token,
-            max_age=3600,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-        )
-        logger.info(f"Token refreshed for user: {user.email}")
-        return {"message": "Токен успішно оновлено"}
-    except Exception as e:
-        logger.error(f"Error refreshing token: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Помилка при оновленні токена",
-        )
-
 # Роутер для логауту
 @router.post("/jwt/logout")
 async def logout(response: Response):
     """Вихід користувача з видаленням cookies."""
     response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
     logger.info("User logged out successfully")
     return {"message": "Успішний вихід"}
 

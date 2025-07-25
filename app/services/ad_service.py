@@ -29,7 +29,7 @@ class ADService:
             conn.search(
                 search_base=base_dn,
                 search_filter="(objectClass=computer)",
-                attributes=["dNSHostName", "operatingSystem", "objectGUID", "whenCreated", "whenChanged", "userAccountControl", "description"]
+                attributes=["dNSHostName", "operatingSystem", "objectGUID", "whenCreated", "whenChanged", "userAccountControl", "description", "lastLogon"]
             )
             logger.debug(f"Найдено записей: {len(conn.entries)}")
 
@@ -41,6 +41,9 @@ class ADService:
                     continue
                 enabled = not (int(entry.userAccountControl.value) & 2)
                 object_guid = str(entry.objectGUID.value).strip('{}') if entry.objectGUID else None
+                if not object_guid:
+                    logger.warning(f"Запись {entry.entry_dn} не имеет 'objectGUID'")
+                    continue
                 computers.append({
                     "hostname": dns_hostname,
                     "os_name": entry.operatingSystem.value if entry.operatingSystem else None,
@@ -48,7 +51,8 @@ class ADService:
                     "when_created": entry.whenCreated.value if entry.whenCreated else None,
                     "when_changed": entry.whenChanged.value if entry.whenChanged else None,
                     "enabled": enabled,
-                    "ad_notes": entry.description.value if entry.description else None
+                    "ad_notes": entry.description.value if entry.description else None,
+                    "last_logon": entry.lastLogon.value if entry.lastLogon else None
                 })
                 logger.debug(f"Найден хост: {dns_hostname}, enabled: {enabled}, object_guid: {object_guid}")
             logger.info(f"Найдено {len(computers)} компьютеров в AD")
@@ -68,16 +72,29 @@ class ADService:
 
         # Обновление или создание записей
         for computer_data in computers:
-            computer_data["last_updated"] = datetime.utcnow()  # Додаємо поле last_updated
-            computer = await self.repo.get_computer_by_guid(db, computer_data["object_guid"])
-            if computer:
-                # Проверка на переименование
-                if computer.hostname != computer_data["hostname"]:
-                    logger.info(f"Переименование комп’ютера: {computer.hostname} -> {computer_data['hostname']}")
-                computer_data["is_deleted"] = not computer_data["enabled"]
-                await self.repo.async_update_computer_by_guid(db, computer_data["object_guid"], computer_data)
+            computer_data["last_updated"] = datetime.utcnow()
+            computer_data["check_status"] = CheckStatus.disabled if not computer_data["enabled"] else CheckStatus.unreachable
+
+            # Проверка за object_guid
+            existing_computer = await self.repo.get_computer_by_guid(db, computer_data["object_guid"])
+            if existing_computer:
+                # Если компьютер существует, обновляем его поля
+                logger.info(f"Обновление компьютера: {computer_data['hostname']} (GUID: {computer_data['object_guid']})")
+                update_data = {
+                    "hostname": computer_data["hostname"],
+                    "os_name": computer_data["os_name"],
+                    "when_created": computer_data["when_created"],
+                    "when_changed": computer_data["when_changed"],
+                    "enabled": computer_data["enabled"],
+                    "ad_notes": computer_data["ad_notes"],
+                    "last_updated": computer_data["last_updated"],
+                    "last_logon": computer_data["last_logon"],
+                    "check_status": computer_data["check_status"]
+                }
+                await self.repo.async_update_computer_by_guid(db, computer_data["object_guid"], update_data)
             else:
-                computer_data["is_deleted"] = not computer_data["enabled"]
+                # Если компьютера нет, создаем новый
+                logger.info(f"Создание нового компьютера: {computer_data['hostname']} (GUID: {computer_data['object_guid']})")
                 computer_data["check_status"] = CheckStatus.unreachable
                 await self.repo.async_create_computer(db, computer_data)
 
@@ -85,11 +102,15 @@ class ADService:
         existing_computers = await self.repo.get_all_computers_with_guid(db)
         for computer in existing_computers:
             if computer.object_guid and computer.object_guid not in ad_guids:
-                logger.info(f"Компьютер {computer.hostname} удален из AD")
+                logger.info(f"Компьютер {computer.hostname} (GUID: {computer.object_guid}) удален из AD")
                 await self.repo.async_update_computer_by_guid(
                     db,
                     computer.object_guid,
-                    {"is_deleted": True, "enabled": False, "last_updated": datetime.utcnow()}  # Додаємо last_updated
+                    {
+                        "enabled": False,
+                        "last_updated": datetime.utcnow(),
+                        "check_status": CheckStatus.is_deleted
+                    }
                 )
 
         await db.commit()

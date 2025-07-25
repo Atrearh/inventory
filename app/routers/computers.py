@@ -42,7 +42,7 @@ async def export_computers_to_csv(
         
         header = [ 
             'IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС',
-            'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Процессор', 'Видеокарта'
+            'Время последней проверки', 'Тип', 'Виртуализация', 'Диск', 'Процессор', 'Видеокарта', 'Статус'
         ]
         writer.writerow(header)
         yield output.getvalue()
@@ -117,6 +117,7 @@ async def export_computers_to_csv(
                 
                 is_server = 'Сервер' if computer.os_name and 'server' in computer.os_name.lower() else 'Клиент'
                 virtualization = 'Виртуальный' if computer.is_virtual else 'Физический'
+                status_str = computer.check_status.value if computer.check_status else 'Неизвестно'
 
                 row_data = [
                     ip_addresses_str,
@@ -130,7 +131,8 @@ async def export_computers_to_csv(
                     virtualization,
                     disk_info_str,
                     processor_info,
-                    video_cards_str
+                    video_cards_str,
+                    status_str
                 ]
                 writer.writerow(row_data)
                 row_count += 1
@@ -201,6 +203,7 @@ async def get_component_history(computer_id: int, db: AsyncSession = Depends(get
         logger.error("Ошибка получения истории компонентов", extra={"computer_id": computer_id, "error": str(e)})
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
+# Изменённый участок в get_computers
 @router.get("/computers", response_model=ComputersResponse, operation_id="get_computers", dependencies=[Depends(get_current_user)])
 async def get_computers(
     hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
@@ -216,9 +219,15 @@ async def get_computers(
 ):
     logger.info("Запрос списка компьютеров", extra={"hostname": hostname, "ip_range": ip_range, "os_name": os_name, "check_status": check_status, "sort_by": sort_by, "sort_order": sort_order, "page": page, "limit": limit, "server_filter": server_filter})
     try:
-        logger.debug("Using Computer class", extra={"computer_class": str(Computer)})
         query = select(Computer).options(
-            selectinload(Computer.ip_addresses)
+            selectinload(Computer.ip_addresses),
+            selectinload(Computer.physical_disks),
+            selectinload(Computer.logical_disks),
+            selectinload(Computer.processors),
+            selectinload(Computer.mac_addresses),
+            selectinload(Computer.roles),
+            selectinload(Computer.software),
+            selectinload(Computer.video_cards)
         )
 
         query = query.outerjoin(IPAddress, Computer.id == IPAddress.computer_id)
@@ -249,59 +258,28 @@ async def get_computers(
             try:
                 logger.debug("Validating check_status", extra={"check_status": check_status})
                 CheckStatus(check_status)
+                query = query.filter(Computer.check_status == check_status)
             except ValueError:
                 logger.error("Некорректное значение check_status", extra={"check_status": check_status})
                 raise HTTPException(status_code=422, detail=f"Некорректное значение check_status: {check_status}")
-        if server_filter == "server":
-            query = query.filter(Computer.os_name.ilike("%server%"))
-        elif server_filter == "client":
-            query = query.filter(~Computer.os_name.ilike("%server%"))
+        if server_filter:
+            if server_filter == "server":
+                query = query.filter(Computer.os_name.ilike("%server%"))
+            elif server_filter == "client":
+                query = query.filter(~Computer.os_name.ilike("%server%"))
 
-        if sort_by not in ["hostname", "os_name", "check_status", "last_updated"]:
-            sort_by = "hostname"
-        if sort_order not in ["asc", "desc"]:
-            sort_order = "asc"
-        
-        sort_column = getattr(Computer, sort_by)
-        if sort_order == "desc":
+        sort_column = getattr(Computer, sort_by if sort_by in ["hostname", "os_name", "check_status", "last_updated"] else "hostname")
+        if sort_order.lower() == "desc":
             sort_column = sort_column.desc()
-        
-        logger.debug("SQL Query", extra={"query": str(query)})
-        
+        query = query.order_by(sort_column)
+
         total = await db.scalar(select(func.count()).select_from(query))
-        query = query.offset((page - 1) * limit).limit(limit).order_by(sort_column)
-        
-        computers = (await db.execute(query)).scalars().unique().all()
-        try:
-            computer_list = [
-                ComputerList(
-                    id=c.id,
-                    hostname=c.hostname,
-                    ip_addresses=[{"address": ip.address, "detected_on": ip.detected_on, "removed_on": ip.removed_on} for ip in c.ip_addresses if ip.removed_on is None] if c.ip_addresses else [],
-                    os_version=c.os_version,
-                    os_name=c.os_name,
-                    check_status=c.check_status.value,
-                    last_updated=c.last_updated,
-                    physical_disks=[],
-                    logical_disks=[],
-                    processors=[],
-                    mac_addresses=[],
-                    motherboard=c.motherboard,
-                    last_boot=c.last_boot,
-                    is_virtual=c.is_virtual,
-                    roles=[],
-                    software=[],
-                    video_cards=[],
-                ) for c in computers
-            ]
-        except ValidationError as ve:
-            logger.error("Ошибка валидации данных для ComputersResponse", extra={"errors": ve.errors()})
-            raise HTTPException(status_code=422, detail=f"Ошибка валидации данных: {ve.errors()}")
-        
-        logger.debug("Возвращено компьютеров", extra={"count": len(computer_list), "total": total})
-        return ComputersResponse(data=computer_list, total=total)
-    except HTTPException as e:
-        raise
+        query = query.offset((page - 1) * limit).limit(limit)
+        result = await db.execute(query)
+        computers = result.scalars().all()
+        pydantic_computers = [ComputerList.model_validate(comp, from_attributes=True) for comp in computers]
+        logger.info(f"Получено {len(pydantic_computers)} компьютеров, всего: {total}")
+        return ComputersResponse(data=pydantic_computers, total=total)
     except Exception as e:
         logger.error("Ошибка получения списка компьютеров", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")

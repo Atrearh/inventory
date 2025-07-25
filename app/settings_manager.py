@@ -3,11 +3,11 @@ from sqlalchemy import select
 from .models import AppSetting
 from .settings import Settings
 from cryptography.fernet import Fernet
-import structlog
+import logging
 from fastapi import HTTPException
 import os
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class SettingsManager:
     """Клас для управління налаштуваннями додатка, включаючи завантаження та збереження в базу даних."""

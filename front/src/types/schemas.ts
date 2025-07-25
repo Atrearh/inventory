@@ -5,7 +5,7 @@
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export type CheckStatus = "success" | "failed" | "unreachable" | "partially_successful";
+export type CheckStatus = "success" | "failed" | "unreachable" | "partially_successful" | "disabled" | "is_deleted";
 export type ScanStatus = "pending" | "running" | "completed" | "failed";
 
 export interface AppSettingUpdate {
@@ -108,13 +108,13 @@ export interface Computer {
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  last_logon?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
-  is_deleted?: boolean | null;
   id: number;
   last_updated: string;
 }
@@ -140,13 +140,13 @@ export interface ComputerBase {
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  last_logon?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
-  is_deleted?: boolean | null;
 }
 export interface ComputerCreate {
   hostname: string;
@@ -165,13 +165,13 @@ export interface ComputerCreate {
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  last_logon?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
-  is_deleted?: boolean | null;
 }
 export interface ComputerList {
   hostname: string;
@@ -190,13 +190,13 @@ export interface ComputerList {
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  last_logon?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
-  is_deleted?: boolean | null;
   id: number;
   last_updated?: string | null;
 }
@@ -217,13 +217,13 @@ export interface ComputerListItem {
   roles?: Role[];
   software?: Software[];
   video_cards?: VideoCard[];
+  last_logon?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
-  is_deleted?: boolean | null;
   id: number;
   last_updated: string;
 }

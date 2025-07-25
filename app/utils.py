@@ -1,11 +1,11 @@
-import structlog
+import logging
 import re
 import ipaddress
 from typing import Optional, Any
 from pydantic_core import core_schema
 from pydantic import GetCoreSchemaHandler
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class NonEmptyStr(str):
     @classmethod

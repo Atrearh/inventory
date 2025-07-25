@@ -1,21 +1,17 @@
+// src/hooks/useExportCSV.ts
 import { useCallback } from 'react';
 import { notification } from 'antd';
 import { apiInstance } from '../api/api';
+import { Filters } from './useComputerFilters';
 
-export const useExportCSV = (filters: {
-  hostname?: string;
-  os_name?: string;
-  check_status?: string;
-  sort_by?: string;
-  sort_order?: string;
-  server_filter?: string;
-}) => {
+export const useExportCSV = (filters: Filters) => {
   const handleExportCSV = useCallback(async () => {
     try {
       const cleanedParams = {
         hostname: filters.hostname || undefined,
         os_name: filters.os_name || undefined,
-        check_status: filters.check_status || undefined,
+        check_status: filters.check_status === 'is_deleted' ? undefined : filters.check_status || undefined,
+        is_deleted: filters.is_deleted,
         sort_by: filters.sort_by || 'hostname',
         sort_order: filters.sort_order === 'asc' || filters.sort_order === 'desc' ? filters.sort_order : 'asc',
         server_filter: filters.server_filter || undefined,

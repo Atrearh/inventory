@@ -1,59 +1,23 @@
 import { ComputersResponse, Computer, ComponentHistory } from '../types/schemas';
 import { apiInstance } from './api';
 import { Filters } from '../hooks/useComputerFilters';
+import { cleanAndSerializeParams } from '../utils/apiUtils';
 
 // Отримання списку комп’ютерів з бекенду
 export const getComputers = async (params: Filters) => {
-  const cleanedParams = {
-    hostname: params.hostname || undefined,
-    os_name: params.os_name || undefined,
-    check_status: params.check_status || undefined,
-    sort_by: params.sort_by || 'hostname',
-    sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
-    page: params.page || 1,
-    limit: params.limit || 10,
-    server_filter: params.server_filter || undefined,
-  };
-
   const response = await apiInstance.get<ComputersResponse>('/computers', {
-    params: cleanedParams,
-    paramsSerializer: (params) => {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== '') {
-          searchParams.append(key, String(value));
-        }
-      }
-      return searchParams.toString();
-    },
+    paramsSerializer: () => cleanAndSerializeParams(params).toString(),
     withCredentials: true,
   });
   return response.data;
 };
 
+
 // Експорт комп’ютерів у CSV
 export const exportComputersToCSV = async (params: Filters) => {
-  const cleanedParams = {
-    hostname: params.hostname || undefined,
-    os_name: params.os_name || undefined,
-    check_status: params.check_status || undefined,
-    sort_by: params.sort_by || 'hostname',
-    sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
-    server_filter: params.server_filter || undefined,
-  };
-
   const response = await apiInstance.get('/computers/export/csv', {
-    params: cleanedParams,
+    paramsSerializer: () => cleanAndSerializeParams(params).toString(),
     responseType: 'blob',
-    paramsSerializer: (params) => {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== '') {
-          searchParams.append(key, String(value));
-        }
-      }
-      return searchParams.toString();
-    },
     withCredentials: true,
   });
   return response.data;

@@ -1,4 +1,3 @@
-// src/hooks/useComputerFilters.ts
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { debounce } from 'lodash';
@@ -18,6 +17,7 @@ export interface Filters {
   page: number;
   limit: number;
   server_filter?: string;
+  ip_range?: string; // Додано для підтримки фільтрації за підмережею
 }
 
 interface Sorter {
@@ -42,6 +42,8 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
     sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'asc',
     page: Number(searchParams.get('page')) || 1,
     limit: Number(searchParams.get('limit') || ITEMS_PER_PAGE),
+    server_filter: searchParams.get('server_filter') || undefined,
+    ip_range: searchParams.get('ip_range') || undefined, // Додано
   });
 
   // Оновлення параметрів URL при зміні фільтрів
@@ -52,6 +54,7 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
     if (filters.os_name) params.os_name = filters.os_name;
     params.show_disabled = String(filters.show_disabled);
     if (filters.server_filter) params.server_filter = filters.server_filter;
+    if (filters.ip_range) params.ip_range = filters.ip_range; // Додано
     params.sort_by = filters.sort_by;
     params.sort_order = filters.sort_order;
     params.page = String(filters.page);
@@ -72,6 +75,7 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
         page: 1,
         limit: ITEMS_PER_PAGE,
         server_filter: undefined,
+        ip_range: undefined, // Додано
       });
     }, 300),
     []
@@ -111,6 +115,7 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
       page: 1,
       limit: ITEMS_PER_PAGE,
       server_filter: undefined,
+      ip_range: undefined, // Додано
     });
   }, []);
 
@@ -154,6 +159,25 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
       filtered = filtered.filter((comp) => comp.os_name && isServerOs(comp.os_name));
     } else if (filters.server_filter === 'client') {
       filtered = filtered.filter((comp) => comp.os_name && !isServerOs(comp.os_name));
+    }
+    if (filters.ip_range) {
+      filtered = filtered.filter((comp) =>
+        comp.ip_addresses?.some((ip) => {
+          const ipParts = ip.address.split('.');
+          const rangeParts = filters.ip_range!.split('.');
+          if (rangeParts[2].startsWith('[')) {
+            const [start, end] = rangeParts[2].match(/\[(\d+)-(\d+)\]/)!.slice(1).map(Number);
+            const thirdOctet = Number(ipParts[2]);
+            return (
+              ipParts[0] === rangeParts[0] &&
+              ipParts[1] === rangeParts[1] &&
+              thirdOctet >= start &&
+              thirdOctet <= end
+            );
+          }
+          return ip.address === filters.ip_range;
+        })
+      );
     }
 
     filtered.sort((a, b) => {

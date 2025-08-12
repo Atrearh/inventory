@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator, Field, ConfigDict
 from typing import Optional, List, Union
 from datetime import datetime
 from .models import CheckStatus, ScanStatus
-from .utils import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
+from app.utils.validators import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
 import logging
 from fastapi_users import schemas
 from pydantic import EmailStr
@@ -29,7 +29,7 @@ class CheckStatus(str, Enum):
     unreachable = "unreachable"
     partially_successful = "partially_successful"
     disabled = "disabled"
-    is_deleted = "is_deleted"  # Новое значение для удаленных компьютеров
+    is_deleted = "is_deleted"
 
 class Role(TrackableComponent):
     name: NonEmptyStr = Field(..., alias="Name")

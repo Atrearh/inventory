@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict, field_validator
 from typing import Optional, List
-from app.utils import NonEmptyStr
+from app.utils.validators import NonEmptyStr
 import ipaddress
 import os
 from pathlib import Path

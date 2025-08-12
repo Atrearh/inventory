@@ -2,9 +2,9 @@
   "name": "inv-vite",
   "private": true,
   "version": "1.0.0",
-  "type": "module", 
+  "type": "module",
   "scripts": {
-    "dev": "vite", 
+    "dev": "vite",
     "build": "npm run generate:ts && vite build",
     "preview": "vite preview",
     "generate:ts": "python ../generate_ts_types.py"
@@ -15,18 +15,21 @@
     "axios": "^1.9.0",
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
-    "jwt-decode": "^4.0.0", 
+    "jwt-decode": "^4.0.0",
+    "lodash": "^4.17.21",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.20",
     "@types/node": "^24.0.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "typescript": "^5.2.2", 
-    "vite": "^6.3.5"
+    "typescript": "^5.2.2",
+    "vite": "^6.3.5",
+    "vite-plugin-run": "^0.6.1"
   }
 }

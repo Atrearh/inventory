@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Integer, String, Boolean, DateTime, Enum, ForeignKey, Index, func, BigInteger, Column, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, ForeignKey, UniqueConstraint, Index, func, BigInteger
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
 from app.database import Base 
@@ -15,11 +15,11 @@ class CheckStatus(enum.Enum):
     unreachable = "unreachable"
     partially_successful = "partially_successful"
     disabled = "disabled"
-    is_deleted = "is_deleted"  # Новое значение для удаленных компьютеров
+    is_deleted = "is_deleted"
 
 class ScanStatus(enum.Enum):
     pending = "pending"
-    running = "running" 
+    running = "running"
     completed = "completed"
     failed = "failed"
 
@@ -77,36 +77,39 @@ class MACAddress(Base):
 
 class Computer(Base):
     __tablename__ = "computers"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, index=True)
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
-    physical_disks: Mapped[List["PhysicalDisk"]] = relationship("PhysicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
     os_name: Mapped[Optional[str]] = mapped_column(String(255))
     os_version: Mapped[Optional[str]] = mapped_column(String(50))
     ram: Mapped[Optional[int]] = mapped_column(Integer)
     motherboard: Mapped[Optional[str]] = mapped_column(String(255))
-    last_boot: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    last_updated: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
-    last_full_scan: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
-    check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), default=CheckStatus.success, nullable=False)
-    object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)
-    when_created: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    when_changed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    last_boot: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_full_scan: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), nullable=False, server_default=CheckStatus.success.value)
+    object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)  # Залишено лише один unique індекс
+    when_created: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    when_changed: Mapped[Optional[datetime]] = mapped_column(DateTime)
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
     ad_notes: Mapped[Optional[str]] = mapped_column(Text)
-    last_logon: Mapped[Optional[datetime]] = mapped_column(DateTime)
     local_notes: Mapped[Optional[str]] = mapped_column(Text)
-    ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    software: Mapped[List["Software"]] = relationship("Software", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    video_cards: Mapped[List["VideoCard"]] = relationship("VideoCard", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
-    processors: Mapped[List["Processor"]] = relationship("Processor", back_populates="computer", cascade="all, delete-orphan", lazy="raise")
+    last_logon: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer")
+    mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer")
+    processors: Mapped[List["Processor"]] = relationship("Processor", back_populates="computer")
+    video_cards: Mapped[List["VideoCard"]] = relationship("VideoCard", back_populates="computer")
+    physical_disks: Mapped[List["PhysicalDisk"]] = relationship("PhysicalDisk", back_populates="computer")
+    logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer")
+    software: Mapped[List["Software"]] = relationship("Software", back_populates="computer")
+    roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer")
+
     __table_args__ = (
-        Index('idx_object_guid', 'object_guid', unique=True),
         Index('idx_computers_last_updated', 'last_updated'),
         Index('idx_computers_filters', 'os_name', 'check_status', 'last_updated'),
+        UniqueConstraint('object_guid', name='idx_object_guid'),
     )
 
 class Role(Base):
@@ -146,6 +149,7 @@ class PhysicalDisk(Base):
     detected_on: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     removed_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     computer: Mapped["Computer"] = relationship("Computer", back_populates="physical_disks")
+    logical_disks = relationship("LogicalDisk", back_populates="physical_disk")
     __table_args__ = (
         Index('idx_computer_physical_disk', 'computer_id', 'serial', unique=True),
     )
@@ -202,6 +206,6 @@ class User(SQLAlchemyBaseUserTable[int], Base):
 
 class AppSetting(Base):
     __tablename__ = "app_settings"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)

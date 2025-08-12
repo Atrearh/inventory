@@ -21,7 +21,7 @@ users_router = APIRouter(tags=["users"])
 # Налаштування транспорту для access_token
 cookie_transport = CookieTransport(
     cookie_name="access_token",
-    cookie_max_age=3600,
+    cookie_max_age=360000,
     cookie_httponly=True,
     cookie_secure=False,  # Для локальної розробки
     cookie_samesite="lax",

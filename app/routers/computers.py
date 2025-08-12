@@ -293,7 +293,7 @@ async def get_computer_by_id(
     logger.info("Запрос компьютера по ID", extra={"computer_id": computer_id})
     try:
         repo = ComputerRepository(db)
-        computer = await repo.async_get_computer_by_id(computer_id)
+        computer = await repo.get_computer_details_by_id(computer_id)  # Змінено на правильний метод
         if not computer:
             logger.warning("Компьютер не найден", extra={"computer_id": computer_id})
             raise HTTPException(status_code=404, detail="Компьютер не найден")
@@ -303,4 +303,4 @@ async def get_computer_by_id(
         raise
     except Exception as e:
         logger.error("Ошибка получения компьютера", extra={"computer_id": computer_id, "error": str(e)})
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")

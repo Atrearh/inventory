@@ -3,8 +3,8 @@ import ipaddress
 import logging
 import uvicorn
 from fastapi import FastAPI, Request, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
 from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
 from .settings_manager import SettingsManager
@@ -15,7 +15,7 @@ from .data_collector import script_cache
 from .services.encryption_service import EncryptionService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
-from .routers.auth import auth_backend
+from .utils.security import setup_cors # Імпортуємо нову утиліту
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -45,16 +45,12 @@ async def lifespan(app: FastAPI):
         await init_db()
 
         # Предварительная загрузка скриптов
-        try:
-            await script_cache.preload_scripts()
-            logger.info("Все скрипты предварительно загружены в кэш")
-        except Exception as e:
-            logger.error(f"Ошибка при предварительной загрузке скриптов: {str(e)}")
-            raise
+        await script_cache.preload_scripts()
+        logger.info("Все скрипты предварительно загружены в кэш")
 
         yield
     except Exception as e:
-        logger.error(f"Ошибка инициализации приложения: {str(e)}")
+        logger.error(f"Ошибка инициализации приложения: {str(e)}", exc_info=True)
         raise
     finally:
         logger.info("Завершение работы...")
@@ -70,14 +66,8 @@ app.middleware("http")(check_ip_allowed)
 # Регистрация обработчика исключений
 app.exception_handler(Exception)(global_exception_handler)
 
-# Настройка CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allow_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Настройка CORS за допомогою утиліти
+setup_cors(app, settings)
 
 # Зависимость для получения encryption_service
 def get_encryption_service(request: Request) -> EncryptionService:
@@ -92,16 +82,5 @@ app.include_router(settings_router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
 app.include_router(scripts.router, prefix="")
 
-# Діагностичне логування для перевірки маршрутів
-@app.get("/debug/routes")
-async def get_routes():
-    routes = [
-        {"path": str(route.path), "methods": list(route.methods), "name": route.name}
-        for route in app.routes
-    ]
-    logger.info(f"Зареєстровані маршрути: {routes}")
-    return routes
-
 if __name__ == "__main__":
-    logger.info("Запуск приложения")
     uvicorn.run(app, host="0.0.0.0", port=settings.server_port)

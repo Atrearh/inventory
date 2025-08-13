@@ -1,14 +1,14 @@
 import os
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
-from .. import models
 from ..settings import settings
 from .auth import get_current_user
 from typing import List, Dict
-from ..data_collector import WinRMDataCollector, winrm_session, SCRIPTS_DIR
+from ..data_collector import WinRMDataCollector,  SCRIPTS_DIR
 from pydantic import BaseModel, ValidationError
+from ..services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +63,10 @@ async def execute_script(
         raise HTTPException(status_code=404, detail="Скрипт не знайдено")
     
     try:
-        collector = WinRMDataCollector(hostname=hostname, username=settings.ad_username, password=settings.ad_password)
-        with winrm_session(hostname, settings.ad_username, settings.ad_password) as session:
-            # Виконання скрипта через _execute_script
-            result = await collector._execute_script(session, script_name)
+        encryption_service = EncryptionService(settings.encryption_key)
+        collector = WinRMDataCollector(hostname=hostname, db=db, encryption_service=encryption_service)
+        with collector.winrm_service.create_session(hostname) as session:
+            result = await collector._execute_script(script_name)
             logger_adapter.info(f"Скрипт {script_name} успішно виконано на {hostname}")
             return {"output": result.get("stdout", ""), "error": result.get("stderr", "")}
     except Exception as e:

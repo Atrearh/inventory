@@ -206,3 +206,6 @@ router.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/jwt",
 )
+@users_router.get("/me", response_model=UserRead)
+async def read_users_me(current_user: User = Depends(fastapi_users.current_user(active=True))):
+    return current_user

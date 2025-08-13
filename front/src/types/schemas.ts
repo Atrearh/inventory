@@ -273,6 +273,23 @@ export interface StatusStats {
   status: CheckStatus;
   count: number;
 }
+export interface DomainCreate {
+  name: string;
+  username: string;
+  password: string;
+}
+export interface DomainRead {
+  id: string;
+  name: string;
+  username: string;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+export interface DomainUpdate {
+  name: string;
+  username: string;
+}
 export interface ErrorResponse {
   error: string;
   detail?: string | null;

@@ -328,3 +328,20 @@ class UserUpdate(schemas.BaseUserUpdate):
 class ComputerListItem(ComputerBase):
     id: int
     last_updated: datetime
+
+class DomainCreate(BaseModel):
+    name: NonEmptyStr
+    username: NonEmptyStr
+    password: NonEmptyStr
+
+class DomainUpdate(BaseModel):
+    name: NonEmptyStr
+    username: NonEmptyStr
+
+class DomainRead(BaseModel):
+    id: NonEmptyStr
+    name: NonEmptyStr
+    username: NonEmptyStr
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

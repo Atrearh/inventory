@@ -10,6 +10,9 @@ from contextlib import contextmanager
 from .settings import settings
 import os
 import logging
+from .services.winrm_service import WinRMService
+from .services.encryption_service import EncryptionService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +106,11 @@ def winrm_session(hostname: str, username: str, password: str):
 
 class WinRMDataCollector:
     """Збирає інформацію з віддалених хостів Windows за допомогою WinRM."""
-    def __init__(self, hostname: str, username: str, password: str):
+    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService):
         self.hostname = hostname
-        self.username = username
-        self.password = password
+        self.winrm_service = WinRMService(encryption_service, db)
 
-    async def _execute_script(self, session: winrm.Session, script_name: str, last_updated: Optional[datetime] = None) -> Any:
+    async def _execute_script(self, script_name: str, last_updated: Optional[datetime] = None) -> Any:
         """Асинхронно виконує PowerShell-скрипт на віддаленому хості."""
         try:
             script_content = script_cache.get(script_name)
@@ -125,43 +127,44 @@ class WinRMDataCollector:
             logger.warning(f"Команда для {script_name} на {self.hostname} перевищує 3000 символів", extra={"hostname": self.hostname, "script_name": script_name})
 
         try:
-            result = await asyncio.to_thread(session.run_ps, command)
+            with self.winrm_service.create_session(self.hostname) as session:
+                result = await asyncio.to_thread(session.run_ps, command)
 
-            if result.status_code != 0:
-                error_message = decode_output(result.std_err)
-                logger.error(f"Скрипт {script_name} на {self.hostname} завершився з помилкою, код: {result.status_code}, помилка: {error_message}", extra={"hostname": self.hostname, "script_name": script_name})
-                return {"error": f"Помилка виконання скрипта '{script_name}': {error_message}", "check_status": "failed"}
+                if result.status_code != 0:
+                    error_message = decode_output(result.std_err)
+                    logger.error(f"Скрипт {script_name} на {self.hostname} завершився з помилкою, код: {result.status_code}, помилка: {error_message}", extra={"hostname": self.hostname, "script_name": script_name})
+                    return {"error": f"Помилка виконання скрипта '{script_name}': {error_message}", "check_status": "failed"}
 
-            output = decode_output(result.std_out)
-            logger.debug(f"Сирий вивід скрипта {script_name}: {output[:1000]}", extra={"hostname": self.hostname, "script_name": script_name})
+                output = decode_output(result.std_out)
+                logger.debug(f"Сирий вивід скрипта {script_name}: {output[:1000]}", extra={"hostname": self.hostname, "script_name": script_name})
 
-            if not output.strip():
-                if script_name == "software_info_changes.ps1":
-                    logger.debug(f"Скрипт {script_name} на {self.hostname} повернув порожній результат", extra={"hostname": self.hostname, "script_name": script_name})
-                    return {}
-                else:
-                    logger.warning(f"Скрипт {script_name} на {self.hostname} повернув порожній результат", extra={"hostname": self.hostname, "script_name": script_name})
-                    return {"error": f"Скрипт {script_name} повернув порожній результат", "check_status": "failed"}
+                if not output.strip():
+                    if script_name == "software_info_changes.ps1":
+                        logger.debug(f"Скрипт {script_name} на {self.hostname} повернув порожній результат", extra={"hostname": self.hostname, "script_name": script_name})
+                        return {}
+                    else:
+                        logger.warning(f"Скрипт {script_name} на {self.hostname} повернув порожній результат", extra={"hostname": self.hostname, "script_name": script_name})
+                        return {"error": f"Скрипт {script_name} повернув порожній результат", "check_status": "failed"}
 
-            try:
-                data = json.loads(output)
-                logger.debug(f"JSON із {script_name} успішно розпарсено", extra={"hostname": self.hostname, "script_name": script_name})
-                return data
-            except json.JSONDecodeError as e:
-                logger.error(f"Помилка парсингу JSON із {script_name} на {self.hostname}: {str(e)}, вивід: {output[:500]}", extra={"hostname": self.hostname, "script_name": script_name})
-                return {"error": f"Некоректний формат JSON від скрипта {script_name}: {str(e)}", "check_status": "failed"}
+                try:
+                    data = json.loads(output)
+                    logger.debug(f"JSON із {script_name} успішно розпарсено", extra={"hostname": self.hostname, "script_name": script_name})
+                    return data
+                except json.JSONDecodeError as e:
+                    logger.error(f"Помилка парсингу JSON із {script_name} на {self.hostname}: {str(e)}, вивід: {output[:500]}", extra={"hostname": self.hostname, "script_name": script_name})
+                    return {"error": f"Некоректний формат JSON від скрипта {script_name}: {str(e)}", "check_status": "failed"}
 
         except Exception as e:
             logger.error(f"Непередбачена помилка при виконанні {script_name} на {self.hostname}: {str(e)}", extra={"hostname": self.hostname, "script_name": script_name})
             return {"error": str(e), "check_status": "failed"}
 
-    async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
+async def get_all_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
         """Збирає повну інформацію про ПК, включаючи обладнання, ПЗ і ролі сервера."""
         result: Dict[str, Any] = {"hostname": self.hostname, "check_status": "failed", "errors": []}
         logger.info(f"Початок збору даних для {self.hostname}", extra={"hostname": self.hostname})
 
         try:
-            with winrm_session(self.hostname, self.username, self.password) as session:
+            with self.winrm_service.create_session(self.hostname) as session:
                 logger.info("Початок збору даних", extra={"hostname": self.hostname})
 
                 # Ініціалізація структури даних
@@ -176,7 +179,7 @@ class WinRMDataCollector:
                 failed_components = 0
 
                 # Збір базової інформації про обладнання
-                hardware_data = await self._execute_script(session, "system_info.ps1")
+                hardware_data = await self._execute_script("system_info.ps1")
                 if isinstance(hardware_data, dict) and "error" not in hardware_data:
                     result.update({
                         "os_name": hardware_data.get("os_name", "Unknown"),
@@ -189,7 +192,7 @@ class WinRMDataCollector:
                         "video_cards": hardware_data.get("video_cards", []),
                         "last_boot": hardware_data.get("last_boot"),
                         "is_virtual": hardware_data.get("is_virtual", False),
-                        "roles": hardware_data.get("roles", [])  # Додаємо ролі з першого виклику
+                        "roles": hardware_data.get("roles", [])
                     })
                     successful_components += 1
                     logger.debug("Дані system_info.ps1 зібрано успішно", extra={"hostname": self.hostname})
@@ -198,7 +201,7 @@ class WinRMDataCollector:
                     result["errors"].append(hardware_data.get("error", "Невідома помилка system_info.ps1"))
 
                 # Збір інформації про диски
-                disk_data = await self._execute_script(session, "disk_info.ps1")
+                disk_data = await self._execute_script("disk_info.ps1")
                 if isinstance(disk_data, dict) and "error" not in disk_data:
                     result["disks"]["physical_disks"] = disk_data.get("physical_disks", [])
                     result["disks"]["logical_disks"] = disk_data.get("logical_disks", [])
@@ -211,7 +214,7 @@ class WinRMDataCollector:
 
                 # Збір інформації про ПЗ
                 software_script = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
-                software_data = await self._execute_script(session, software_script, last_updated=last_updated)
+                software_data = await self._execute_script(software_script, last_updated=last_updated)
                 if isinstance(software_data, list):
                     result["software"] = software_data
                     successful_components += 1

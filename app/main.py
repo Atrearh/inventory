@@ -2,20 +2,21 @@
 import ipaddress
 import logging
 import uvicorn
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
-
 from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
 from .settings_manager import SettingsManager
 from .logging_config import setup_logging
-from .routers import auth, computers, scan, statistics, scripts
+from .routers import auth, computers, scan, statistics, scripts, domain_router
 from .routers.settings import router as settings_router
 from .data_collector import script_cache
 from .services.encryption_service import EncryptionService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
-from .utils.security import setup_cors # Імпортуємо нову утиліту
+from .utils.security import setup_cors 
+from .repositories.domain_repository import DomainRepository
+
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -41,6 +42,11 @@ async def lifespan(app: FastAPI):
         async with get_db_session() as db:
             await settings_manager.initialize_encryption_key(db)
             await settings_manager.load_from_db(db)
+            domain_repo = DomainRepository(db)
+            encryption_service = EncryptionService(settings.encryption_key)
+            encrypted_pass = encryption_service.encrypt(settings.ad_password)
+            await domain_repo.create_or_update_domain(settings.domain, settings.ad_username, encrypted_pass)
+            yield
         app.state.encryption_service = EncryptionService(settings.encryption_key)
         await init_db()
 
@@ -81,6 +87,7 @@ app.include_router(scan.router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
 app.include_router(scripts.router, prefix="")
+app.include_router(domain_router.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=settings.server_port)

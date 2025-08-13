@@ -1,4 +1,3 @@
-// src/components/AdminPanel.tsx
 import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -6,6 +5,7 @@ import { startScan, startADScan, register, updateUser, deleteUser } from '../api
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useApiQueries'; // Новий імпорт
+import DomainManagement from './DomainManagement';  // Новий імпорт для керування доменами
 
 interface MutationResponse {
   status: string;
@@ -138,6 +138,9 @@ const AdminPanel: React.FC = () => {
         loading={isUsersLoading}
         pagination={{ pageSize: 10 }}
       />
+
+      <h2 style={{ marginTop: 32, marginBottom: 16 }}>Керування доменами</h2>  {/* Новий заголовок для секції доменів */}
+      <DomainManagement />  {/* Додаємо компонент для керування доменами */}
 
       <Modal
         title={editingUser ? 'Редактирование пользователя' : 'Новый пользователь'}

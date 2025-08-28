@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     allowed_ips: Optional[NonEmptyStr] = None
     encryption_key: Optional[NonEmptyStr] = None
     secret_key: Optional[NonEmptyStr] = None  # Додано поле для JWT
+    timezone: Optional[NonEmptyStr] = "UTC"
 
     model_config = ConfigDict(
         env_file=Path(__file__).parent / ".env",  # Шлях до .env у директорії app

@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './context/AuthContext';
+import { TimezoneProvider } from './context/TimezoneContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,11 +21,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
+        <TimezoneProvider>
         <QueryClientProvider client={queryClient}>
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <App />
           </BrowserRouter>
         </QueryClientProvider>
+        </TimezoneProvider>
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>

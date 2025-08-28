@@ -1,9 +1,10 @@
-// src/components/CombinedStats.tsx
 import { Card, Row, Col, Table, Typography } from 'antd';
 import { Pie } from 'react-chartjs-2';
 import { Chart, ActiveElement } from 'chart.js';
 import { DashboardStats } from '../types/schemas';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTimezone } from '../context/TimezoneContext'; 
+import { formatDateInUserTimezone } from '../utils/formatDate';
 
 const { Title } = Typography;
 
@@ -51,6 +52,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   onStatusClick,
 }) => {
   const navigate = useNavigate();
+  const { timezone } = useTimezone(); 
 
   // Дані для діаграми клієнтських ОС
   const clientOsChartData = {
@@ -105,7 +107,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
           </Col>
           <Col>
             <strong>Остання перевірка:</strong>{' '}
-            {lastScanTime ? new Date(lastScanTime).toLocaleString('uk-UA') : '-'}
+            {formatDateInUserTimezone(lastScanTime, timezone)}
           </Col>
         </Row>
         {lowDiskSpaceCount > 0 && (

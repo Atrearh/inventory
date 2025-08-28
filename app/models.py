@@ -87,7 +87,7 @@ class Computer(Base):
     ram: Mapped[Optional[int]] = mapped_column(Integer)
     motherboard: Mapped[Optional[str]] = mapped_column(String(255))
     last_boot: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now() )
     last_full_scan: Mapped[Optional[datetime]] = mapped_column(DateTime)
     check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), nullable=False, server_default=CheckStatus.success.value)
     object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)  

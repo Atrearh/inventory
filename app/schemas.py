@@ -253,6 +253,7 @@ class AppSettingUpdate(BaseSchema):
     cors_allow_origins: Optional[str] = None
     allowed_ips: Optional[str] = None
     encryption_key: Optional[NonEmptyStr] = None
+    timezone: Optional[NonEmptyStr] = None
 
     @field_validator('log_level')
     @classmethod

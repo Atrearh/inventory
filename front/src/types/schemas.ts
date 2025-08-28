@@ -29,6 +29,7 @@ export interface AppSettingUpdate {
   cors_allow_origins?: string | null;
   allowed_ips?: string | null;
   encryption_key?: string | null;
+  timezone?: string | null;
 }
 export interface BaseSchema {}
 export interface ComponentChangeStats {

@@ -1,4 +1,3 @@
-// src/components/ComputerDetail.tsx
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { getComputerById, getHistory } from '../api/api';
@@ -10,6 +9,8 @@ import styles from './ComputerDetail.module.css';
 import { differenceInDays } from 'date-fns';
 import { ComponentHistory, Software } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
+import { useTimezone } from '../context/TimezoneContext'; 
+import { formatDateInUserTimezone } from '../utils/formatDate';
 
 const { Title } = Typography;
 
@@ -17,6 +18,7 @@ const ComputerDetail: React.FC = () => {
   const { computerId } = useParams<{ computerId: string }>();
   const computerIdNum = Number(computerId);
   const { isAuthenticated } = useAuth();
+  const { timezone } = useTimezone();
 
   const { data: computer, error: compError, isLoading: compLoading } = useQuery({
     queryKey: ['computer', computerIdNum],
@@ -52,7 +54,7 @@ const ComputerDetail: React.FC = () => {
 
   const softwareColumns = [
     {
-      title: 'Название',
+      title: 'Назва',
       dataIndex: 'DisplayName',
       key: 'DisplayName',
       sorter: (a: Software, b: Software) => a.DisplayName.localeCompare(b.DisplayName),
@@ -62,7 +64,7 @@ const ComputerDetail: React.FC = () => {
       title: 'Дата установки',
       dataIndex: 'InstallDate',
       key: 'InstallDate',
-      render: (val: string) => (val ? new Date(val).toLocaleDateString('uk-UA') : '-'),
+      render: (val: string) => formatDateInUserTimezone(val, timezone, 'dd.MM.yyyy'),
       sorter: (a: Software, b: Software) => new Date(a.InstallDate || 0).getTime() - new Date(b.InstallDate || 0).getTime(),
     },
   ];
@@ -74,13 +76,13 @@ const ComputerDetail: React.FC = () => {
       title: 'Дата обнаружения',
       dataIndex: 'detected_on',
       key: 'detected_on',
-      render: (val: string) => (val ? new Date(val).toLocaleString('uk-UA') : '-'),
+      render: (val: string) => formatDateInUserTimezone(val, timezone),
     },
     {
       title: 'Дата удаления',
       dataIndex: 'removed_on',
       key: 'removed_on',
-      render: (val: string) => (val ? new Date(val).toLocaleString('uk-UA') : '-'),
+      render: (val: string) => formatDateInUserTimezone(val, timezone),
     },
   ];
 

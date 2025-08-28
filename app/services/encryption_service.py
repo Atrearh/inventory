@@ -2,6 +2,7 @@ from cryptography.fernet import Fernet, InvalidToken
 import logging
 from fastapi import HTTPException, status
 from typing import Optional
+from ..settings import settings 
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class EncryptionService:
         if not encryption_key:
             logger.error("Отсутствует ключ шифрования")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Ключ шифрования не предоставлен"
             )
         
@@ -66,32 +67,32 @@ class EncryptionService:
             )
 
     def decrypt(self, encrypted_value: str) -> str:
-            """
-            Дешифрует строку, зашифрованную с использованием Fernet.
+        """
+        Дешифрует строку, зашифрованную с использованием Fernet.
 
-            Args:
-                encrypted_value: Зашифрованная строка в формате base64.
+        Args:
+            encrypted_value: Зашифрованная строка в формате base64.
 
-            Returns:
-                str: Дешифрованная строка.
+        Returns:
+            str: Дешифрованная строка.
 
-            Raises:
-                HTTPException: Если дешифровка не удалась.
-            """
-            if not encrypted_value:
-                logger.warning("Попытка дешифровки пустой строки")
-                return ""
-            
-            try:
-                decrypted = self.cipher.decrypt(encrypted_value.encode()).decode()
-                logger.debug(f"Успешно дешифровано значение длиной {len(encrypted_value)} символов")
-                return decrypted
-            except (ValueError, InvalidToken) as e:
-                logger.error(f"Ошибка дешифровки: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Ошибка при дешифровке данных"
-                )
+        Raises:
+            HTTPException: Если дешифровка не удалась.
+        """
+        if not encrypted_value:
+            logger.warning("Попытка дешифровки пустой строки")
+            return ""
+        
+        try:
+            decrypted = self.cipher.decrypt(encrypted_value.encode()).decode()
+            logger.debug(f"Успешно дешифровано значение длиной {len(encrypted_value)} символов")
+            return decrypted
+        except (ValueError, InvalidToken) as e:
+            logger.error(f"Ошибка дешифровки: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка при дешифровке данных"
+            )
 
     @staticmethod
     def generate_key() -> str:
@@ -111,3 +112,7 @@ class EncryptionService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Ошибка при генерации ключа шифрования"
             )
+
+def get_encryption_service() -> EncryptionService:
+    """Отримує екземпляр EncryptionService з ініціалізованим ключем шифрування."""
+    return EncryptionService(settings.encryption_key)

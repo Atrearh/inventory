@@ -59,6 +59,8 @@ export interface LogicalDisk {
   total_space: number;
   free_space?: number | null;
   parent_disk_serial?: string | null;
+  total_space_gb: number;
+  free_space_gb: number | null;
 }
 export interface Processor {
   detected_on?: string | null;
@@ -115,6 +117,7 @@ export interface Computer {
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
+  domain_id?: number | null;
   id: number;
   last_updated: string;
 }
@@ -147,6 +150,7 @@ export interface ComputerBase {
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
+  domain_id?: number | null;
 }
 export interface ComputerCreate {
   hostname: string;
@@ -172,6 +176,7 @@ export interface ComputerCreate {
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
+  domain_id?: number | null;
 }
 export interface ComputerList {
   hostname: string;
@@ -197,6 +202,7 @@ export interface ComputerList {
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
+  domain_id?: number | null;
   id: number;
   last_updated?: string | null;
 }
@@ -224,6 +230,7 @@ export interface ComputerListItem {
   enabled?: boolean | null;
   ad_notes?: string | null;
   local_notes?: string | null;
+  domain_id?: number | null;
   id: number;
   last_updated: string;
 }
@@ -273,22 +280,45 @@ export interface StatusStats {
   status: CheckStatus;
   count: number;
 }
+export interface DomainBase {
+  name: string;
+  username: string;
+  password: string;
+  server_url: string;
+  ad_base_dn: string;
+  id: number;
+  last_updated?: string | null;
+}
+export interface DomainCore {
+  name: string;
+  username: string;
+  password: string;
+  server_url: string;
+  ad_base_dn: string;
+}
 export interface DomainCreate {
   name: string;
   username: string;
   password: string;
+  server_url: string;
+  ad_base_dn: string;
 }
 export interface DomainRead {
-  id: string;
   name: string;
   username: string;
-  description?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  server_url: string;
+  ad_base_dn: string;
+  id: number;
+  last_updated?: string | null;
 }
 export interface DomainUpdate {
-  name: string;
-  username: string;
+  id: number;
+  last_updated?: string | null;
+  name?: string | null;
+  username?: string | null;
+  password?: string | null;
+  server_url?: string | null;
+  ad_base_dn?: string | null;
 }
 export interface ErrorResponse {
   error: string;

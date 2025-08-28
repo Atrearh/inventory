@@ -38,29 +38,46 @@ auth_backend = AuthenticationBackend(
     get_strategy=get_jwt_strategy,
 )
 
-# Налаштування UserManager
 class UserManager(BaseUserManager[User, int]):
     password_helper = PasswordHelper(PasswordHasher())
 
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
         async with self.user_db.session as session:
-            result = await session.execute(
-                select(User).filter_by(email=credentials.username)
-            )
-            user = result.scalars().first()
-            if user:
+            try:
+                result = await session.execute(
+                    select(User).filter_by(email=credentials.username)
+                )
+                user = result.scalars().first()
+                if not user:
+                    logger.debug(f"User with email {credentials.username} not found")
+                    return None
+                
                 logger.debug(f"Found user: {user.email}, user type: {type(user)}")
                 try:
-                    if self.password_helper.verify_and_update(credentials.password, user.hashed_password)[0]:
+                    verified, updated_hash = self.password_helper.verify_and_update(
+                        credentials.password, user.hashed_password
+                    )
+                    if verified:
+                        if updated_hash:  # Оновлення хешу, якщо потрібне
+                            user.hashed_password = updated_hash
+                            session.add(user)
+                            await session.commit()
                         return user
                     else:
                         logger.debug(f"Password verification failed for user: {user.email}")
+                        return None
                 except Exception as e:
                     logger.error(f"Password verification error for user {user.email}: {str(e)}")
-                    return None
-            else:
-                logger.debug(f"User with email {credentials.username} not found")
-            return None
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Помилка перевірки пароля"
+                    )
+            except Exception as e:
+                logger.error(f"Database or authentication error: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Внутрішня помилка сервера під час автентифікації"
+                )
 
     async def create(self, user_create: UserCreate, safe: bool = False, **kwargs) -> User:
         logger.debug(f"Creating user with email: {user_create.email}")

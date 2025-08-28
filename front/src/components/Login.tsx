@@ -13,31 +13,30 @@ const Login: React.FC = () => {
       await login(values.email, values.password);
       navigate('/');
     } catch (err: any) {
-      const message = err.response?.data?.detail || 'Неверные учетные данные';
-      setError(message);
+      setError(err.message);
     }
   };
 
   return (
     <div style={{ maxWidth: 400, margin: '50px auto' }}>
-      <h2>Вход</h2>
-      <Form onFinish={onFinish}>
+      <h2>Вхід</h2>
+      <Form onFinish={onFinish} layout="vertical">
         <Form.Item
           name="email"
-          rules={[{ required: true, message: 'Введите email' }]}
+          rules={[{ required: true, message: 'Введіть email' }, { type: 'email', message: 'Невірний формат email' }]}
         >
           <Input placeholder="Email" />
         </Form.Item>
         <Form.Item
           name="password"
-          rules={[{ required: true, message: 'Введите пароль' }]}
+          rules={[{ required: true, message: 'Введіть пароль' }, { min: 6, message: 'Пароль має бути не менше 6 символів' }]}
         >
           <Input.Password placeholder="Пароль" />
         </Form.Item>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
+        {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
         <Form.Item>
-          <Button type="primary" htmlType="submit">
-            Войти
+          <Button type="primary" htmlType="submit" block>
+            Увійти
           </Button>
         </Form.Item>
       </Form>

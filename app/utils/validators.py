@@ -1,69 +1,61 @@
 import logging
 import re
 import ipaddress
-from typing import Optional, Any
-from pydantic_core import core_schema
-from pydantic import GetCoreSchemaHandler
+from typing import Annotated
+from pydantic import AfterValidator, PlainValidator
 
 logger = logging.getLogger(__name__)
 
-class NonEmptyStr(str):
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source_type: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        return core_schema.str_schema(min_length=1, strip_whitespace=True)
 
-    @classmethod
-    def __validate__(cls, v: Any) -> str:
-        if not isinstance(v, str):
-            raise ValueError("Значення має бути рядком")
-        v = v.strip()
-        if not v:
-            raise ValueError("Рядок не може бути порожнім")
-        return v
+def validate_non_empty_str(v: str) -> str:
+    """Перевіряє, що рядок не є порожнім після видалення пробілів."""
+    if not isinstance(v, str) or not v.strip():
+        raise ValueError("Рядок не може бути порожнім")
+    return v.strip()
 
-    @classmethod
-    def __get_pydantic_json_schema__(cls, core_schema, handler):
-        json_schema = handler(core_schema)
-        json_schema.update(type="string", minLength=1)
-        return json_schema
+NonEmptyStr = Annotated[str, PlainValidator(validate_non_empty_str)]
 
-def validate_mac_address(cls, v: Optional[NonEmptyStr], field_name: str = "MAC address") -> Optional[NonEmptyStr]:
-    """Валідація MAC-адреси: має відповідати формату XX:XX:XX:XX:XX:XX або бути None."""
-    if v is None:
-        return v
-    if not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
-        raise ValueError(f"{field_name} має невірний формат")
+def validate_mac_address_format(v: str) -> str:
+    """Валідація MAC-адреси: має відповідати формату XX:XX:XX:XX:XX:XX."""
+    if v and not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
+        raise ValueError("MAC-адреса має невірний формат")
     return v
 
-def validate_ip_address(cls, v: Optional[NonEmptyStr], field_name: str = "IP address") -> Optional[NonEmptyStr]:
-    """Валідація IP-адреси: має бути валідною IPv4/IPv6 або None."""
-    if v is None:
-        return v
+def validate_ip_address_format(v: str) -> str:
+    """Валідація IP-адреси: має бути валідною IPv4/IPv6."""
     try:
         ipaddress.ip_address(v)
     except ValueError:
-        raise ValueError(f"{field_name} має невірний формат")
+        raise ValueError("IP-адреса має невірний формат")
     return v
 
-def validate_hostname(cls, v: NonEmptyStr, field_name: str = "hostname") -> NonEmptyStr:
-    """Валідація hostname з підтримкою підкреслень для сумісності з реальними даними."""
-    if v is None:
-        raise ValueError(f"{field_name} не може бути None")
-    
-    # Перевірка довжини
+def validate_hostname_format(v: str) -> str:
+    """Валідація hostname з підтримкою підкреслень."""
     if len(v) > 255:
-        raise ValueError(f"{field_name} перевищує максимальну довжину 255 символів")
+        raise ValueError("Hostname перевищує максимальну довжину 255 символів")
     
-    # Перевірка формату (букви, цифри, дефіси, підкреслення, крапки)
     if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?)*$', v):
-        raise ValueError(f"{field_name} має невірний формат (допустимі букви, цифри, дефіси, підкреслення і крапки)")
+        raise ValueError("Hostname має невірний формат (допустимі букви, цифри, дефіси, підкреслення і крапки)")
     
-    # Перевірка, що hostname не починається і не закінчується крапкою
     if v.startswith('.') or v.endswith('.'):
-        raise ValueError(f"{field_name} не може починатися або закінчуватися крапкою")
+        raise ValueError("Hostname не може починатися або закінчуватися крапкою")
     
-    # Попередження, якщо hostname не відповідає строгому RFC 1123 (наприклад, містить підкреслення)
     if '_' in v and not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$', v):
         logger.warning(f"Hostname '{v}' містить підкреслення, що не відповідає RFC 1123, але допустимо для локальних мереж")
     
     return v
+
+def validate_domain_name_format(v: str) -> str:
+    """Валідує server_url як доменне ім'я."""
+    DOMAIN_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+$')
+    if not DOMAIN_NAME_PATTERN.match(v):
+        logger.error(f"Невалідне доменне ім'я: {v}")
+        raise ValueError("Доменне ім'я має містити лише літери, цифри, дефіси та точки (наприклад, server.com)")
+    return v
+
+
+
+HostnameStr = Annotated[NonEmptyStr, AfterValidator(validate_hostname_format)]
+MACAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_mac_address_format)]
+IPAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_ip_address_format)]
+DomainNameStr = Annotated[NonEmptyStr, AfterValidator(validate_domain_name_format)]

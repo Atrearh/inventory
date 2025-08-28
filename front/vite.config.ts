@@ -1,6 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import run from 'vite-plugin-run';
+import type { OutgoingHttpHeaders } from 'http';
+
+// Расширяем тип Error для поддержки свойства code
+interface NodeJSError extends Error {
+  code?: string;
+}
 
 export default defineConfig({
   plugins: [
@@ -14,26 +20,23 @@ export default defineConfig({
     ]),
   ],
   server: {
-    host: '0.0.0.0', // Дозволяє доступ через IP (192.168.0.143)
-    port: 8080, // Порт фронтенду
+    host: '0.0.0.0',
+    port: 8080,
     proxy: {
       '/api': {
-        target: 'http://192.168.0.143:8000', // Порт бекенду
+        target: 'http://192.168.0.143:8000',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => {
-          console.log(`Rewriting path: ${path} -> /api${path.replace(/^\/api/, '')}`);
-          return `/api${path.replace(/^\/api/, '')}`;
-        },
-        configure: (proxy, _options) => {
-          proxy.on('error', (err, req, res) => {
-            console.error(`Proxy error for ${req.method} ${req.url}:`, err.message);
-          });
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log(`Proxying ${req.method} ${req.url} to ${proxyReq.getHeader('host')}${proxyReq.path}`);
-          });
-          proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log(`Received response for ${req.method} ${req.url}: ${proxyRes.statusCode}`);
+        rewrite: (path) => `/api${path.replace(/^\/api/, '')}`,
+        configure: (proxy) => {
+          proxy.on('error', (err: NodeJSError, _req, res) => {
+            if (err.code === 'ECONNREFUSED') {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Сервер недоступний. Перевірте підключення до мережі.' }));
+            } else {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Помилка проксі-сервера' }));
+            }
           });
         },
       },

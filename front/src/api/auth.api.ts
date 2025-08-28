@@ -1,4 +1,3 @@
-// front/src/api/auth.api.ts
 import { apiInstance } from './api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 
@@ -7,30 +6,40 @@ interface LoginCredentials {
   password: string;
 }
 
+interface ApiError {
+  response?: {
+    status: number;
+    data: any;
+  };
+  message: string;
+  code?: string;
+}
+
 // Функція для входу
-export const login = async (credentials: LoginCredentials) => {
+export const login = async (credentials: LoginCredentials): Promise<UserRead> => {
   try {
-    const response = await apiInstance.post('/auth/jwt/login', new URLSearchParams({
-      username: credentials.email,
-      password: credentials.password,
-    }), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
+    const response = await apiInstance.post<UserRead>(
+      '/auth/jwt/login',
+      new URLSearchParams({
+        username: credentials.email,
+        password: credentials.password,
+      }),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
     return response.data;
   } catch (error: any) {
-    console.error('Login error:', error.response?.data || error.message);
-    throw error;
+    throw handleApiError(error, 'Login failed');
   }
 };
 
 // Функція для виходу
-export const logout = async () => {
+export const logout = async (): Promise<void> => {
   try {
-    const response = await apiInstance.post('/auth/jwt/logout', {});
-    return response.data;
+    await apiInstance.post('/auth/jwt/logout');
   } catch (error: any) {
-    console.error('Logout error:', error.response?.data || error.message);
-    throw error;
+    throw handleApiError(error, 'Logout failed');
   }
 };
 
@@ -40,24 +49,44 @@ export const getUsers = async (): Promise<UserRead[]> => {
     const response = await apiInstance.get<UserRead[]>('/users/');
     return response.data;
   } catch (error: any) {
-    console.error('Get users error:', error.response?.data || error.message);
-    throw error;
+    throw handleApiError(error, 'Failed to fetch users');
   }
 };
 
 // Реєстрація нового користувача
 export const register = async (userData: UserCreate): Promise<UserRead> => {
-  const response = await apiInstance.post<UserRead>('/auth/jwt/register', userData);
-  return response.data;
+  try {
+    const response = await apiInstance.post<UserRead>('/auth/jwt/register', userData);
+    return response.data;
+  } catch (error: any) {
+    throw handleApiError(error, 'Registration failed');
+  }
 };
 
 // Оновлення даних користувача
 export const updateUser = async (id: number, userData: Partial<UserUpdate>): Promise<UserRead> => {
-  const response = await apiInstance.patch<UserRead>(`/users/${id}`, userData);
-  return response.data;
+  try {
+    const response = await apiInstance.patch<UserRead>(`/users/${id}`, userData);
+    return response.data;
+  } catch (error: any) {
+    throw handleApiError(error, 'User update failed');
+  }
 };
 
 // Видалення користувача
 export const deleteUser = async (id: number): Promise<void> => {
-  await apiInstance.delete<void>(`/users/${id}`);
+  try {
+    await apiInstance.delete(`/users/${id}`);
+  } catch (error: any) {
+    throw handleApiError(error, 'User deletion failed');
+  }
+};
+
+// Обробка помилок API
+const handleApiError = (error: any, defaultMessage: string): Error => {
+  if (error.code === 'ECONNREFUSED' || !error.response || error.response?.status === 503) {
+    return new Error('Сервер недоступний. Перевірте підключення до мережі.');
+  }
+  const message = error.response?.data?.detail || defaultMessage;
+  return new Error(message);
 };

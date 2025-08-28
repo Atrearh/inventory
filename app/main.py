@@ -1,8 +1,7 @@
-# app/main.py
 import ipaddress
 import logging
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
@@ -11,12 +10,10 @@ from .logging_config import setup_logging
 from .routers import auth, computers, scan, statistics, scripts, domain_router
 from .routers.settings import router as settings_router
 from .data_collector import script_cache
-from .services.encryption_service import EncryptionService
+from .services.encryption_service import get_encryption_service
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
 from .utils.security import setup_cors 
-from .repositories.domain_repository import DomainRepository
-
 
 logger = logging.getLogger(__name__)
 setup_logging(log_level=settings.log_level)
@@ -42,12 +39,7 @@ async def lifespan(app: FastAPI):
         async with get_db_session() as db:
             await settings_manager.initialize_encryption_key(db)
             await settings_manager.load_from_db(db)
-            domain_repo = DomainRepository(db)
-            encryption_service = EncryptionService(settings.encryption_key)
-            encrypted_pass = encryption_service.encrypt(settings.ad_password)
-            await domain_repo.create_or_update_domain(settings.domain, settings.ad_username, encrypted_pass)
-            yield
-        app.state.encryption_service = EncryptionService(settings.encryption_key)
+        app.state.encryption_service = get_encryption_service()  # Використовуємо нову функцію
         await init_db()
 
         # Предварительная загрузка скриптов
@@ -74,10 +66,6 @@ app.exception_handler(Exception)(global_exception_handler)
 
 # Настройка CORS за допомогою утиліти
 setup_cors(app, settings)
-
-# Зависимость для получения encryption_service
-def get_encryption_service(request: Request) -> EncryptionService:
-    return request.app.state.encryption_service
 
 # Подключение маршрутов
 app.include_router(auth.router, prefix="/api/auth")

@@ -31,8 +31,11 @@ class Domain(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False)
-    encrypted_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    last_updated: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    encrypted_password: Mapped[str] = mapped_column(String(512), nullable=False)
+    server_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  
+    ad_base_dn: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  
+    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    computers: Mapped[List["Computer"]] = relationship("Computer", back_populates="domain")
     __table_args__ = (
         Index('idx_domain_name', 'name'),
     )
@@ -77,7 +80,6 @@ class MACAddress(Base):
 
 class Computer(Base):
     __tablename__ = "computers"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, index=True)
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     os_name: Mapped[Optional[str]] = mapped_column(String(255))
@@ -87,15 +89,15 @@ class Computer(Base):
     last_boot: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_full_scan: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False)
     check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus), nullable=False, server_default=CheckStatus.success.value)
-    object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)  # Залишено лише один unique індекс
+    object_guid: Mapped[Optional[str]] = mapped_column(String(36), unique=True)  
     when_created: Mapped[Optional[datetime]] = mapped_column(DateTime)
     when_changed: Mapped[Optional[datetime]] = mapped_column(DateTime)
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
     ad_notes: Mapped[Optional[str]] = mapped_column(Text)
     local_notes: Mapped[Optional[str]] = mapped_column(Text)
     last_logon: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    domain_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("domains.id"), nullable=True)
 
     ip_addresses: Mapped[List["IPAddress"]] = relationship("IPAddress", back_populates="computer")
     mac_addresses: Mapped[List["MACAddress"]] = relationship("MACAddress", back_populates="computer")
@@ -105,6 +107,7 @@ class Computer(Base):
     logical_disks: Mapped[List["LogicalDisk"]] = relationship("LogicalDisk", back_populates="computer")
     software: Mapped[List["Software"]] = relationship("Software", back_populates="computer")
     roles: Mapped[List["Role"]] = relationship("Role", back_populates="computer")
+    domain: Mapped[Optional["Domain"]] = relationship("Domain", back_populates="computers")
 
     __table_args__ = (
         Index('idx_computers_last_updated', 'last_updated'),

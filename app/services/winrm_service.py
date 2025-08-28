@@ -1,12 +1,12 @@
 from winrm import Session
 from typing import Optional
-from contextlib import contextmanager
 from ..settings import settings
 from ..repositories.domain_repository import DomainRepository
 from ..services.encryption_service import EncryptionService
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
-from typing import Generator
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,11 @@ class WinRMService:
             logger.error(f"Помилка дешифрування для домену {domain_name}: {str(e)}")
             raise
 
-    @contextmanager
-    def create_session(self, hostname: str, domain_name: Optional[str] = None) -> Generator[Session, None, None]:
+    @asynccontextmanager
+    async def create_session(self, hostname: str, domain_name: Optional[str] = None) -> AsyncGenerator[Session, None]:
         """Створює та повертає сесію WinRM, інкапсулюючи credentials."""
         domain_name = domain_name or settings.domain
-        username, password = self.get_credentials(domain_name)  # Асинхронно, але в контексті — синхронно (як в оригіналі)
+        username, password = await self.get_credentials(domain_name)  # Асинхронний виклик із await
         try:
             session = Session(
                 f"http://{hostname}:{settings.winrm_port}/wsman",

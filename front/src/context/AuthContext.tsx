@@ -32,24 +32,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
-    setIsLoading(true);
     try {
       const users = await getUsers();
-      if (users && users.length > 0) {
-        setUser(users[0]);
-        setIsAuthenticated(true);
-        console.log('Auth check successful: User is authenticated.');
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-      }
+      const currentUser = users[0] || null;
+      setUser(currentUser);
+      setIsAuthenticated(!!currentUser);
     } catch (error: any) {
-      console.error('Auth check failed:', error.response?.data || error.message);
       setUser(null);
       setIsAuthenticated(false);
-      // Якщо отримали 401, виконуємо логаут
-      if (error.response?.status === 401) {
-        console.log('Access token expired or invalid, performing logout');
+      if (error.message === 'Сервер недоступний. Перевірте підключення до мережі.') {
+        console.warn('Server is unavailable');
+      } else if (error.response?.status === 401) {
         await handleLogout();
       }
     } finally {
@@ -62,13 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [checkAuth]);
 
   const handleLogin = async (email: string, password: string) => {
-    try {
-      await login({ email, password });
-      await checkAuth();
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    }
+    await login({ email, password });
+    await checkAuth();
   };
 
   const handleLogout = useCallback(async () => {
@@ -76,9 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await logout();
       setUser(null);
       setIsAuthenticated(false);
-      console.log('Logout successful');
-    } catch (error) {
-      console.error('Logout failed:', error);
+    } catch (error: any) {
       throw error;
     }
   }, []);

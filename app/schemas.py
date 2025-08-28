@@ -1,16 +1,16 @@
-# app/schemas.py
-from pydantic import BaseModel, field_validator, Field, ConfigDict
-from typing import Optional, List, Union
-from datetime import datetime
-from .models import CheckStatus, ScanStatus
-from app.utils.validators import NonEmptyStr, validate_hostname, validate_mac_address, validate_ip_address
 import logging
-from fastapi_users import schemas
-from pydantic import EmailStr
-import ipaddress
 from enum import Enum
+import ipaddress
+from datetime import datetime
+from typing import Optional, List, Union
+from pydantic import BaseModel, field_validator, Field, ConfigDict, EmailStr, HttpUrl, computed_field
+from fastapi_users import schemas
+from .models import CheckStatus, ScanStatus
+from app.utils.validators import NonEmptyStr,HostnameStr,MACAddressStr,IPAddressStr,DomainNameStr
 
 logger = logging.getLogger(__name__)
+
+# --- Базові класи та Enums ---
 
 class BaseSchema(BaseModel):
     model_config = ConfigDict(
@@ -31,6 +31,8 @@ class CheckStatus(str, Enum):
     disabled = "disabled"
     is_deleted = "is_deleted"
 
+# --- Схеми компонентів комп'ютера ---
+
 class Role(TrackableComponent):
     name: NonEmptyStr = Field(..., alias="Name")
 
@@ -46,10 +48,11 @@ class Software(TrackableComponent):
             return None
         try:
             if isinstance(v, str):
+                # Спроба розпарсити дату, включаючи формат з 'Z'
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
             return v
-        except ValueError:
-            logger.warning(f"Некоректный формат install_date: {v}, возвращаем None")
+        except ValueError: 
+            logger.warning(f"Некоректний формат install_date: {v}, повертаємо None")
             return None
 
 class PhysicalDisk(TrackableComponent):
@@ -67,26 +70,15 @@ class LogicalDisk(TrackableComponent):
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
     parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)
 
+    @computed_field(return_type=float)
     @property
     def total_space_gb(self) -> float:
         return self.total_space / (1024 ** 3) if self.total_space else 0.0
 
+    @computed_field(return_type=Optional[float])
     @property
     def free_space_gb(self) -> Optional[float]:
-        return self.free_space / (1024 ** 3) if self.free_space else None
-
-class DiskVolume(BaseSchema):
-    id: int
-    hostname: NonEmptyStr
-    disk_id: NonEmptyStr = Field(..., alias="disk_id", max_length=255)
-    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
-    total_space_gb: float = Field(ge=0.0)
-    free_space_gb: float = Field(ge=0.0)
-
-    @field_validator('hostname')
-    @classmethod
-    def validate_hostname_field(cls, v):
-        return validate_hostname(cls, v)
+        return self.free_space / (1024 ** 3) if self.free_space is not None else None
 
 class VideoCard(TrackableComponent):
     id: Optional[int] = None
@@ -99,23 +91,15 @@ class Processor(TrackableComponent):
     number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
 
 class IPAddress(TrackableComponent):
-    address: NonEmptyStr
-
-    @field_validator('address')
-    @classmethod
-    def validate_ip(cls, v):
-        return validate_ip_address(cls, v, "IP address")
+    address: IPAddressStr 
 
 class MACAddress(TrackableComponent):
-    address: NonEmptyStr
+    address: MACAddressStr 
 
-    @field_validator('address')
-    @classmethod
-    def validate_mac(cls, v):
-        return validate_mac_address(cls, v, "MAC address")
+# --- Схеми комп'ютера ---
 
 class ComputerBase(BaseSchema):
-    hostname: NonEmptyStr
+    hostname: HostnameStr 
     ip_addresses: List[IPAddress] = []
     physical_disks: List[PhysicalDisk] = []
     logical_disks: List[LogicalDisk] = []
@@ -138,16 +122,12 @@ class ComputerBase(BaseSchema):
     enabled: Optional[bool] = None
     ad_notes: Optional[NonEmptyStr] = None
     local_notes: Optional[NonEmptyStr] = None
-
-    @field_validator('hostname')
-    @classmethod
-    def validate_hostname_field(cls, v):
-        return validate_hostname(cls, v)
+    domain_id: Optional[int] = None
 
     @field_validator('os_name')
     @classmethod
     def normalize_os_name(cls, v):
-        if not v or v.strip() == '':
+        if not v or not v.strip():
             return 'Unknown'
         return v.replace('Майкрософт ', '').replace('Microsoft ', '')
 
@@ -157,16 +137,21 @@ class ComputerBase(BaseSchema):
         if v is None:
             return None
         if not isinstance(v, (int, float)):
-            logger.warning(f"Некорректный тип RAM: {type(v)}, ожидается int или float")
+            logger.warning(f"Некоректний тип RAM: {type(v)}, очікується int або float")
             return None
+        # INT(10) unsigned в MySQL -> 4294967295
         if v > 4294967295:
-            logger.warning(f"Значение RAM ({v} МБ) превышает допустимый диапазон, обрезается до 4294967295")
+            logger.warning(f"Значення RAM ({v} МБ) перевищує допустимий діапазон, обрізається до 4294967295")
             return 4294967295
         return int(v)
 
 class ComputerList(ComputerBase):
     id: int
     last_updated: Optional[datetime] = None
+
+class ComputerListItem(ComputerBase):
+    id: int
+    last_updated: datetime
 
 class Computer(ComputerBase):
     id: int
@@ -176,13 +161,10 @@ class ComputerCreate(ComputerBase):
     pass
 
 class ComputerUpdateCheckStatus(BaseSchema):
-    hostname: NonEmptyStr
+    hostname: HostnameStr 
     check_status: CheckStatus
 
-    @field_validator('hostname')
-    @classmethod
-    def validate_hostname_field(cls, v):
-        return validate_hostname(cls, v)
+# --- Схеми для API відповідей та статистики ---
 
 class ScanTask(BaseSchema):
     id: NonEmptyStr
@@ -213,6 +195,14 @@ class OsStats(BaseSchema):
     client_os: List[OsDistribution]
     server_os: List[ServerDistribution]
 
+class DiskVolume(BaseSchema):
+    id: int
+    hostname: HostnameStr 
+    disk_id: NonEmptyStr = Field(..., alias="disk_id", max_length=255)
+    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
+    total_space_gb: float = Field(ge=0.0)
+    free_space_gb: float = Field(ge=0.0)
+
 class DiskStats(BaseSchema):
     low_disk_space: List[DiskVolume]
 
@@ -240,12 +230,14 @@ class ErrorResponse(BaseSchema):
     detail: Optional[str] = None
     correlation_id: Optional[str] = None
 
+# --- Схеми налаштувань та історії ---
+
 class AppSettingUpdate(BaseSchema):
     ad_server_url: Optional[NonEmptyStr] = None
     domain: Optional[NonEmptyStr] = None
     ad_username: Optional[NonEmptyStr] = None
     ad_password: Optional[NonEmptyStr] = None
-    api_url: Optional[NonEmptyStr] = None
+    api_url: Optional[HttpUrl] = None 
     test_hosts: Optional[str] = None
     log_level: Optional[NonEmptyStr] = None
     scan_max_workers: Optional[int] = None
@@ -258,8 +250,8 @@ class AppSettingUpdate(BaseSchema):
     powershell_encoding: Optional[NonEmptyStr] = None
     json_depth: Optional[int] = None
     server_port: Optional[int] = None
-    cors_allow_origins: Optional[NonEmptyStr] = None
-    allowed_ips: Optional[NonEmptyStr] = None
+    cors_allow_origins: Optional[str] = None
+    allowed_ips: Optional[str] = None
     encryption_key: Optional[NonEmptyStr] = None
 
     @field_validator('log_level')
@@ -275,7 +267,7 @@ class AppSettingUpdate(BaseSchema):
         if v and v not in ["validate", "ignore"]:
             raise ValueError("winrm_server_cert_validation должен быть 'validate' или 'ignore'")
         return v
-
+    
     @field_validator('cors_allow_origins')
     @classmethod
     def validate_cors_origins(cls, v):
@@ -311,6 +303,9 @@ class ComponentHistory(BaseSchema):
     detected_on: Optional[str] = None
     removed_on: Optional[str] = None
 
+
+# --- Схеми користувачів ---
+
 class UserRead(schemas.BaseUser[int]):
     username: str
     role: Optional[str] = None
@@ -325,23 +320,36 @@ class UserUpdate(schemas.BaseUserUpdate):
     username: Optional[str] = None
     role: Optional[str] = None
 
-class ComputerListItem(ComputerBase):
-    id: int
-    last_updated: datetime
 
-class DomainCreate(BaseModel):
-    name: NonEmptyStr
+# --- схеми доменів ---
+
+# Базова схема з полями, що валідуються
+class DomainCore(BaseSchema):
+    name: DomainNameStr
     username: NonEmptyStr
     password: NonEmptyStr
+    server_url: DomainNameStr
+    ad_base_dn: NonEmptyStr
 
-class DomainUpdate(BaseModel):
-    name: NonEmptyStr
-    username: NonEmptyStr
+# Схема для створення - успадковує всі поля та валідатори
+class DomainCreate(DomainCore):
+    pass
 
-class DomainRead(BaseModel):
-    id: NonEmptyStr
-    name: NonEmptyStr
-    username: NonEmptyStr
-    description: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+# Схема для бази даних / читання з усіма полями
+class DomainBase(DomainCore):
+    id: int
+    last_updated: Optional[datetime] = None
+
+# Схема для оновлення, де всі поля опціональні
+class DomainUpdate(BaseSchema):
+    id: int
+    last_updated: Optional[datetime] = None
+    name: Optional[DomainNameStr] = None
+    username: Optional[NonEmptyStr] = None
+    password: Optional[NonEmptyStr] = None
+    server_url: Optional[DomainNameStr] = None
+    ad_base_dn: Optional[NonEmptyStr] = None
+
+# Схема для читання клієнтом (пароль приховано)
+class DomainRead(DomainBase):    
+    password: Optional[str] = Field(None, exclude=True) 

@@ -116,7 +116,6 @@ async def export_computers_to_csv(
                 video_cards_str = ', '.join(vc.name for vc in video_cards if vc.name and not unwanted_video_cards_pattern.search(vc.name.lower())) if video_cards else ''
                 
                 is_server = 'Сервер' if computer.os_name and 'server' in computer.os_name.lower() else 'Клиент'
-                virtualization = 'Виртуальный' if computer.is_virtual else 'Физический'
                 status_str = computer.check_status.value if computer.check_status else 'Неизвестно'
 
                 row_data = [
@@ -128,7 +127,6 @@ async def export_computers_to_csv(
                     computer.os_name or '',
                     computer.last_updated.strftime('%Y-%m-%d %H:%M:%S') if computer.last_updated else '',
                     is_server,
-                    virtualization,
                     disk_info_str,
                     processor_info,
                     video_cards_str,

@@ -14,15 +14,17 @@ if not SQLALCHEMY_DATABASE_URL:
     logger.error("DATABASE_URL не найден в настройках")
     raise ValueError("DATABASE_URL не найден в настройках")
 
-logger.debug(f"Инициализация базы данных с URL: {SQLALCHEMY_DATABASE_URL}")
+logger.debug(f"Инициализация базы данных с ")
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_size=20,
     max_overflow=10,
-    pool_timeout=30,
-    pool_recycle=300,
+    pool_pre_ping=True,
+    pool_timeout=10,
+    pool_recycle=3600,
+    #echo=True
 )
-logger.debug(f"Создан engine с параметрами: pool_size=20, max_overflow=10, pool_timeout=30, pool_recycle=300")
+
 
 async_session_factory = async_sessionmaker(
     engine,
@@ -38,13 +40,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     logger.debug(f"Открытие новой сессии базы данных: {id(session)}")
     try:
         yield session
+        #logger.debug(f"Виклик commit для сесії {id(session)}")
         await session.commit()
-        logger.debug(f"Сессия {id(session)} успешно закоммичена")
+        #logger.debug(f"Сессия {id(session)} успешно закоммичена")
     except Exception as e:
-        await session.rollback()
         logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
+        await session.rollback()
         raise
     finally:
+        logger.debug(f"Закриття сесії {id(session)}")
         await session.close()
         logger.debug(f"Сессия {id(session)} базы данных закрыта")
 

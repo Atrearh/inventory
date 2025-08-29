@@ -8,13 +8,9 @@ from ..schemas import ScanTask
 from .. import models
 from uuid import uuid4
 import logging
-from ..logging_config import setup_logging
-from ..settings import settings
-import uuid
+
 
 logger = logging.getLogger(__name__)
-setup_logging(log_level=settings.log_level)
-
 router = APIRouter(tags=["scan"])
 
 def get_computer_service(db: AsyncSession = Depends(get_db)) -> ComputerService:
@@ -31,7 +27,7 @@ async def start_scan(
     payload: dict = Body(None),
 ):
     logger_adapter = request.state.logger if request else logger
-    task_id = str(uuid.uuid4())
+    task_id = str(uuid4())
     hostname = payload.get("hostname") if payload else None
     logger_adapter.info(f"Запуск фонового сканування з ID: {task_id}", extra={"hostname": hostname or "всі хости"})
     try:

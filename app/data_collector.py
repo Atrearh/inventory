@@ -80,9 +80,10 @@ def decode_output(output: bytes) -> str:
 
 class WinRMDataCollector:
     """Збирає інформацію з віддалених хостів Windows за допомогою WinRM."""
-    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService):
+    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService, domain_name: str):
         self.hostname = hostname
         self.winrm_service = WinRMService(encryption_service, db)
+        self.domain_name = domain_name
 
     async def _execute_script(self, script_name: str, last_updated: Optional[datetime] = None) -> Any:
         """Асинхронно виконує PowerShell-скрипт на віддаленому хості."""
@@ -101,7 +102,7 @@ class WinRMDataCollector:
             logger.warning(f"Команда для {script_name} на {self.hostname} перевищує 3000 символів", extra={"hostname": self.hostname, "script_name": script_name})
 
         try:
-            async with self.winrm_service.create_session(self.hostname) as session:
+            async with self.winrm_service.create_session(self.hostname, domain_name=self.domain_name) as session:
                 result = await asyncio.to_thread(session.run_ps, command)
                 if result.status_code != 0:
                     error_message = decode_output(result.std_err)

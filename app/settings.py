@@ -1,3 +1,4 @@
+# app/settings.py
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict, field_validator
 from typing import Optional, List
@@ -10,16 +11,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
-    ad_base_dn: str | None = None
     database_url: Optional[NonEmptyStr] = None
-    ad_server_url: Optional[NonEmptyStr] = None
-    domain: Optional[NonEmptyStr] = None
-    ad_username: Optional[NonEmptyStr] = None
-    ad_password: Optional[NonEmptyStr] = None
     api_url: Optional[NonEmptyStr] = None
-    test_hosts: Optional[str] = None
-    log_level: Optional[NonEmptyStr] = "DEBUG"
     scan_max_workers: Optional[int] = None
+    domain: Optional[NonEmptyStr] = None
     polling_days_threshold: Optional[int] = None
     winrm_operation_timeout: Optional[int] = None
     winrm_read_timeout: Optional[int] = None
@@ -32,11 +27,11 @@ class Settings(BaseSettings):
     cors_allow_origins: Optional[NonEmptyStr] = None
     allowed_ips: Optional[NonEmptyStr] = None
     encryption_key: Optional[NonEmptyStr] = None
-    secret_key: Optional[NonEmptyStr] = None  # Додано поле для JWT
+    secret_key: Optional[NonEmptyStr] = None
     timezone: Optional[NonEmptyStr] = "UTC"
 
     model_config = ConfigDict(
-        env_file=Path(__file__).parent / ".env",  # Шлях до .env у директорії app
+        env_file=Path(__file__).parent / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -69,18 +64,12 @@ class Settings(BaseSettings):
         if not self.secret_key:
             logger.warning("SECRET_KEY не задано в конфігурації, перевірте .env файл")
 
+    # Валідатори залишилися без змін
     @field_validator('database_url')
     @classmethod
     def validate_database_url(cls, v):
         if v and not v.startswith(('mysql+', 'postgresql+', 'sqlite+')):
             raise ValueError("database_url повинен починатися з 'mysql+', 'postgresql+' або 'sqlite+'")
-        return v
-
-    @field_validator('log_level')
-    @classmethod
-    def validate_log_level(cls, v):
-        if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            raise ValueError("Рівень логування має бути одним із: DEBUG, INFO, WARNING, ERROR, CRITICAL")
         return v
 
     @field_validator('winrm_server_cert_validation')

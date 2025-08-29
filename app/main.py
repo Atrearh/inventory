@@ -16,14 +16,13 @@ from .exceptions import global_exception_handler
 from .utils.security import setup_cors 
 
 logger = logging.getLogger(__name__)
-setup_logging(log_level=settings.log_level)
 settings_manager = SettingsManager(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Инициализация приложения...")
     try:
-        # Инициализация IP-диапазонов
+        # Ініціалізація IP-діапазонів
         app.state.allowed_ip_networks = []
         for ip_range in settings.allowed_ips_list:
             try:
@@ -35,14 +34,15 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Неверный формат IP-диапазона {ip_range}: {str(e)}")
                 raise
 
-        # Инициализация encryption_service и загрузка скриптов
+        # Ініціалізація encryption_service, log_level та завантаження налаштувань
         async with get_db_session() as db:
-            await settings_manager.initialize_encryption_key(db)
-            await settings_manager.load_from_db(db)
-        app.state.encryption_service = get_encryption_service()  # Використовуємо нову функцію
+            await settings_manager.initialize_encryption_key(db)  # Ініціалізує log_level
+            await settings_manager.load_from_db(db)  # Завантажуємо налаштування, включаючи log_level
+            setup_logging(log_level=settings_manager.log_level)  # Налаштування логування після завантаження
+        app.state.encryption_service = get_encryption_service()
         await init_db()
 
-        # Предварительная загрузка скриптов
+        # Попереднє завантаження скриптів
         await script_cache.preload_scripts()
         logger.info("Все скрипты предварительно загружены в кэш")
 
@@ -78,4 +78,4 @@ app.include_router(scripts.router, prefix="")
 app.include_router(domain_router.router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.server_port)
+    uvicorn.run(app, host="0.0.0.0", port=settings.server_port) 

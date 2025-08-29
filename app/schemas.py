@@ -238,7 +238,6 @@ class AppSettingUpdate(BaseSchema):
     ad_username: Optional[NonEmptyStr] = None
     ad_password: Optional[NonEmptyStr] = None
     api_url: Optional[HttpUrl] = None 
-    test_hosts: Optional[str] = None
     log_level: Optional[NonEmptyStr] = None
     scan_max_workers: Optional[int] = None
     polling_days_threshold: Optional[int] = None

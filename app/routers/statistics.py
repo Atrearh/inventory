@@ -4,13 +4,11 @@ from ..database import get_db
 from ..repositories.statistics import StatisticsRepository
 from ..schemas import DashboardStats
 from typing import List
-from ..logging_config import setup_logging
-from ..settings import settings
 from .auth import get_current_user 
 import logging
 
 logger = logging.getLogger(__name__)
-setup_logging(log_level=settings.log_level)
+
 
 router = APIRouter(tags=["statistics"])
 

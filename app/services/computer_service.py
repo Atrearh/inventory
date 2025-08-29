@@ -5,11 +5,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
-from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, CheckStatus, VideoCard, Processor, IPAddress, MACAddress, Computer
+from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk,  VideoCard, Processor, IPAddress, MACAddress
 from ..data_collector import WinRMDataCollector
 from ..database import async_session_factory
 from ..decorators import log_function_call
@@ -23,8 +22,8 @@ class ComputerService:
         self.semaphore = asyncio.Semaphore(settings.scan_max_workers)
         self.db = db
         self.computer_repo = ComputerRepository(db)
+        
 
-    # Конфігурація для обробки компонентів (збережено вашу структуру, але виправлено валідатори)
     COMPONENT_CONFIG = {
         "ip_addresses": {
             "model": IPAddress,
@@ -124,11 +123,7 @@ class ComputerService:
         return result
 
     async def get_hosts_to_scan(self) -> List[str]:
-        logger.info("Отримання хостів для сканування")
-        if settings.test_hosts and settings.test_hosts.strip():
-            hosts = [host.strip() for host in settings.test_hosts.split(",") if host.strip()]
-            logger.info(f"Використовуються тестові хости: {hosts}")
-            return hosts
+        """Отримання хостів для сканування"""
         return await self.computer_repo.get_all_hosts()
 
     @log_function_call
@@ -153,10 +148,10 @@ class ComputerService:
         return db_computer, mode
 
     @log_function_call
-    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime]) -> Dict[str, Any]:
-        """Викликає WinRMDataCollector для збору даних з хоста. (ВИПРАВЛЕНО)"""
+    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime], domain_name: str) -> Dict[str, Any]: # <--- Добавили domain_name
+        """Викликає WinRMDataCollector для збору даних з хоста."""
         encryption_service = get_encryption_service()
-        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service)
+        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service, domain_name=domain_name) # <--- Передали domain_name
         return await collector.collect_pc_info(mode=mode, last_updated=last_updated)
 
     @log_function_call
@@ -250,7 +245,17 @@ class ComputerService:
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 
-            raw_data = await self._fetch_data_from_host(host, mode, last_updated)
+            # Определяем имя домена
+            if not db_computer or not db_computer.domain:
+                logger_adapter.error(f"Не удалось определить домен для хоста {host}. Сканирование прервано.")
+                # Можно установить статус failed или unreachable
+                await self.computer_repo.async_update_computer_check_status(host, "failed")
+                await self.computer_repo.db.commit()
+                return False
+            
+            domain_name = db_computer.domain.name
+
+            raw_data = await self._fetch_data_from_host(host, mode, last_updated, domain_name=domain_name)
 
             if raw_data.get("check_status") in ("unreachable", "failed"):
                 logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")})

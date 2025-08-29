@@ -1,3 +1,4 @@
+// front/src/Settings.tsx
 import { useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Form, Select, Button, message, Spin, Card, Typography } from 'antd';
@@ -6,6 +7,7 @@ import { useTimezone } from '../context/TimezoneContext';
 
 const { Title } = Typography;
 const availableTimezones = Intl.supportedValuesOf('timeZone');
+const logLevels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
 
 const Settings: React.FC = () => {
   const [form] = Form.useForm();
@@ -21,11 +23,11 @@ const Settings: React.FC = () => {
   });
 
   const mutation = useMutation({
-    mutationFn: async (values: { timezone: string }) => {
+    mutationFn: async (values: { timezone: string; log_level: string }) => {
       return await apiInstance.post('/settings', values);
     },
     onSuccess: (data) => {
-      message.success('Налаштування часового поясу оновлено!');
+      message.success('Налаштування успішно оновлено!');
       if (data.data.timezone) {
         setTimezone(data.data.timezone);
       }
@@ -36,10 +38,11 @@ const Settings: React.FC = () => {
   });
 
   useEffect(() => {
-    if (data?.timezone) {
-      form.setFieldsValue({ timezone: data.timezone });
-    } else {
-      form.setFieldsValue({ timezone });
+    if (data) {
+      form.setFieldsValue({
+        timezone: data.timezone || timezone,
+        log_level: data.log_level || 'INFO',
+      });
     }
   }, [data, timezone, form]);
 
@@ -72,6 +75,17 @@ const Settings: React.FC = () => {
               optionFilterProp="children"
               filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
               options={availableTimezones.map(tz => ({ value: tz, label: tz }))}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Рівень логування"
+            name="log_level"
+            rules={[{ required: true, message: 'Будь ласка, оберіть рівень логування' }]}
+            tooltip="Визначає деталізацію логів системи."
+          >
+            <Select
+              placeholder="Оберіть рівень логування"
+              options={logLevels.map(level => ({ value: level, label: level }))}
             />
           </Form.Item>
           <Form.Item>

@@ -1,5 +1,5 @@
 import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex } from 'antd';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { startScan, register, updateUser, deleteUser } from '../api/api';
 import { scanDomains } from '../api/domain.api';
@@ -20,7 +20,6 @@ interface MutationResponse {
 
 const AdminPanel: React.FC = () => {
   const [form] = Form.useForm();
-  const { isAuthenticated } = useAuth();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRead | null>(null);
 

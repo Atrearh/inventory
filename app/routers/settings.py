@@ -12,25 +12,25 @@ router = APIRouter(tags=["settings"])
 settings_manager = SettingsManager(settings)
 
 @router.get("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
-async def get_settings(db: AsyncSession = Depends(get_db)):
+async def get_settings(db: AsyncSession = Depends(get_db), settings_mgr: SettingsManager = Depends(lambda: settings_manager)):
     """Отримує налаштування з БД."""
     logger.info("Отримання поточних налаштувань")
-    await settings_manager.load_from_db(db)
+    await settings_mgr.load_from_db(db)
     return AppSettingUpdate(
-        log_level=settings.log_level,
+        log_level=settings_mgr.log_level,  # Використовуємо log_level із SettingsManager
         scan_max_workers=settings.scan_max_workers,
         polling_days_threshold=settings.polling_days_threshold,
         ping_timeout=settings.ping_timeout,
-        timezone=settings.timezone 
+        timezone=settings.timezone
     )
 
 @router.post("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
-async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db)):
+async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db), settings_mgr: SettingsManager = Depends(lambda: settings_manager)):
     """Оновлює налаштування в БД."""
     updates = update.model_dump(exclude_unset=True)
     logger.info(f"Оновлення налаштувань: {updates}")
     if not updates:
         raise HTTPException(status_code=400, detail="Не надано даних для оновлення")
-    await settings_manager.save_to_db(db, updates)
+    await settings_mgr.save_to_db(db, updates)
     logger.info(f"Налаштування успішно оновлено: {updates}")
     return update

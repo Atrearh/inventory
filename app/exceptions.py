@@ -2,9 +2,11 @@ from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from .schemas import ErrorResponse
 from .settings import settings
+from .settings_manager import SettingsManager
 import logging
 
 logger = logging.getLogger(__name__)
+settings_manager = SettingsManager(settings)
 
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальний обробник винятків для додатка."""
@@ -18,7 +20,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     match exc:
         case HTTPException(status_code=status_code, detail=detail):
             status_code = status_code
-            error_message = detail
+            error_message = detail 
         case SQLAlchemyError():
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             error_message = "Помилка бази даних"
@@ -34,7 +36,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
     response = ErrorResponse(
         error=error_message,
-        detail=str(exc) if settings.log_level == "DEBUG" else "",
+        detail=str(exc) if settings_manager.log_level == "DEBUG" else "",  # Використовуємо log_level із SettingsManager
         correlation_id=correlation_id
     )
 

@@ -1,3 +1,4 @@
+# app/settings_manager.py
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from .models import AppSetting
@@ -14,9 +15,12 @@ class SettingsManager:
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.log_level = None  # Внутрішня змінна для збереження log_level
 
     async def initialize_encryption_key(self, db: AsyncSession):
-        """Ініціалізує ENCRYPTION_KEY, якщо він відсутній."""
+        """Ініціалізує ENCRYPTION_KEY і log_level, якщо вони відсутні."""
+        # Встановлюємо початковий рівень логування для коректного логування ініціалізації
+        logging.getLogger().setLevel(logging.INFO)
         if not self.settings.encryption_key:
             # Перевіряємо в базі даних
             existing = await db.execute(select(AppSetting).filter_by(key="encryption_key"))
@@ -35,6 +39,25 @@ class SettingsManager:
                 with open(env_file, "a", encoding="utf-8") as f:
                     f.write(f"\nENCRYPTION_KEY={self.settings.encryption_key}\n")
                 logger.info("ENCRYPTION_KEY згенеровано та збережено в .env і базі даних")
+        
+        # Перевіряємо log_level у базі даних
+        log_level_setting = await db.execute(select(AppSetting).filter_by(key="log_level"))
+        log_level_setting = log_level_setting.scalar_one_or_none()
+        if not log_level_setting:
+            # Якщо log_level не задано, встановлюємо за замовчуванням і зберігаємо в БД
+            default_log_level = "INFO"
+            new_setting = AppSetting(key="log_level", value=default_log_level)
+            db.add(new_setting)
+            await db.commit()
+            self.log_level = default_log_level
+            logging.getLogger().setLevel(default_log_level)
+            logger.info(f"log_level встановлено за замовчуванням: {default_log_level}")
+        else:
+            self.log_level = log_level_setting.value
+            logging.getLogger().setLevel(log_level_setting.value)
+            logger.info(f"log_level завантажено з бази даних: {log_level_setting.value}")
+
+        # Ініціалізація шифрування
         from .models import cipher
         if cipher is None:
             from .models import ENCRYPTION_KEY
@@ -44,11 +67,19 @@ class SettingsManager:
     async def load_from_db(self, db: AsyncSession):
         """Завантажує налаштування з бази даних."""
         try:
-            await self.initialize_encryption_key(db)  # Переконаємося, що ключ шифрування ініціалізовано
+            await self.initialize_encryption_key(db)  # Ініціалізація ключа шифрування та log_level
             settings = await db.execute(select(AppSetting))
             settings_dict = {setting.key: setting.value for setting in settings.scalars().all()}
             for key, value in settings_dict.items():
-                if hasattr(self.settings, key):
+                if key == "log_level":
+                    # Оновлюємо внутрішній log_level і глобальний рівень логування
+                    try:
+                        self.log_level = value
+                        logging.getLogger().setLevel(value)
+                        logger.info(f"Рівень логування оновлено з БД: {value}")
+                    except ValueError as e:
+                        logger.error(f"Помилка встановлення log_level: {value}, помилка: {e}")
+                elif hasattr(self.settings, key):
                     try:
                         # Приведення типів для числових полів
                         if key in [
@@ -62,10 +93,6 @@ class SettingsManager:
                             "server_port",
                         ]:
                             setattr(self.settings, key, int(value))
-                        elif key == "test_hosts" and value == "":
-                            # Використовуємо значення за замовчуванням, якщо в БД порожній рядок
-                            setattr(self.settings, key, "localhost")
-                            logger.debug(f"Порожнє значення test_hosts в БД, використано значення за замовчуванням: localhost")
                         else:
                             setattr(self.settings, key, value)
                     except ValueError as e:
@@ -79,7 +106,7 @@ class SettingsManager:
         """Зберігає оновлені налаштування в базу даних."""
         try:
             for key, value in updates.items():
-                if value is not None and hasattr(self.settings, key):
+                if value is not None and (hasattr(self.settings, key) or key == "log_level"):
                     existing = await db.execute(select(AppSetting).filter_by(key=key))
                     existing_setting = existing.scalar_one_or_none()
                     if existing_setting:
@@ -87,7 +114,13 @@ class SettingsManager:
                     else:
                         new_setting = AppSetting(key=key, value=str(value))
                         db.add(new_setting)
-                    setattr(self.settings, key, value)
+                    if key == "log_level":
+                        # Оновлюємо внутрішній log_level і глобальний рівень логування
+                        self.log_level = value
+                        logging.getLogger().setLevel(value)
+                        logger.info(f"Рівень логування оновлено: {value}")
+                    else:
+                        setattr(self.settings, key, value)
             await db.commit()
             logger.info("Налаштування успішно збережено в базу даних")
         except Exception as e:

@@ -550,6 +550,7 @@ class ComputerRepository:
             result = await db.execute(
                 select(models.Computer)
                 .options(
+                    selectinload(models.Computer.domain),
                     selectinload(models.Computer.ip_addresses),
                     selectinload(models.Computer.mac_addresses),
                     selectinload(models.Computer.processors),

@@ -3,26 +3,35 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button, Form, Input } from 'antd';
-import { useQueryClient } from '@tanstack/react-query'; // 👈 1. Імпортуємо useQueryClient
-import { getStatistics, getComputers, getUsers } from '../api/api'; // 👈 2. Імпортуємо функції для запитів
+import { useQueryClient } from '@tanstack/react-query';
+import { getStatistics, getComputers, getUsers } from '../api/api';
+import { Filters } from '../hooks/useComputerFilters'; // 👈 додано для типізації
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  const queryClient = useQueryClient(); // 👈 3. Отримуємо екземпляр queryClient
+  const queryClient = useQueryClient();
 
   const onFinish = async (values: { email: string; password: string }) => {
     try {
-      await login(values.email, values.password); // [cite: 1166]
+      await login(values.email, values.password);
 
-      // 👇 4. Додаємо логіку попереднього завантаження
       console.log('Login successful. Starting prefetching...');
 
       // Попереднє завантаження статистики для головної сторінки
       await queryClient.prefetchQuery({
         queryKey: ['statistics'],
-        queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
+        queryFn: () =>
+          getStatistics({
+            metrics: [
+              'total_computers',
+              'os_distribution',
+              'low_disk_space_with_volumes',
+              'last_scan_time',
+              'status_stats',
+            ],
+          }),
       });
 
       // Попереднє завантаження першої сторінки комп'ютерів
@@ -34,13 +43,13 @@ const Login: React.FC = () => {
             limit: 1000,
             sort_by: 'hostname',
             sort_order: 'asc',
-            hostname: '',
+            hostname: '',        // 👈 додані дефолти
             os_name: '',
             check_status: '',
             show_disabled: false,
-          }),
+          } as Filters),
       });
-      
+
       // Попереднє завантаження списку користувачів для адмін-панелі
       await queryClient.prefetchQuery({
         queryKey: ['users'],
@@ -48,8 +57,7 @@ const Login: React.FC = () => {
       });
 
       console.log('Prefetching complete.');
-      
-      navigate('/'); // [cite: 1167]
+      navigate('/');
     } catch (err: any) {
       setError(err.message);
     }
@@ -61,13 +69,19 @@ const Login: React.FC = () => {
       <Form onFinish={onFinish} layout="vertical">
         <Form.Item
           name="email"
-          rules={[{ required: true, message: 'Введіть email' }, { type: 'email', message: 'Невірний формат email' }]}
+          rules={[
+            { required: true, message: 'Введіть email' },
+            { type: 'email', message: 'Невірний формат email' },
+          ]}
         >
           <Input placeholder="Email" />
         </Form.Item>
         <Form.Item
           name="password"
-          rules={[{ required: true, message: 'Введіть пароль' }, { min: 6, message: 'Пароль має бути не менше 6 символів' }]}
+          rules={[
+            { required: true, message: 'Введіть пароль' },
+            { min: 6, message: 'Пароль має бути не менше 6 символів' },
+          ]}
         >
           <Input.Password placeholder="Пароль" />
         </Form.Item>

@@ -1,21 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Button, Form, Input } from 'antd';
+import { ThemeContext } from '../context/ThemeContext';
+import { Button, Form, Input, Card } from 'antd'; 
 import { useQueryClient } from '@tanstack/react-query';
 import { getStatistics, getComputers, getUsers } from '../api/api';
-import { Filters, isServerOs } from '../hooks/useComputerFilters'; // Додано isServerOs
-import { ITEMS_PER_PAGE } from '../config'; // Додано для консистентності
+import { Filters, isServerOs } from '../hooks/useComputerFilters';
+import { ITEMS_PER_PAGE } from '../config';
 import { useTranslation } from 'react-i18next';
+import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { dark } = useContext(ThemeContext);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
-  // Дефолтні фільтри для консистентності з useComputerFilters
   const defaultFilters: Filters = {
     hostname: undefined,
     os_name: undefined,
@@ -32,33 +34,17 @@ const Login: React.FC = () => {
   const onFinish = async (values: { email: string; password: string }) => {
     try {
       await login(values.email, values.password);
-
       console.log('Login successful. Starting prefetching...');
-
-      // Попереднє завантаження статистики
+      
+      // Попереднє завантаження даних
       await queryClient.prefetchQuery({
         queryKey: ['statistics'],
-        queryFn: () =>
-          getStatistics({
-            metrics: [
-              'total_computers',
-              'os_distribution',
-              'low_disk_space_with_volumes',
-              'last_scan_time',
-              'status_stats',
-            ],
-          }),
+        queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
       });
-
-      // Попереднє завантаження комп'ютерів з уніфікованим ключем
       await queryClient.prefetchQuery({
         queryKey: ['computers', defaultFilters],
         queryFn: () => {
-          const params: Partial<Filters> = {
-            ...defaultFilters,
-            hostname: undefined, // Вимикаємо серверну фільтрацію по hostname
-            limit: 1000,
-          };
+          const params: Partial<Filters> = { ...defaultFilters, hostname: undefined, limit: 1000 };
           if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
             params.os_name = 'unknown';
           } else if (params.os_name && isServerOs(params.os_name)) {
@@ -69,8 +55,6 @@ const Login: React.FC = () => {
           return getComputers(params as Filters);
         },
       });
-
-      // Попереднє завантаження користувачів
       await queryClient.prefetchQuery({
         queryKey: ['users'],
         queryFn: getUsers,
@@ -84,34 +68,48 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div style={{ maxWidth: 400, margin: '50px auto' }}>
-      <h2>Вхід</h2>
-      <Form onFinish={onFinish} layout="vertical">
-        <Form.Item
-          name="email"
-          rules={[
-            { required: true, message: 'Введіть email' },
-            { type: 'email', message: 'Невірний формат email' },
-          ]}
-        >
-          <Input placeholder="Email" />
-        </Form.Item>
-        <Form.Item
-          name="password"
-          rules={[
-            { required: true, message: 'Введіть пароль' },
-            { min: 6, message: 'Пароль має бути не менше 6 символів' },
-          ]}
-        >
-          <Input.Password placeholder="Пароль" />
-        </Form.Item>
-        {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
-        <Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Увійти
-          </Button>
-        </Form.Item>
-      </Form>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        backgroundColor: dark ? '#1a1a1a' : '#f0f2f5', 
+      }}
+    >
+
+      <Card style={{ width: 400 }}> 
+        <h2 style={{ textAlign: 'center', marginBottom: 24, color: dark ? '#d9d9d9' : '#000', userSelect: 'none' }}>
+          {t('login')}
+        </h2>
+        <Form onFinish={onFinish} layout="vertical" > 
+          <Form.Item
+            name="email"
+            rules={[
+              { required: true, message: t('enter_email') },
+              { type: 'email', message: t('invalid_email') },
+            ]}
+          >
+            <Input placeholder={t('email')} />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            rules={[
+              { required: true, message: t('enter_password') },
+              { min: 6, message: t('password_min_length') },
+            ]}
+          >
+            <Input.Password placeholder={t('password')} />
+          </Form.Item>
+          {error && <p style={{ color: dark ? '#ff4d4f' : 'red', marginBottom: 16 }}>{error}</p>}
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block>
+              {t('login')}
+            </Button>
+          </Form.Item>
+        </Form>
+      </Card>
+      <LanguageAndThemeSwitch />
     </div>
   );
 };

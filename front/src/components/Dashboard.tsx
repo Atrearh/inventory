@@ -1,5 +1,5 @@
 import { useStatistics, useComputers } from '../hooks/useApiQueries';
-import { useLocation, useNavigate} from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMemo, useEffect } from 'react';
 import { Modal, Table, notification, Empty, Button } from 'antd';
 import CombinedStats from './CombinedStats';
@@ -11,8 +11,9 @@ import { AxiosError } from 'axios';
 import { ComputerList, ComputerListItem } from '../types/schemas';
 import { useComputerFilters, isServerOs } from '../hooks/useComputerFilters';
 import { ITEMS_PER_PAGE } from '../config';
-import { startHostScan } from '../api/api'; 
-import { useScanEvents } from '../hooks/useScanEvents'; // Імпортуємо хук для SSE
+import { startHostScan } from '../api/api';
+import { useScanEvents } from '../hooks/useScanEvents';
+import { useTranslation } from 'react-i18next';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -20,14 +21,15 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const params = new URLSearchParams(location.search);
   const activeTab = params.get('tab') || 'summary';
-  const events = useScanEvents(); <pre>{JSON.stringify(events, null, 2)}</pre>
+  const events = useScanEvents();
 
   // Використання хука useComputerFilters для уніфікованих фільтрів
   const { filters, handleFilterChange, handleTableChange } = useComputerFilters([]);
 
-// Оновлення фільтрів при кліку на ОС
+  // Оновлення фільтрів при кліку на ОС
   const handleOsClick = (os: string) => {
     handleFilterChange('os_name', os === 'Unknown' || os === 'Other Servers' ? undefined : os);
     handleFilterChange('server_filter', os === 'Other Servers' ? 'server' : undefined);
@@ -36,10 +38,10 @@ const Dashboard: React.FC = () => {
     handleFilterChange('limit', ITEMS_PER_PAGE);
   };
 
-// Оновлення фільтрів при кліку на підмережу
+  // Оновлення фільтрів при кліку на підмережу
   const handleSubnetClick = (subnet: string) => {
-    const ipRange = subnet === 'Невідомо' ? 'none' : subnet; // Використовуємо subnet як є
-    console.log('Applying ip_range filter:', ipRange); // Дебаг
+    const ipRange = subnet === 'Невідомо' ? 'none' : subnet;
+    console.log('Applying ip_range filter:', ipRange);
     handleFilterChange('ip_range', ipRange);
     handleFilterChange('os_name', undefined);
     handleFilterChange('server_filter', undefined);
@@ -59,7 +61,7 @@ const Dashboard: React.FC = () => {
   // Запит для отримання списку комп’ютерів
   const { data: computersData, isLoading: isComputersLoading, error: computersError } = useComputers({
     ...filters,
-    hostname: undefined, // Вимикаємо серверну фільтрацію по hostname
+    hostname: undefined,
     show_disabled: false,
     sort_by: 'hostname',
     sort_order: 'asc',
@@ -70,7 +72,7 @@ const Dashboard: React.FC = () => {
   const transformedComputers: ComputerListItem[] = useMemo(() => {
     return (computersData?.data || []).map((item) => ({
       ...item,
-      last_updated: item.last_updated ?? '', // Приводимо last_updated до string
+      last_updated: item.last_updated ?? '',
     }));
   }, [computersData]);
 
@@ -82,7 +84,7 @@ const Dashboard: React.FC = () => {
         ? JSON.stringify(statsError.response.data.detail || statsError.message)
         : statsError.message;
       notification.error({
-        message: 'Помилка завантаження статистики',
+        message: t('error_loading_stats'),
         description: `Не вдалося завантажити статистику: ${errorMessage}`,
       });
     }
@@ -92,11 +94,11 @@ const Dashboard: React.FC = () => {
         ? JSON.stringify(computersError.response.data.detail || computersError.message)
         : computersError.message;
       notification.error({
-        message: 'Помилка завантаження даних комп’ютерів',
+        message: t('error_loading_computers'),
         description: `Не вдалося завантажити дані комп’ютерів: ${errorMessage}`,
       });
     }
-  }, [statsError, computersError]);
+  }, [statsError, computersError, t]);
 
   // Оновлення відфільтрованих комп’ютерів
   useEffect(() => {
@@ -108,14 +110,14 @@ const Dashboard: React.FC = () => {
   // Функція для запуску першого сканування
   const handleStartScan = async () => {
     try {
-      const response = await startHostScan(''); // Порожній hostname для сканування всіх хостів
+      const response = await startHostScan('');
       notification.success({
-        message: 'Сканування розпочато',
+        message: t('scan_started'),
         description: `Task ID: ${response.task_id}`,
       });
     } catch (error) {
       notification.error({
-        message: 'Помилка сканування',
+        message: t('scan_error'),
         description: (error as Error).message,
       });
     }
@@ -124,22 +126,22 @@ const Dashboard: React.FC = () => {
   // Компонент для порожнього стану
   const renderEmptyState = () => (
     <Empty
-      description="Дані відсутні. Запустіть перше сканування, щоб отримати статистику."
+      description={t('no_data')}
       image={Empty.PRESENTED_IMAGE_SIMPLE}
     >
       <Button type="primary" onClick={handleStartScan}>
-        Запустити сканування
+        {t('start_scan')}
       </Button>
     </Empty>
   );
 
-  if (isLoading) return <div>Завантаження...</div>;
-  if (statsError) return <div style={{ color: 'red' }}>Помилка: {statsError.message}</div>;
-  if (!data || data.total_computers === 0) return renderEmptyState(); // Показуємо порожній стан
+  if (isLoading) return <div>{t('loading')}</div>;
+  if (statsError) return <div style={{ color: 'red' }}>{t('error_loading_stats')}: {statsError.message}</div>;
+  if (!data || data.total_computers === 0) return renderEmptyState();
 
   // Зміна вкладки
   const handleTabChange = (tab: string) => {
-    navigate(`?tab=${tab}`, { replace: true }); // Додаємо replace для уникнення дублювання історії
+    navigate(`?tab=${tab}`, { replace: true });
   };
 
   // Колонки для таблиці комп’ютерів у модальному вікні
@@ -172,7 +174,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div style={{ padding: 12 }}>
-      <h1 style={{ marginBottom: 0, marginTop: 0 }}>Статистика</h1>
+      <h1 style={{ marginBottom: 0, marginTop: 0 }}>{t('statistics')}</h1>
       <DashboardMenu activeTab={activeTab} onTabChange={handleTabChange} />
 
       {activeTab === 'summary' && (
@@ -192,13 +194,13 @@ const Dashboard: React.FC = () => {
       {activeTab === 'low_disk_space' && (
         <LowDiskSpace
           lowDiskSpace={data.disk_stats?.low_disk_space || []}
-          emptyComponent={renderEmptyState()} // Передаємо порожній стан
+          emptyComponent={renderEmptyState()}
         />
       )}
       {activeTab === 'subnets' && (
         <SubnetStats
           onSubnetClick={handleSubnetClick}
-          emptyComponent={renderEmptyState()} // Передаємо порожній стан
+          emptyComponent={renderEmptyState()}
         />
       )}
 
@@ -214,9 +216,9 @@ const Dashboard: React.FC = () => {
         width={600}
       >
         {isComputersLoading ? (
-          <div>Завантаження...</div>
+          <div>{t('loading')}</div>
         ) : computersError ? (
-          <div style={{ color: 'red' }}>Помилка: {computersError.message}</div>
+          <div style={{ color: 'red' }}>{t('error_loading_computers')}: {computersError.message}</div>
         ) : (
           <Table
             columns={computerColumns}
@@ -235,7 +237,7 @@ const Dashboard: React.FC = () => {
                   { currentDataSource: transformedComputers, action: 'paginate' }
                 ),
             }}
-            locale={{ emptyText: renderEmptyState() }} // Використовуємо кастомний порожній стан
+            locale={{ emptyText: renderEmptyState() }}
           />
         )}
       </Modal>

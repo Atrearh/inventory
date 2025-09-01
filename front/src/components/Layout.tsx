@@ -1,49 +1,118 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { Layout, Menu, Button } from 'antd';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
+import { ThemeContext } from '../context/ThemeContext';
+import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
+import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 
-const { Sider, Content, Header } = Layout;
+const { Sider, Content } = Layout;
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { logout } = useAuth();
+  const { dark } = useContext(ThemeContext);
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+
+  // Функція для розлогінювання
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error: any) {
+      console.error('Помилка виходу:', error.message);
+    }
+  };
+
+  // Встановлюємо атрибут data-theme на body
+  React.useEffect(() => {
+    document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}>
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        trigger={null}
+        style={{ position: 'relative' }}
+      >
+        <Button
+          type="text"
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            color: '#fff',
+            width: '100%',
+            textAlign: 'left',
+            padding: '16px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            position: 'absolute',
+            top: 0,
+            zIndex: 1000, // Вище LanguageAndThemeSwitch
+          }}
+          aria-label={collapsed ? t('expand_menu') : t('collapse_menu')}
+        >
+          {!collapsed && (collapsed ? t('expand_menu') : t('collapse_menu'))}
+        </Button>
         <Menu
           theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={[
-            { key: '/', label: <Link to="/">{t('dashboard')}</Link> },
-            { key: '/computers', label: <Link to="/computers">{t('computers')}</Link> },
-            { key: '/admin', label: <Link to="/admin">{t('admin')}</Link> },
-            { key: '/settings', label: <Link to="/settings">{t('settings')}</Link> },
+            {
+              key: '/',
+              icon: <DashboardOutlined />,
+              label: <Link to="/">{t('dashboard')}</Link>,
+            },
+            {
+              key: '/computers',
+              icon: <DesktopOutlined />,
+              label: <Link to="/computers">{t('computers')}</Link>,
+            },
+            {
+              key: '/admin',
+              icon: <UserOutlined />,
+              label: <Link to="/admin">{t('admin')}</Link>,
+            },
+            {
+              key: '/settings',
+              icon: <SettingOutlined />,
+              label: <Link to="/settings">{t('settings')}</Link>,
+            },
+            {
+              key: 'logout',
+              icon: <LogoutOutlined />,
+              label: (
+                <Button
+                  type="text"
+                  onClick={handleLogout}
+                  style={{ color: '#fff', width: '100%', textAlign: 'left' }}
+                >
+                  {!collapsed && t('logout')}
+                </Button>
+              ),
+            },
           ]}
+          style={{ paddingTop: '56px', paddingBottom: '60px' }} // Додаємо paddingTop для кнопки згортання
         />
+        <LanguageAndThemeSwitch />
       </Sider>
       <Layout>
-        <Header
+        <Content
           style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            padding: '0 16px',
-            background: '#fff',
+            margin: 0,
+            padding: '16px',
+            position: 'relative',
+            minHeight: 'calc(100vh - 64px)',
           }}
         >
-          <Button
-            size="small"
-            style={{ marginRight: 8 }}
-            onClick={() => i18n.changeLanguage(i18n.language === 'ua' ? 'en' : 'ua')}
-          >
-            {i18n.language === 'ua' ? 'EN' : 'UA'}
-          </Button>
-        </Header>
-        <Content style={{ margin: '16px' }}>{children}</Content>
+          {children}
+        </Content>
       </Layout>
     </Layout>
   );

@@ -4,21 +4,21 @@ import HttpBackend from 'i18next-http-backend';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
 i18n
-  .use(HttpBackend) // завантаження JSON
-  .use(LanguageDetector) // визначення мови користувача
+  .use(HttpBackend) 
+  .use(LanguageDetector) 
   .use(initReactI18next)
   .init({
-    fallbackLng: 'ua', // якщо мова не знайдена → українська
+    fallbackLng: 'ua', 
     debug: import.meta.env.DEV,
     interpolation: {
       escapeValue: false
     },
     backend: {
-      loadPath: '/locales/{{lng}}/translation.json'
+      loadPath: '/locales/translation.{{lng}}.json'
     },
     detection: {
-      order: ['querystring', 'localStorage', 'navigator'], // черговість
-      caches: ['localStorage'] // зберігаємо вибір у localStorage
+      order: ['querystring', 'localStorage', 'navigator'], 
+      caches: ['localStorage'] 
     }
   });
 

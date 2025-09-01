@@ -19,14 +19,6 @@ export const apiInstance = axios.create({
   withCredentials: true,
 });
 
-apiInstance.interceptors.request.use((config) => {
-  if (import.meta.env.DEV) {
-    const method = config.method?.toUpperCase() || 'UNKNOWN';
-    console.log(`API Request: ${method} ${config.url}`, config.params || {});
-  }
-  return config;
-});
-
 
 // Інтерцептор для обробки відповідей
 apiInstance.interceptors.response.use(

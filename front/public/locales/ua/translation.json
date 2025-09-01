@@ -1,0 +1,16 @@
+{
+  "dashboard": "Дашборд",
+  "computers": "Комп’ютери",
+  "domains": "Домени",
+  "admin": "Адміністрування",
+  "settings": "Налаштування",
+
+  "login": "Увійти",
+  "logout": "Вийти",
+  "email": "Email",
+  "password": "Пароль",
+  "enter_email": "Введіть email",
+  "enter_password": "Введіть пароль",
+  "login_success": "Вхід виконано успішно",
+  "login_failed": "Помилка входу"
+}

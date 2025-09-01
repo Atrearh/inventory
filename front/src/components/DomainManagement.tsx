@@ -1,8 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Popconfirm, message, Space } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { DomainRead, DomainCreate, DomainUpdate } from '../types/schemas';
-import { createDomain, getDomains, updateDomain, deleteDomain, validateDomain, scanDomains  } from '../api/domain.api';
+import { createDomain, getDomains, updateDomain, deleteDomain, validateDomain, scanDomains } from '../api/domain.api';
+import { useModalForm } from '../hooks/useModalForm'; 
+
 
 // Утилітна функція для уніфікованої обробки помилок
 const getErrorMessage = (error: Error | any): string => {
@@ -18,54 +20,43 @@ const getErrorMessage = (error: Error | any): string => {
 };
 
 const DomainManagement: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingDomain, setEditingDomain] = useState<DomainRead | null>(null);
   const [form] = Form.useForm();
   const [isValidating, setIsValidating] = useState(false);
+  const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<DomainRead>({
+    form,
+    defaultValues: {
+      server_url: 'server.com',
+      ad_base_dn: 'DC=example,DC=com',
+    },
+  });
 
   // Запит для отримання списку доменів
   const { data: domains = [], refetch, isLoading } = useQuery<DomainRead[]>({
     queryKey: ['domains'],
     queryFn: getDomains,
     enabled: true,
+    staleTime: 60 * 60 * 1000, // Дані свіжі протягом 1 години
+    gcTime: 60 * 60 * 1000, // Кеш зберігається 1 годину
+    refetchOnWindowFocus: false, // Вимикаємо повторний запит при фокусі
   });
 
-  // Дебансинг для refetch
-  const debouncedRefetch = useCallback(() => {
-    const handler = setTimeout(() => {
-      refetch();
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [refetch]);
-
-  // Мутація для створення домену
+  // Мутації (без змін)
   const { mutate: createMutate, isPending: isCreating } = useMutation({
     mutationFn: (payload: DomainCreate) => createDomain(payload),
-    onSuccess: (data) => {
-      console.log('Домен створено:', data); // Додаємо дебаг
+    onSuccess: () => {
       message.success('Домен створено');
       refetch();
-      setIsModalOpen(false);
-      form.resetFields();
+      handleCancel();
     },
-    onError: (error: Error) => {
-      console.error('Помилка створення домену:', getErrorMessage(error)); // Додаємо дебаг
-      message.error(getErrorMessage(error));
-    },
+    onError: (error: Error) => message.error(getErrorMessage(error)),
   });
 
-  // Мутація для перевірки зв’язку
   const { mutate: validateMutate, isPending: isValidatingConnection } = useMutation({
     mutationFn: (payload: DomainCreate) => validateDomain(payload),
-    onSuccess: (result) => {
-      message.success(result.message);
-    },
-    onError: (error: Error) => {
-      message.error(getErrorMessage(error));
-    },
+    onSuccess: (result) => message.success(result.message),
+    onError: (error: Error) => message.error(getErrorMessage(error)),
   });
 
-  // Мутація для запуску сканування AD
   const { mutate: scanDomainsMutate, isPending: isDomainADScanLoading } = useMutation({
     mutationFn: (domainId?: number) => scanDomains(domainId),
     onSuccess: (data) => {
@@ -75,36 +66,26 @@ const DomainManagement: React.FC = () => {
         message.success(`Сканування всіх доменів запущено, task_ids: ${data.task_ids.join(', ')}`);
       }
     },
-    onError: (error: Error) => {
-      message.error(`Помилка сканування AD: ${getErrorMessage(error)}`);
-    },
+    onError: (error: Error) => message.error(`Помилка сканування AD: ${getErrorMessage(error)}`),
   });
 
-  // Мутація для оновлення домену
   const { mutate: updateMutate, isPending: isUpdating } = useMutation({
     mutationFn: ({ id, data }: { id: number; data: DomainUpdate }) => updateDomain(id, data),
     onSuccess: () => {
       message.success('Домен оновлено');
       refetch();
-      setIsModalOpen(false);
-      setEditingDomain(null);
-      form.resetFields();
+      handleCancel();
     },
-    onError: (error: Error) => {
-      message.error(getErrorMessage(error));
-    },
+    onError: (error: Error) => message.error(getErrorMessage(error)),
   });
 
-  // Мутація для видалення домену
   const { mutate: deleteMutate, isPending: isDeleting } = useMutation({
     mutationFn: (id: number) => deleteDomain(id),
     onSuccess: () => {
       message.success('Домен видалено');
       refetch();
     },
-    onError: (error: Error) => {
-      message.error(getErrorMessage(error));
-    },
+    onError: (error: Error) => message.error(getErrorMessage(error)),
   });
 
   // Перевірка зв’язку
@@ -119,50 +100,15 @@ const DomainManagement: React.FC = () => {
         server_url: values.server_url.trim(),
         ad_base_dn: values.ad_base_dn.trim(),
       };
-      console.log('Перевірка зв’язку для:', payload); // Додаємо дебаг
       validateMutate(payload);
     } catch (error: any) {
-      console.error('Помилка перевірки зв’язку:', getErrorMessage(error)); // Додаємо дебаг
       message.error(getErrorMessage(error));
     } finally {
       setIsValidating(false);
     }
   };
 
-  // Відкриття модального вікна для створення
-  const openCreateModal = () => {
-    setEditingDomain(null);
-    form.setFieldsValue({
-      name: '',
-      username: '',
-      password: '',
-      server_url: 'server.com',
-      ad_base_dn: 'DC=example,DC=com',
-    });
-    setIsModalOpen(true);
-  };
-
-  // Відкриття модального вікна для редагування
-  const openEditModal = (domain: DomainRead) => {
-    setEditingDomain(domain);
-    form.setFieldsValue({
-      name: domain.name,
-      username: domain.username,
-      server_url: domain.server_url,
-      ad_base_dn: domain.ad_base_dn,
-      password: '************',
-    });
-    setIsModalOpen(true);
-  };
-
-  // Закриття модального вікна
-  const handleCancel = () => {
-    setIsModalOpen(false);
-    setEditingDomain(null);
-    form.resetFields();
-  };
-
-// Обробка відправлення форми
+  // Обробка відправлення форми
   const onFinish = async () => {
     try {
       const values = await form.validateFields();
@@ -171,7 +117,7 @@ const DomainManagement: React.FC = () => {
         return;
       }
       const payload: DomainUpdate = {
-        id: editingDomain ? editingDomain.id : 0,
+        id: editingItem ? editingItem.id : 0,
         name: values.name.trim(),
         username: values.username.trim(),
         password: values.password.trim(),
@@ -179,23 +125,18 @@ const DomainManagement: React.FC = () => {
         ad_base_dn: values.ad_base_dn.trim(),
         last_updated: null,
       };
-      console.log('Відправка даних для створення/оновлення:', payload); // Додаємо дебаг
-      if (editingDomain) {
-        updateMutate({
-          id: editingDomain.id,
-          data: payload,
-        });
+      if (editingItem) {
+        updateMutate({ id: editingItem.id, data: payload });
       } else {
         const { id, last_updated, ...createPayload } = payload;
         createMutate(createPayload as DomainCreate);
       }
     } catch (error: any) {
-      console.error('Помилка відправлення форми:', getErrorMessage(error)); // Додаємо дебаг
       message.error(getErrorMessage(error));
     }
   };
 
-  // Мемоізація колонок таблиці з підтримкою сортування
+  // Колонки таблиці (без змін)
   const columns = useMemo(
     () => [
       { title: 'Домен', dataIndex: 'name', key: 'name', sorter: (a: DomainRead, b: DomainRead) => a.name.localeCompare(b.name) },
@@ -242,7 +183,7 @@ const DomainManagement: React.FC = () => {
         <Button type="primary" onClick={openCreateModal} aria-label="Додати новий домен">
           Додати домен
         </Button>
-        <Button onClick={debouncedRefetch} aria-label="Оновити список доменів">
+        <Button onClick={() => refetch()} aria-label="Оновити список доменів">
           Оновити список
         </Button>
       </Space>
@@ -257,7 +198,7 @@ const DomainManagement: React.FC = () => {
       />
 
       <Modal
-        title={editingDomain ? 'Редагування домену' : 'Новий домен'}
+        title={editingItem ? 'Редагування домену' : 'Новий домен'}
         open={isModalOpen}
         onCancel={handleCancel}
         footer={[
@@ -277,9 +218,9 @@ const DomainManagement: React.FC = () => {
             type="primary"
             loading={isCreating || isUpdating}
             onClick={() => form.submit()}
-            aria-label={editingDomain ? 'Зберегти зміни домену' : 'Створити домен'}
+            aria-label={editingItem ? 'Зберегти зміни домену' : 'Створити домен'}
           >
-            {editingDomain ? 'Зберегти' : 'Створити'}
+            {editingItem ? 'Зберегти' : 'Створити'}
           </Button>,
         ]}
       >
@@ -301,15 +242,15 @@ const DomainManagement: React.FC = () => {
             name="username"
             label="Користувач"
             rules={[{ required: true, message: 'Введіть ім’я користувача' }]}
-            tooltip={editingDomain ? 'Заповніть у вигляді DOMEN\\USER' : undefined}
+            tooltip={editingItem ? 'Заповніть у вигляді DOMEN\\USER' : undefined}
           >
             <Input placeholder="Наприклад, admin" />
           </Form.Item>
           <Form.Item
             name="password"
-            label={editingDomain ? 'Новий пароль (заповніть для зміни)' : 'Пароль'}
-            rules={[{ required: !editingDomain, message: 'Введіть пароль' }]} // Пароль обов’язковий лише при створенні
-            tooltip={editingDomain ? 'Заповніть це поле, лише якщо хочете змінити пароль' : undefined}
+            label={editingItem ? 'Новий пароль (заповніть для зміни)' : 'Пароль'}
+            rules={[{ required: !editingItem, message: 'Введіть пароль' }]}
+            tooltip={editingItem ? 'Заповніть це поле, лише якщо хочете змінити пароль' : undefined}
           >
             <Input.Password placeholder="Введіть пароль" />
           </Form.Item>

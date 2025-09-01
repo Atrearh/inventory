@@ -1,4 +1,5 @@
-import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex } from 'antd';
+// src/components/AdminPanel.tsx
+import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex, Card, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { startScan, register, updateUser, deleteUser } from '../api/api';
@@ -6,6 +7,7 @@ import { scanDomains } from '../api/domain.api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useApiQueries';
+import { useModalForm } from '../hooks/useModalForm'; // Додано
 import DomainManagement from './DomainManagement';
 
 // Утилітна функція для уніфікованої обробки помилок
@@ -20,24 +22,20 @@ interface MutationResponse {
 
 const AdminPanel: React.FC = () => {
   const [form] = Form.useForm();
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserRead | null>(null);
-
-  // Запит для отримання списку користувачів
+  const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<UserRead>({ form });
   const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useUsers();
 
-  // Мутація для реєстрації користувача
+  // Мутації (без змін)
   const { mutate: registerMutation, isPending: isRegisterLoading } = useMutation<UserRead, Error, UserCreate>({
     mutationFn: register,
     onSuccess: () => {
       message.success('Користувача успішно зареєстровано');
       refetchUsers();
-      setIsModalVisible(false);
+      handleCancel();
     },
     onError: (error: any) => message.error(`Помилка реєстрації: ${getErrorMessage(error)}`),
   });
 
-  // Мутація для оновлення користувача
   const { mutate: updateUserMutation, isPending: isUpdateLoading } = useMutation<
     UserRead,
     Error,
@@ -47,12 +45,11 @@ const AdminPanel: React.FC = () => {
     onSuccess: () => {
       message.success('Користувача оновлено');
       refetchUsers();
-      setIsModalVisible(false);
+      handleCancel();
     },
     onError: (error: any) => message.error(`Помилка оновлення: ${getErrorMessage(error)}`),
   });
 
-  // Мутація для видалення користувача
   const { mutate: deleteUserMutation } = useMutation<void, Error, number>({
     mutationFn: deleteUser,
     onSuccess: () => {
@@ -62,46 +59,23 @@ const AdminPanel: React.FC = () => {
     onError: (error: any) => message.error(`Помилка видалення: ${getErrorMessage(error)}`),
   });
 
-  // Мутація для запуску інвентаризації
   const { mutate: startScanMutation, isPending: isScanLoading } = useMutation<MutationResponse, Error, void>({
     mutationFn: startScan,
     onSuccess: (data) => message.success(`Інвентаризацію запущено, task_id: ${data.task_id}`),
     onError: (error) => message.error(`Помилка: ${getErrorMessage(error)}`),
   });
 
-  // Мутація для запуску сканування всіх доменів
   const { mutate: scanAllDomainsMutation, isPending: isAllDomainsADScanLoading } = useMutation<MutationResponse, Error, void>({
-    mutationFn: () => scanDomains(), // Виклик без domainId для сканування всіх доменів
+    mutationFn: () => scanDomains(),
     onSuccess: (data) => message.success(`Сканування всіх доменів запущено, task_ids: ${data.task_ids?.join(', ')}`),
     onError: (error) => message.error(`Помилка сканування всіх доменів: ${getErrorMessage(error)}`),
   });
 
-  // Відкриття модального вікна для створення користувача
-  const handleAddNewUser = () => {
-    setEditingUser(null);
-    form.resetFields();
-    setIsModalVisible(true);
-  };
-
-  // Відкриття модального вікна для редагування користувача
-  const handleEditUser = (record: UserRead) => {
-    setEditingUser(record);
-    form.setFieldsValue(record);
-    setIsModalVisible(true);
-  };
-
-  // Закриття модального вікна
-  const handleCancel = () => {
-    setIsModalVisible(false);
-    setEditingUser(null);
-    form.resetFields();
-  };
-
   // Обробка відправлення форми
   const onFinish = async (values: any) => {
     try {
-      if (editingUser) {
-        updateUserMutation({ id: editingUser.id, data: values });
+      if (editingItem) {
+        updateUserMutation({ id: editingItem.id, data: values });
       } else {
         registerMutation(values);
       }
@@ -110,7 +84,7 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // Визначення стовпців таблиці
+  // Визначення стовпців таблиці (без змін)
   const columns = useMemo(
     () => [
       { title: 'ID', dataIndex: 'id', key: 'id' },
@@ -122,7 +96,7 @@ const AdminPanel: React.FC = () => {
         key: 'actions',
         render: (_: any, record: UserRead) => (
           <Space>
-            <Button onClick={() => handleEditUser(record)} aria-label={`Редагувати користувача ${record.username}`}>
+            <Button onClick={() => openEditModal(record)} aria-label={`Редагувати користувача ${record.username}`}>
               Редагувати
             </Button>
             <Popconfirm
@@ -139,13 +113,14 @@ const AdminPanel: React.FC = () => {
         ),
       },
     ],
-    [deleteUserMutation, handleEditUser]
+    [deleteUserMutation, openEditModal]
   );
 
   return (
     <div style={{ padding: '16px 24px' }}>
-      <Flex justify="space-between" align="center" style={{ marginBottom: 24 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 0 }}>Адміністрування</h1>
+      <Typography.Title level={1}>Адміністрування</Typography.Title>
+
+      <Card title="Глобальні дії" style={{ marginBottom: 24 }}>
         <Space>
           <Button
             onClick={() => startScanMutation()}
@@ -164,30 +139,34 @@ const AdminPanel: React.FC = () => {
             Опитати всі домени
           </Button>
         </Space>
-      </Flex>
+      </Card>
 
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
-        <h2>Список користувачів</h2>
-        <Button type="primary" onClick={handleAddNewUser} aria-label="Додати нового користувача">
-          Додати користувача
-        </Button>
-      </Flex>
+      <Card
+        title="Керування користувачами"
+        extra={
+          <Button type="primary" onClick={openCreateModal} aria-label="Додати нового користувача">
+            Додати користувача
+          </Button>
+        }
+        style={{ marginBottom: 24 }}
+      >
+        <Table
+          dataSource={users}
+          columns={columns}
+          rowKey="id"
+          loading={isUsersLoading}
+          pagination={false}
+          aria-label="Таблиця користувачів"
+        />
+      </Card>
 
-      <Table
-        dataSource={users}
-        columns={columns}
-        rowKey="id"
-        loading={isUsersLoading}
-        pagination={false}
-        aria-label="Таблиця користувачів"
-      />
-
-      <h2 style={{ marginTop: 32, marginBottom: 16 }}>Керування доменами</h2>
-      <DomainManagement />
+      <Card title="Керування доменами">
+        <DomainManagement />
+      </Card>
 
       <Modal
-        title={editingUser ? 'Редагування користувача' : 'Новий користувач'}
-        open={isModalVisible}
+        title={editingItem ? 'Редагування користувача' : 'Новий користувач'}
+        open={isModalOpen}
         onCancel={handleCancel}
         footer={[
           <Button key="back" onClick={handleCancel} aria-label="Скасувати">
@@ -198,9 +177,9 @@ const AdminPanel: React.FC = () => {
             type="primary"
             loading={isRegisterLoading || isUpdateLoading}
             onClick={() => form.submit()}
-            aria-label={editingUser ? 'Зберегти зміни користувача' : 'Створити користувача'}
+            aria-label={editingItem ? 'Зберегти зміни користувача' : 'Створити користувача'}
           >
-            {editingUser ? 'Зберегти' : 'Створити'}
+            {editingItem ? 'Зберегти' : 'Створити'}
           </Button>,
         ]}
       >
@@ -219,7 +198,7 @@ const AdminPanel: React.FC = () => {
           >
             <Input />
           </Form.Item>
-          {!editingUser && (
+          {!editingItem && (
             <Form.Item
               name="password"
               label="Пароль"

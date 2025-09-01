@@ -1,37 +1,26 @@
 import { apiInstance } from './api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
+import { handleApiError } from '../utils/apiErrorHandler';
 
 interface LoginCredentials {
   email: string;
   password: string;
 }
 
-interface ApiError {
-  response?: {
-    status: number;
-    data: any;
-  };
-  message: string;
-  code?: string;
-}
 
 // Функція для входу
 export const login = async (credentials: LoginCredentials): Promise<UserRead> => {
-  try {
-    const response = await apiInstance.post<UserRead>(
-      '/auth/jwt/login',
-      new URLSearchParams({
-        username: credentials.email,
-        password: credentials.password,
-      }),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }
-    );
-    return response.data;
-  } catch (error: any) {
-    throw handleApiError(error, 'Login failed');
-  }
+  const response = await apiInstance.post<UserRead>(
+    '/auth/jwt/login',
+    new URLSearchParams({
+      username: credentials.email,
+      password: credentials.password,
+    }),
+    {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }
+  );
+  return response.data;
 };
 
 // Функція для виходу
@@ -82,11 +71,3 @@ export const deleteUser = async (id: number): Promise<void> => {
   }
 };
 
-// Обробка помилок API
-const handleApiError = (error: any, defaultMessage: string): Error => {
-  if (error.code === 'ECONNREFUSED' || !error.response || error.response?.status === 503) {
-    return new Error('Сервер недоступний. Перевірте підключення до мережі.');
-  }
-  const message = error.response?.data?.detail || defaultMessage;
-  return new Error(message);
-};

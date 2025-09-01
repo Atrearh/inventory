@@ -1,0 +1,16 @@
+{
+  "dashboard": "Dashboard",
+  "computers": "Computers",
+  "domains": "Domains",
+  "admin": "Administration",
+  "settings": "Settings",
+
+  "login": "Login",
+  "logout": "Logout",
+  "email": "Email",
+  "password": "Password",
+  "enter_email": "Enter your email",
+  "enter_password": "Enter your password",
+  "login_success": "Login successful",
+  "login_failed": "Login failed"
+}

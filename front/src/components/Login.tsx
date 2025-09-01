@@ -1,17 +1,33 @@
-// front/src/components/Login.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button, Form, Input } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStatistics, getComputers, getUsers } from '../api/api';
-import { Filters } from '../hooks/useComputerFilters'; // 👈 додано для типізації
+import { Filters, isServerOs } from '../hooks/useComputerFilters'; // Додано isServerOs
+import { ITEMS_PER_PAGE } from '../config'; // Додано для консистентності
+import { useTranslation } from 'react-i18next';
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  // Дефолтні фільтри для консистентності з useComputerFilters
+  const defaultFilters: Filters = {
+    hostname: undefined,
+    os_name: undefined,
+    check_status: undefined,
+    show_disabled: false,
+    sort_by: 'hostname',
+    sort_order: 'asc',
+    page: 1,
+    limit: ITEMS_PER_PAGE,
+    server_filter: undefined,
+    ip_range: undefined,
+  };
 
   const onFinish = async (values: { email: string; password: string }) => {
     try {
@@ -19,7 +35,7 @@ const Login: React.FC = () => {
 
       console.log('Login successful. Starting prefetching...');
 
-      // Попереднє завантаження статистики для головної сторінки
+      // Попереднє завантаження статистики
       await queryClient.prefetchQuery({
         queryKey: ['statistics'],
         queryFn: () =>
@@ -34,23 +50,27 @@ const Login: React.FC = () => {
           }),
       });
 
-      // Попереднє завантаження першої сторінки комп'ютерів
+      // Попереднє завантаження комп'ютерів з уніфікованим ключем
       await queryClient.prefetchQuery({
-        queryKey: ['computers', { page: 1, limit: 1000, sort_by: 'hostname', sort_order: 'asc' }],
-        queryFn: () =>
-          getComputers({
-            page: 1,
+        queryKey: ['computers', defaultFilters],
+        queryFn: () => {
+          const params: Partial<Filters> = {
+            ...defaultFilters,
+            hostname: undefined, // Вимикаємо серверну фільтрацію по hostname
             limit: 1000,
-            sort_by: 'hostname',
-            sort_order: 'asc',
-            hostname: '',        // 👈 додані дефолти
-            os_name: '',
-            check_status: '',
-            show_disabled: false,
-          } as Filters),
+          };
+          if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
+            params.os_name = 'unknown';
+          } else if (params.os_name && isServerOs(params.os_name)) {
+            params.server_filter = 'server';
+          } else {
+            params.server_filter = undefined;
+          }
+          return getComputers(params as Filters);
+        },
       });
 
-      // Попереднє завантаження списку користувачів для адмін-панелі
+      // Попереднє завантаження користувачів
       await queryClient.prefetchQuery({
         queryKey: ['users'],
         queryFn: getUsers,

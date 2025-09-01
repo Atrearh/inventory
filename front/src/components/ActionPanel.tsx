@@ -1,4 +1,5 @@
-import { Button, message, Space, Select, Modal } from 'antd';
+// front/src/components/ActionPanel.tsx
+import { Button, message, notification, Space, Select, Modal } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { startHostScan, updatePolicies, restartPrintSpooler, getScriptsList, executeScript } from '../api/api';
 import { useState } from 'react';
@@ -19,20 +20,50 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
 
   const { mutate: scanHost, isPending: isScanLoading } = useMutation({
     mutationFn: () => startHostScan(hostname),
-    onSuccess: (data) => message.success(`Сканирование начато, task_id: ${data.task_id}`),
-    onError: (error: any) => message.error(`Ошибка сканирования: ${error.response?.data?.detail || error.message}`),
+    onSuccess: (data) => {
+      notification.success({
+        message: 'Сканування розпочато',
+        description: `Task ID: ${data.task_id}`,
+      });
+    },
+    onError: (error: any) => {
+      notification.error({
+        message: 'Помилка сканування',
+        description: error.message,
+      });
+    },
   });
 
   const { mutate: runGpUpdate, isPending: isGpUpdateLoading } = useMutation({
     mutationFn: () => updatePolicies(hostname),
-    onSuccess: (data) => message.success(data.message),
-    onError: (error: any) => message.error(`Ошибка обновления политик: ${error.response?.data?.detail || error.message}`),
+    onSuccess: (data) => {
+      notification.success({
+        message: 'Оновлення політик',
+        description: data.message,
+      });
+    },
+    onError: (error: any) => {
+      notification.error({
+        message: 'Помилка оновлення політик',
+        description: error.message,
+      });
+    },
   });
 
   const { mutate: restartSpooler, isPending: isSpoolerLoading } = useMutation({
     mutationFn: () => restartPrintSpooler(hostname),
-    onSuccess: (data) => message.success(data.message),
-    onError: (error: any) => message.error(`Ошибка перезапуска печати: ${error.response?.data?.detail || error.message}`),
+    onSuccess: (data) => {
+      notification.success({
+        message: 'Перезапуск друку',
+        description: data.message,
+      });
+    },
+    onError: (error: any) => {
+      notification.error({
+        message: 'Помилка перезапуску друку',
+        description: error.message,
+      });
+    },
   });
 
   const { mutate: runScript, isPending: isScriptLoading } = useMutation({
@@ -40,9 +71,17 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
     onSuccess: (data) => {
       setScriptOutput(data);
       setIsModalVisible(true);
-      message.success(`Скрипт ${selectedScript} выполнен`);
+      notification.success({
+        message: 'Виконання скрипту',
+        description: `Скрипт ${selectedScript} виконано`,
+      });
     },
-    onError: (error: any) => message.error(`Ошибка выполнения скрипта: ${error.response?.data?.detail || error.message}`),
+    onError: (error: any) => {
+      notification.error({
+        message: 'Помилка виконання скрипту',
+        description: error.message,
+      });
+    },
   });
 
   const handleScriptSelect = (value: string) => {
@@ -57,17 +96,17 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
   return (
     <Space wrap>
       <Button type="primary" onClick={() => scanHost()} loading={isScanLoading}>
-        Сканировать хост
+        Сканувати хост
       </Button>
       <Button onClick={() => runGpUpdate()} loading={isGpUpdateLoading}>
-        Обновить политики
+        Оновити політики
       </Button>
       <Button onClick={() => restartSpooler()} loading={isSpoolerLoading}>
-        Перезапустить печать
+        Перезапустити друк
       </Button>
       <Select
         style={{ width: 200 }}
-        placeholder="Выберите скрипт"
+        placeholder="Виберіть скрипт"
         onChange={handleScriptSelect}
         loading={isScriptsLoading}
         disabled={isScriptsLoading || scripts.length === 0}
@@ -83,22 +122,34 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
         disabled={!selectedScript || isScriptLoading}
         loading={isScriptLoading}
       >
-        Выполнить скрипт
+        Виконати скрипт
       </Button>
       <Modal
-        title={`Результат выполнения скрипта ${selectedScript}`}
+        title={`Результат виконання скрипту ${selectedScript}`}
         open={isModalVisible}
         onCancel={handleModalClose}
         footer={[
           <Button key="close" onClick={handleModalClose}>
-            Закрыть
+            Закрити
           </Button>,
         ]}
         width={800}
       >
         <pre style={{ maxHeight: '400px', overflow: 'auto' }}>
-          {scriptOutput?.output && <div><strong>Вывод:</strong><br />{scriptOutput.output}</div>}
-          {scriptOutput?.error && <div style={{ color: 'red', marginTop: '16px' }}><strong>Ошибка:</strong><br />{scriptOutput.error}</div>}
+          {scriptOutput?.output && (
+            <div>
+              <strong>Вивід:</strong>
+              <br />
+              {scriptOutput.output}
+            </div>
+          )}
+          {scriptOutput?.error && (
+            <div style={{ color: 'red', marginTop: '16px' }}>
+              <strong>Помилка:</strong>
+              <br />
+              {scriptOutput.error}
+            </div>
+          )}
         </pre>
       </Modal>
     </Space>

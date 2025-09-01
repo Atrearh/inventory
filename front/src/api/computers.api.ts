@@ -12,6 +12,19 @@ export const getComputers = async (params: Filters) => {
   return response.data;
 };
 
+// Отримання даних комп’ютера за ID
+export const getComputerById = async (computerId: number) => {
+  const response = await apiInstance.get<Computer>(`/computers/${computerId}`, { withCredentials: true });
+  return response.data;
+};
+
+// Отримання історії компонентів комп’ютера
+export const getHistory = async (computerId: number): Promise<ComponentHistory[]> => {
+  const response = await apiInstance.get<ComponentHistory[]>(`/computers/${computerId}/history`, {
+    withCredentials: true,
+  });
+  return response.data;
+};
 
 // Експорт комп’ютерів у CSV
 export const exportComputersToCSV = async (params: Filters) => {
@@ -21,36 +34,4 @@ export const exportComputersToCSV = async (params: Filters) => {
     withCredentials: true,
   });
   return response.data;
-};
-
-// Отримання даних комп’ютера за ID
-export const getComputerById = async (computerId: number) => {
-  try {
-    const response = await apiInstance.get<Computer>(`/computers/${computerId}`, { withCredentials: true });
-    return response.data;
-  } catch (error: any) {
-    if (error.response?.status === 404) {
-      throw new Error('Комп’ютер не знайдено');
-    } else if (error.response?.status === 500) {
-      throw new Error('Помилка сервера при отриманні даних комп’ютера');
-    }
-    throw error;
-  }
-};
-
-// Отримання історії компонентів комп’ютера
-export const getHistory = async (computerId: number): Promise<ComponentHistory[]> => {
-  try {
-    const response = await apiInstance.get<ComponentHistory[]>(`/computers/${computerId}/history`, {
-      withCredentials: true,
-    });
-    return response.data;
-  } catch (error: any) {
-    if (error.response?.status === 404) {
-      throw new Error('Історія компонентів не знайдена');
-    } else if (error.response?.status === 500) {
-      throw new Error('Помилка сервера при отриманні історії компонентів');
-    }
-    throw error;
-  }
 };

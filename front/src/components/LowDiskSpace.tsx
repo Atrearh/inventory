@@ -1,12 +1,14 @@
+// front/src/components/LowDiskSpace.tsx
 import { Table } from 'antd';
 import { Link } from 'react-router-dom';
 import { DashboardStats } from '../types/schemas';
 
 interface LowDiskSpaceProps {
   lowDiskSpace: DashboardStats['disk_stats']['low_disk_space'];
+  emptyComponent?: React.ReactNode; // Додаємо проп для порожнього стану
 }
 
-const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
+const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace, emptyComponent }) => {
   console.log('Дані lowDiskSpace:', lowDiskSpace);
 
   // Фільтрація комп'ютерів з низьким обсягом диска (менше або дорівнює 1024 ГБ)
@@ -40,8 +42,7 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
   ];
 
   if (!lowDiskSpace || lowDiskSpace.length === 0) {
-    console.warn('lowDiskSpace відсутні або порожні');
-    return <p style={{ color: 'red' }}>Дані про низький обсяг диска відсутні</p>;
+    return emptyComponent || <p style={{ color: 'red' }}>Дані про низький обсяг диска відсутні</p>;
   }
 
   return (
@@ -53,11 +54,11 @@ const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace }) => {
           dataSource={filteredLowDiskSpace}
           rowKey={(record) => `${record.id}-${record.disk_id}`}
           size="middle"
-          locale={{ emptyText: 'Немає даних' }}
+          locale={{ emptyText: emptyComponent || 'Немає даних' }}
           pagination={false}
         />
       ) : (
-        <p>Немає комп'ютерів з низьким обсягом диска.</p>
+        emptyComponent || <p>Немає комп'ютерів з низьким обсягом диска.</p>
       )}
     </div>
   );

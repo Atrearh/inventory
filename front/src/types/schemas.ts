@@ -14,7 +14,6 @@ export interface AppSettingUpdate {
   ad_username?: string | null;
   ad_password?: string | null;
   api_url?: string | null;
-  test_hosts?: string | null;
   log_level?: string | null;
   scan_max_workers?: number | null;
   polling_days_threshold?: number | null;

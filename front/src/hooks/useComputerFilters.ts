@@ -14,10 +14,10 @@ export interface Filters {
   show_disabled: boolean;
   sort_by: string;
   sort_order: 'asc' | 'desc';
-  page: number;
-  limit: number;
+  page: number; // Змінено на number
+  limit: number; // Змінено на number
   server_filter?: string;
-  ip_range?: string; // Додано для підтримки фільтрації за підмережею
+  ip_range?: string;
 }
 
 interface Sorter {
@@ -26,7 +26,7 @@ interface Sorter {
 }
 
 // Функція для перевірки, чи є ОС серверною
-const isServerOs = (osName: string) => {
+export const isServerOs = (osName: string) => {
   const serverOsPatterns = [/server/i, /hyper-v/i];
   return serverOsPatterns.some((pattern) => pattern.test(osName.toLowerCase()));
 };
@@ -43,23 +43,48 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
     page: Number(searchParams.get('page')) || 1,
     limit: Number(searchParams.get('limit') || ITEMS_PER_PAGE),
     server_filter: searchParams.get('server_filter') || undefined,
-    ip_range: searchParams.get('ip_range') || undefined, // Додано
+    ip_range: searchParams.get('ip_range') || undefined,
   });
 
   // Оновлення параметрів URL при зміні фільтрів
   useEffect(() => {
-    const params: Record<string, string> = {};
-    if (filters.hostname) params.hostname = filters.hostname;
-    if (filters.check_status) params.check_status = filters.check_status;
-    if (filters.os_name) params.os_name = filters.os_name;
-    params.show_disabled = String(filters.show_disabled);
-    if (filters.server_filter) params.server_filter = filters.server_filter;
-    if (filters.ip_range) params.ip_range = filters.ip_range; // Додано
-    params.sort_by = filters.sort_by;
-    params.sort_order = filters.sort_order;
-    params.page = String(filters.page);
-    params.limit = String(filters.limit);
-    setSearchParams(params, { replace: true });
+    setSearchParams(prevParams => {
+      // 1. Створюємо копію існуючих параметрів, щоб зберегти 'tab' та інші.
+      const newParams = new URLSearchParams(prevParams);
+
+      // 2. Створюємо об'єкт з поточними фільтрами для зручності.
+      const filterParams: Record<string, any> = {
+        hostname: filters.hostname,
+        os_name: filters.os_name,
+        check_status: filters.check_status,
+        show_disabled: filters.show_disabled,
+        sort_by: filters.sort_by,
+        sort_order: filters.sort_order,
+        page: filters.page,
+        limit: filters.limit,
+        server_filter: filters.server_filter,
+        ip_range: filters.ip_range,
+      };
+
+      // 3. Проходимося по фільтрах і оновлюємо/видаляємо їх у newParams.
+      for (const [key, value] of Object.entries(filterParams)) {
+        // Якщо значення існує і не є порожнім, встановлюємо його.
+        if (value !== undefined && value !== null && String(value) !== '') {
+          // Окремо обробляємо булеве значення, щоб не додавати 'show_disabled=false' до URL
+          if (key === 'show_disabled' && value === false) {
+            newParams.delete(key);
+          } else {
+            newParams.set(key, String(value));
+          }
+        } else {
+          // Якщо значення порожнє, видаляємо параметр з URL.
+          newParams.delete(key);
+        }
+      }
+
+      // 4. Повертаємо оновлений набір параметрів.
+      return newParams;
+    }, { replace: true });
   }, [filters, setSearchParams]);
 
   // Дебансована функція для оновлення hostname
@@ -75,27 +100,25 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
         page: 1,
         limit: ITEMS_PER_PAGE,
         server_filter: undefined,
-        ip_range: undefined, // Додано
+        ip_range: undefined,
       });
     }, 300),
     []
   );
 
   // Обробка змін фільтрів
-  const handleFilterChange = useCallback((key: keyof Filters, value: string | boolean | undefined) => {
+  const handleFilterChange = useCallback((key: keyof Filters, value: string | boolean | number | undefined) => {
     const finalValue = value === '' || value === undefined ? undefined : value;
     setFilters((prev) => {
       const newFilters = {
         ...prev,
         [key]: finalValue,
-        page: 1,
+        page: key !== 'page' && key !== 'limit' ? 1 : prev.page,
         server_filter: key === 'os_name' && finalValue && typeof finalValue === 'string' && isServerOs(finalValue) ? 'server' : undefined,
       };
-      // Якщо check_status змінюється на значення, відмінне від disabled або is_deleted, скидаємо show_disabled
       if (key === 'check_status' && finalValue && finalValue !== 'disabled' && finalValue !== 'is_deleted') {
         newFilters.show_disabled = false;
       }
-      // Якщо вимикаємо show_disabled, скидаємо check_status, якщо він дорівнює disabled або is_deleted
       if (key === 'show_disabled' && !finalValue && (prev.check_status === 'disabled' || prev.check_status === 'is_deleted')) {
         newFilters.check_status = undefined;
       }
@@ -115,13 +138,13 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
       page: 1,
       limit: ITEMS_PER_PAGE,
       server_filter: undefined,
-      ip_range: undefined, // Додано
+      ip_range: undefined,
     });
   }, []);
 
   // Обробка змін таблиці (пагінація та сортування)
   const handleTableChange: NonNullable<TableProps<ComputerListItem>['onChange']> = useCallback(
-    (pagination: TablePaginationConfig, filters: Record<string, any>, sorter: any) => {
+    (pagination: TablePaginationConfig, _filters: Record<string, any>, sorter: any, _extra: any) => {
       const sorterResult = Array.isArray(sorter) ? sorter[0] : sorter;
       setFilters((prev) => ({
         ...prev,
@@ -136,7 +159,6 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
 
   // Фільтрація та сортування комп’ютерів
   const filteredComputers = useMemo(() => {
-    // Видаляємо дублікати за id
     const uniqueComputers = Array.from(
       new Map(cachedComputers.map((comp) => [comp.id, comp])).values()
     );

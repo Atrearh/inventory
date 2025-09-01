@@ -1,4 +1,4 @@
-// src/components/SubnetStats.tsx
+// front/src/components/SubnetStats.tsx
 import { useQuery } from '@tanstack/react-query';
 import { getComputers } from '../api/api';
 import { ComputersResponse, ComputerList } from '../types/schemas';
@@ -11,17 +11,15 @@ import { AxiosError } from 'axios';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-// Пропси для компонента статистики мереж
 interface SubnetStatsProps {
   onSubnetClick?: (subnet: string) => void;
+  emptyComponent?: React.ReactNode; // Додаємо проп для порожнього стану
 }
 
-// Компонент для відображення розподілу комп’ютерів за мережами
-const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
+const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent }) => {
   const { isAuthenticated } = useAuth();
   const [subnetData, setSubnetData] = useState<{ subnet: string; count: number }[]>([]);
 
-  // Запит для отримання даних комп’ютерів
   const { data: computersData, isLoading, error, refetch } = useQuery<ComputersResponse, Error>({
     queryKey: ['computersForSubnets'],
     queryFn: () =>
@@ -31,7 +29,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
         hostname: undefined,
         os_name: undefined,
         check_status: undefined,
-        show_disabled: true, 
+        show_disabled: true,
         sort_by: 'hostname',
         sort_order: 'asc',
       }),
@@ -42,7 +40,6 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
 
-  // Обробка даних комп’ютерів для підрахунку мереж
   useEffect(() => {
     if (error) {
       console.error('Помилка запиту:', error);
@@ -96,10 +93,9 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
   if (isLoading) return <div>Завантаження...</div>;
   if (error) return <div style={{ color: 'red' }}>Помилка: {error.message}</div>;
   if (!computersData || !computersData.data || !Array.isArray(computersData.data) || computersData.data.length === 0) {
-    return <div>Немає даних про комп’ютери для мережі</div>;
+    return emptyComponent || <div>Немає даних про комп’ютери для мережі</div>;
   }
 
-  // Дані для діаграми мереж
   const chartData: ChartData<'pie', number[], string> = {
     labels: subnetData.map((item) => item.subnet),
     datasets: [
@@ -113,7 +109,6 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
     ],
   };
 
-  // Налаштування діаграми
   const chartOptions: ChartOptions<'pie'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -137,7 +132,6 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
     },
   };
 
-  // Колонки для таблиці мереж
   const subnetColumns = [
     {
       title: 'Мережа',
@@ -172,11 +166,11 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick }) => {
             rowKey="subnet"
             size="small"
             pagination={false}
-            locale={{ emptyText: 'Немає даних' }}
+            locale={{ emptyText: emptyComponent || 'Немає даних' }}
           />
         </>
       ) : (
-        <div>Немає даних про мережі</div>
+        emptyComponent || <div>Немає даних про мережі</div>
       )}
     </div>
   );

@@ -8,12 +8,13 @@ interface DashboardMenuProps {
 const DashboardMenu: React.FC<DashboardMenuProps> = ({ activeTab, onTabChange }) => {
   return (
     <Tabs
+      key={activeTab} 
       activeKey={activeTab}
       onChange={onTabChange}
       items={[
         { key: 'summary', label: 'Загальна статистика' },
         { key: 'low_disk_space', label: 'Низький обсяг диска' },
-        { key: 'subnets', label: 'Мережі' }, // Новая вкладка
+        { key: 'subnets', label: 'Мережі' },
       ]}
       style={{ marginBottom: 16 }}
     />

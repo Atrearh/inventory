@@ -1,4 +1,3 @@
-// front/src/api/scripts.api.ts
 import { apiInstance } from './api';
 
 export const updatePolicies = async (hostname: string) => {

@@ -1,4 +1,3 @@
-// front/src/api/statistics.api.ts
 import { apiInstance } from './api';
 import { DashboardStats, ScanTask, ScanResponse } from '../types/schemas';
 

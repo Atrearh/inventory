@@ -5,7 +5,6 @@ import { DomainRead, DomainCreate, DomainUpdate } from '../types/schemas';
 import { createDomain, getDomains, updateDomain, deleteDomain, validateDomain, scanDomains } from '../api/domain.api';
 import { useModalForm } from '../hooks/useModalForm'; 
 
-
 // Утилітна функція для уніфікованої обробки помилок
 const getErrorMessage = (error: Error | any): string => {
   if (error.response?.data?.detail) {
@@ -40,7 +39,7 @@ const DomainManagement: React.FC = () => {
     refetchOnWindowFocus: false, // Вимикаємо повторний запит при фокусі
   });
 
-  // Мутації (без змін)
+  // Мутації
   const { mutate: createMutate, isPending: isCreating } = useMutation({
     mutationFn: (payload: DomainCreate) => createDomain(payload),
     onSuccess: () => {
@@ -94,11 +93,11 @@ const DomainManagement: React.FC = () => {
       setIsValidating(true);
       const values = await form.validateFields();
       const payload: DomainCreate = {
-        name: values.name.trim(),
-        username: values.username.trim(),
-        password: values.password.trim(),
-        server_url: values.server_url.trim(),
-        ad_base_dn: values.ad_base_dn.trim(),
+        name: values.name,
+        username: values.username,
+        password: values.password,
+        server_url: values.server_url,
+        ad_base_dn: values.ad_base_dn,
       };
       validateMutate(payload);
     } catch (error: any) {
@@ -112,17 +111,13 @@ const DomainManagement: React.FC = () => {
   const onFinish = async () => {
     try {
       const values = await form.validateFields();
-      if (!values.name.trim() || !values.username.trim() || !values.password.trim() || !values.server_url.trim() || !values.ad_base_dn.trim()) {
-        message.error('Усі поля мають бути заповнені');
-        return;
-      }
       const payload: DomainUpdate = {
         id: editingItem ? editingItem.id : 0,
-        name: values.name.trim(),
-        username: values.username.trim(),
-        password: values.password.trim(),
-        server_url: values.server_url.trim(),
-        ad_base_dn: values.ad_base_dn.trim(),
+        name: values.name,
+        username: values.username,
+        password: values.password,
+        server_url: values.server_url,
+        ad_base_dn: values.ad_base_dn,
         last_updated: null,
       };
       if (editingItem) {
@@ -136,7 +131,7 @@ const DomainManagement: React.FC = () => {
     }
   };
 
-  // Колонки таблиці (без змін)
+  // Колонки таблиці
   const columns = useMemo(
     () => [
       { title: 'Домен', dataIndex: 'name', key: 'name', sorter: (a: DomainRead, b: DomainRead) => a.name.localeCompare(b.name) },
@@ -230,6 +225,7 @@ const DomainManagement: React.FC = () => {
             label="Домен"
             rules={[
               { required: true, message: 'Введіть назву домену' },
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
               {
                 pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+$/,
                 message: 'Домен має містити лише літери, цифри, дефіси та точки (наприклад, example.com)',
@@ -241,7 +237,10 @@ const DomainManagement: React.FC = () => {
           <Form.Item
             name="username"
             label="Користувач"
-            rules={[{ required: true, message: 'Введіть ім’я користувача' }]}
+            rules={[
+              { required: true, message: 'Введіть ім’я користувача' },
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+            ]}
             tooltip={editingItem ? 'Заповніть у вигляді DOMEN\\USER' : undefined}
           >
             <Input placeholder="Наприклад, admin" />
@@ -249,7 +248,12 @@ const DomainManagement: React.FC = () => {
           <Form.Item
             name="password"
             label={editingItem ? 'Новий пароль (заповніть для зміни)' : 'Пароль'}
-            rules={[{ required: !editingItem, message: 'Введіть пароль' }]}
+            rules={editingItem ? [
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+            ] : [
+              { required: true, message: 'Введіть пароль' },
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+            ]}
             tooltip={editingItem ? 'Заповніть це поле, лише якщо хочете змінити пароль' : undefined}
           >
             <Input.Password placeholder="Введіть пароль" />
@@ -259,6 +263,7 @@ const DomainManagement: React.FC = () => {
             label="URL сервера"
             rules={[
               { required: true, message: 'Введіть URL сервера' },
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
               {
                 pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+$/,
                 message: 'URL сервера має містити лише літери, цифри, дефіси та точки (наприклад, server.com)',
@@ -270,7 +275,10 @@ const DomainManagement: React.FC = () => {
           <Form.Item
             name="ad_base_dn"
             label="AD Base DN"
-            rules={[{ required: true, message: 'Введіть AD Base DN' }]}
+            rules={[
+              { required: true, message: 'Введіть AD Base DN' },
+              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+            ]}
           >
             <Input placeholder="Наприклад, DC=example,DC=com" />
           </Form.Item>

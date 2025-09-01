@@ -10,13 +10,8 @@ export const getDomains = async (): Promise<DomainRead[]> => {
 
 // Створюємо новий домен
 export const createDomain = async (data: DomainCreate): Promise<DomainRead> => {
-  try {
-    const response = await apiInstance.post('/domains/', data);
-    return response.data;
-  } catch (error: any) {
-    console.error('Помилка при створенні домену:', error.response?.data || error.message);
-    throw error;
-  }
+  const response = await apiInstance.post('/domains/', data);
+  return response.data;
 };
 
 // Оновлюємо існуючий домен
@@ -32,23 +27,13 @@ export const deleteDomain = async (id: number): Promise<void> => {
 
 // Перевіряємо з'єднання з доменом
 export const validateDomain = async (data: DomainCreate): Promise<{ status: string; message: string }> => {
-  try {
-    const response = await apiInstance.post('/domains/validate', data);
-    return response.data;
-  } catch (error: any) {
-    console.error('Помилка перевірки домену:', error.response?.data || error.message);
-    throw error;
-  }
+  const response = await apiInstance.post('/domains/validate', data);
+  return response.data;
 };
 
 // Запускаємо сканування AD для доменів
 export const scanDomains = async (domainId?: number): Promise<{ status: string; task_id?: string; task_ids?: string[] }> => {
-  try {
-    const url = `/domains/scan${domainId ? `?domain_id=${domainId}` : ''}`;
-    const response = await apiInstance.post(url);
-    return response.data;
-  } catch (error: any) {
-    console.error('Помилка сканування доменів:', error.response?.data || error.message);
-    throw error;
-  }
+  const url = `/domains/scan${domainId ? `?domain_id=${domainId}` : ''}`;
+  const response = await apiInstance.post(url);
+  return response.data;
 };

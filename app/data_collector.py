@@ -69,7 +69,7 @@ class ScriptCache:
 script_cache = ScriptCache()
 
 def decode_output(output: bytes) -> str:
-    """Декодує байтовий вивід PowerShell, використовуючи спочатку UTF-8, а потім запасну кодування з налаштувань."""
+    """Декодує байтовий вивід PowerShell."""
     if not output:
         return ""
     try:
@@ -80,10 +80,11 @@ def decode_output(output: bytes) -> str:
 
 class WinRMDataCollector:
     """Збирає інформацію з віддалених хостів Windows за допомогою WinRM."""
-    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService, domain_name: str):
+    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService, winrm_service: Optional[WinRMService] = None):
         self.hostname = hostname
-        self.winrm_service = WinRMService(encryption_service, db)
-        self.domain_name = domain_name
+        self.db = db
+        self.encryption_service = encryption_service
+        self.winrm_service = winrm_service or WinRMService(encryption_service, db)
 
     async def _execute_script(self, script_name: str, last_updated: Optional[datetime] = None) -> Any:
         """Асинхронно виконує PowerShell-скрипт на віддаленому хості."""
@@ -102,7 +103,7 @@ class WinRMDataCollector:
             logger.warning(f"Команда для {script_name} на {self.hostname} перевищує 3000 символів", extra={"hostname": self.hostname, "script_name": script_name})
 
         try:
-            async with self.winrm_service.create_session(self.hostname, domain_name=self.domain_name) as session:
+            async with self.winrm_service.create_session(self.hostname) as session:
                 result = await asyncio.to_thread(session.run_ps, command)
                 if result.status_code != 0:
                     error_message = decode_output(result.std_err)
@@ -117,12 +118,11 @@ class WinRMDataCollector:
             raise
 
     async def collect_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
-        """Збирає повну інформацію про ПК, включаючи обладнання, ПЗ і ролі сервера."""
+        """Збирає повну інформацію про ПК."""
         result: Dict[str, Any] = {"hostname": self.hostname, "check_status": "failed", "errors": []}
         logger.info(f"Початок збору даних для {self.hostname}", extra={"hostname": self.hostname})
 
         try:
-            # Ініціалізація структури результату
             result.update({
                 "ip_addresses": [], "mac_addresses": [], "processors": [],
                 "video_cards": [], "disks": {"physical_disks": [], "logical_disks": []},
@@ -133,7 +133,6 @@ class WinRMDataCollector:
             successful_components = 0
             failed_components = 0
 
-            # Збір базової інформації про обладнання
             hardware_data = await self._execute_script("system_info.ps1")
             if isinstance(hardware_data, dict) and "error" not in hardware_data:
                 result.update({
@@ -146,7 +145,7 @@ class WinRMDataCollector:
                     "mac_addresses": hardware_data.get("mac_addresses", []),
                     "video_cards": hardware_data.get("video_cards", []),
                     "last_boot": hardware_data.get("last_boot"),
-                    "roles": hardware_data.get("roles", [])  # Ролі сервера беруться із system_info.ps1
+                    "roles": hardware_data.get("roles", [])
                 })
                 successful_components += 1
                 logger.debug("Дані system_info.ps1 зібрано успішно", extra={"hostname": self.hostname})
@@ -155,7 +154,6 @@ class WinRMDataCollector:
                 result["errors"].append(hardware_data.get("error", "Невідома помилка system_info.ps1"))
                 logger.error(f"Помилка збору даних system_info.ps1: {hardware_data.get('error', 'Невідома помилка')}", extra={"hostname": self.hostname})
 
-            # Збір інформації про диски
             disk_data = await self._execute_script("disk_info.ps1")
             if isinstance(disk_data, dict) and "error" not in disk_data:
                 result["disks"]["physical_disks"] = disk_data.get("physical_disks", [])
@@ -167,7 +165,6 @@ class WinRMDataCollector:
                 result["errors"].append(disk_data.get("error", "Невідома помилка disk_info.ps1"))
                 logger.error(f"Помилка збору даних disk_info.ps1: {disk_data.get('error', 'Невідома помилка')}", extra={"hostname": self.hostname})
 
-            # Збір інформації про ПЗ
             software_script = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
             software_data = await self._execute_script(software_script, last_updated=last_updated)
             if isinstance(software_data, list):
@@ -183,7 +180,6 @@ class WinRMDataCollector:
                 result["errors"].append(software_data.get("error", f"Невідома помилка {software_script}"))
                 logger.error(f"Помилка збору даних {software_script}: {software_data.get('error', 'Невідома помилка')}", extra={"hostname": self.hostname})
 
-            # Визначення статусу
             essential_data_present = any([
                 result["ip_addresses"],
                 result["mac_addresses"],

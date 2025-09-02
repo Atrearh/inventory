@@ -2,13 +2,15 @@ import os
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..database import get_db
+from ..database import get_db_session
 from ..settings import settings
 from .auth import get_current_user
 from typing import List, Dict
-from ..data_collector import WinRMDataCollector,  SCRIPTS_DIR
+from ..data_collector import WinRMDataCollector, SCRIPTS_DIR
 from pydantic import BaseModel, ValidationError
 from ..services.encryption_service import EncryptionService
+from ..services.winrm_service import WinRMService
+from ..main import get_winrm_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,8 @@ async def get_scripts_list():
 async def execute_script(
     script_name: str,
     request_body: ExecuteScriptRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_session),
+    winrm_service: WinRMService = Depends(get_winrm_service),
     request: Request = None
 ):
     """Виконання вказаного скрипта на хості."""
@@ -53,7 +56,6 @@ async def execute_script(
     scripts_dir = SCRIPTS_DIR
     script_path = os.path.join(scripts_dir, script_name)
     
-    # Валідація імені скрипта
     if not script_name.endswith(".ps1"):
         logger_adapter.error(f"Недопустиме розширення файлу: {script_name}")
         raise HTTPException(status_code=400, detail="Скрипт повинен мати розширення .ps1")
@@ -65,7 +67,8 @@ async def execute_script(
     try:
         encryption_service = EncryptionService(settings.encryption_key)
         collector = WinRMDataCollector(hostname=hostname, db=db, encryption_service=encryption_service)
-        with collector.winrm_service.create_session(hostname) as session:
+        collector.winrm_service = winrm_service  # Використовуємо ініціалізований WinRMService
+        async with winrm_service.create_session(hostname) as session:
             result = await collector._execute_script(script_name)
             logger_adapter.info(f"Скрипт {script_name} успішно виконано на {hostname}")
             return {"output": result.get("stdout", ""), "error": result.get("stderr", "")}

@@ -1,10 +1,9 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
-from typing import Optional
+from sqlalchemy.exc import IntegrityError, OperationalError
+from typing import Optional, List
 from ..models import Domain
 import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +12,16 @@ class DomainRepository:
         self.db = db
 
     async def get_domain_by_name(self, name: str) -> Optional[Domain]:
-        """Отримує домен за назвою."""
+        """Отримує домен за назвою, ігноруючи регістр."""
         try:
             logger.debug(f"Виконую запит для пошуку домену: {name}")
-            result = await self.db.execute(select(Domain).filter(Domain.name == name))
+            result = await self.db.execute(select(Domain).filter(Domain.name.ilike(name.lower())))
             domain = result.scalar_one_or_none()
             logger.debug(f"Пошук домену {name}: {'знайдено' if domain else 'не знайдено'}")
             return domain
         except Exception as e:
             logger.error(f"Помилка пошуку домену {name}: {str(e)}", exc_info=True)
             raise
-
 
     async def create_or_update_domain(self, name: str, username: str, encrypted_password: str, 
                                     server_url: Optional[str] = None, ad_base_dn: Optional[str] = None) -> Domain:
@@ -42,9 +40,8 @@ class DomainRepository:
                 domain.ad_base_dn = ad_base_dn
             else:
                 logger.info(f"Створюю новий домен: {name}")
-                # Створюємо новий об'єкт домену
                 domain = Domain(
-                    name=name,
+                    name=name.lower(),  # Нормалізуємо регістр при створенні
                     username=username,
                     encrypted_password=encrypted_password,
                     server_url=server_url,
@@ -52,12 +49,9 @@ class DomainRepository:
                 )
                 logger.debug(f"Об'єкт домену створено: {domain}")
                 
-                # Додаємо до сесії
                 self.db.add(domain)
                 logger.debug(f"Домен додано до сесії: {name}")
             
-            # Виконуємо flush для отримання ID
-            logger.debug(f"Починаю flush для домену: {name}")
             await self.db.flush()
             logger.debug(f"Flush виконано для домену: {name}, id={domain.id}")
             logger.info(f"✅ Домен успішно збережено у сесії: id={domain.id}, name={domain.name}")
@@ -99,4 +93,15 @@ class DomainRepository:
         except Exception as e:
             logger.error(f"❌ Помилка видалення домену {name}: {str(e)}", exc_info=True)
             await self.db.rollback()
+            raise
+
+    async def get_all_domains(self) -> List[Domain]:
+        """Отримує всі домени з бази даних."""
+        try:
+            result = await self.db.execute(select(Domain))
+            domains = result.scalars().all()
+            logger.debug(f"Отримано {len(domains)} доменів з бази даних")
+            return domains
+        except Exception as e:
+            logger.error(f"Помилка отримання всіх доменів: {str(e)}")
             raise

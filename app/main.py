@@ -1,7 +1,7 @@
 import ipaddress
 import logging
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
 from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
@@ -10,13 +10,28 @@ from .logging_config import setup_logging
 from .routers import auth, computers, scan, statistics, scripts, domain_router
 from .routers.settings import router as settings_router
 from .data_collector import script_cache
-from .services.encryption_service import get_encryption_service
+from .services.encryption_service import get_encryption_service, EncryptionService
+from .services.winrm_service import WinRMService
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
 from .utils.security import setup_cors 
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 settings_manager = SettingsManager(settings)
+
+# Глобальний екземпляр WinRMService
+winrm_service = None
+
+async def get_winrm_service(db: AsyncSession = Depends(get_db_session)):
+    """Отримує ініціалізований екземпляр WinRMService."""
+    global winrm_service
+    if winrm_service is None:
+        encryption_service = get_encryption_service()
+        winrm_service = WinRMService(encryption_service, db)
+        await winrm_service.initialize()
+        logger.info("WinRMService ініціалізовано")
+    return winrm_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,9 +51,16 @@ async def lifespan(app: FastAPI):
 
         # Ініціалізація encryption_service, log_level та завантаження налаштувань
         async with get_db_session() as db:
-            await settings_manager.initialize_encryption_key(db)  # Ініціалізує log_level
-            await settings_manager.load_from_db(db)  # Завантажуємо налаштування, включаючи log_level
-            setup_logging(log_level=settings_manager.log_level)  # Налаштування логування після завантаження
+            await settings_manager.initialize_encryption_key(db)
+            await settings_manager.load_from_db(db)
+            setup_logging(log_level=settings_manager.log_level)
+            # Ініціалізація WinRMService
+            global winrm_service
+            encryption_service = get_encryption_service()
+            winrm_service = WinRMService(encryption_service, db)
+            await winrm_service.initialize()
+            logger.info("WinRMService ініціалізовано під час старту")
+
         app.state.encryption_service = get_encryption_service()
         await init_db()
 

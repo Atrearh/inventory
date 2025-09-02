@@ -8,12 +8,14 @@ from sqlalchemy import select
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
-from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk,  VideoCard, Processor, IPAddress, MACAddress
+from ..schemas import ComputerCreate
 from ..data_collector import WinRMDataCollector
 from ..database import async_session_factory
 from ..decorators import log_function_call
-from app.utils.validators import validate_ip_address_format, validate_mac_address_format
 from ..services.encryption_service import get_encryption_service
+from ..services.winrm_service import WinRMService
+from ..main import get_winrm_service
+from fastapi import Depends 
 
 logger = logging.getLogger(__name__)
 
@@ -22,58 +24,6 @@ class ComputerService:
         self.semaphore = asyncio.Semaphore(settings.scan_max_workers)
         self.db = db
         self.computer_repo = ComputerRepository(db)
-        
-
-    COMPONENT_CONFIG = {
-        "ip_addresses": {
-            "model": IPAddress,
-            "unique_field": "address",
-            "validate": lambda x: validate_ip_address_format(x),
-            "fields": ["address"]
-        },
-        "mac_addresses": {
-            "model": MACAddress,
-            "unique_field": "address",
-            "validate": lambda x: validate_mac_address_format(x),
-            "fields": ["address"]
-        },
-        "processors": {
-            "model": Processor,
-            "unique_field": "name",
-            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
-            "fields": ["name", "number_of_cores", "number_of_logical_processors"]
-        },
-        "video_cards": {
-            "model": VideoCard,
-            "unique_field": "name",
-            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
-            "fields": ["name", "driver_version"]
-        },
-        "physical_disks": {
-            "model": PhysicalDisk,
-            "unique_field": "serial",
-            "validate": lambda x: x.get("serial", "").strip() if isinstance(x, dict) else x,
-            "fields": ["model", "serial", "interface", "media_type"]
-        },
-        "logical_disks": {
-            "model": LogicalDisk,
-            "unique_field": "device_id",
-            "validate": lambda x: x.get("device_id", "").strip() if isinstance(x, dict) else x,
-            "fields": ["device_id", "volume_label", "total_space", "free_space", "parent_disk_serial"]
-        },
-        "software": {
-            "model": Software,
-            "unique_field": "name",
-            "validate": lambda x: x.get("DisplayName", x.get("name", "")).strip() if isinstance(x, dict) else x,
-            "fields": ["name", "version", "install_date"]
-        },
-        "roles": {
-            "model": Role,
-            "unique_field": "name",
-            "validate": lambda x: x.strip() if isinstance(x, str) else x.get("name", "").strip(),
-            "fields": ["name"]
-        }
-    }
 
     async def process_component_list(self, raw_data: Dict[str, Any], hostname: str, component_key: str) -> List[Any]:
         config = self.COMPONENT_CONFIG.get(component_key)
@@ -94,7 +44,6 @@ class ComputerService:
                 logger.warning(f"Пропущено некоректний елемент: {item}", extra={"component_key": component_key, "hostname": hostname})
                 continue
             try:
-                # Валідація для об'єктів (словників) та рядків
                 identifier_source = item if isinstance(item, str) else item.get(config["unique_field"])
                 identifier = config["validate"](identifier_source)
                 
@@ -148,10 +97,10 @@ class ComputerService:
         return db_computer, mode
 
     @log_function_call
-    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime], domain_name: str) -> Dict[str, Any]: # <--- Добавили domain_name
+    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime], winrm_service: WinRMService = Depends(get_winrm_service)) -> Dict[str, Any]:
         """Викликає WinRMDataCollector для збору даних з хоста."""
         encryption_service = get_encryption_service()
-        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service, domain_name=domain_name) # <--- Передали domain_name
+        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service, winrm_service=winrm_service)
         return await collector.collect_pc_info(mode=mode, last_updated=last_updated)
 
     @log_function_call
@@ -159,7 +108,6 @@ class ComputerService:
         """Підготовка та валідація даних для збереження."""
         logger.debug(f"Підготовка даних для хоста {hostname}", extra={"hostname": hostname})
         try:
-            # Обробка вкладених списків компонентів
             ip_addresses = await self.process_component_list(raw_data, hostname, "ip_addresses")
             mac_addresses = await self.process_component_list(raw_data, hostname, "mac_addresses")
             processors = await self.process_component_list(raw_data, hostname, "processors")
@@ -167,12 +115,10 @@ class ComputerService:
             software = await self.process_component_list(raw_data, hostname, "software")
             roles = await self.process_component_list(raw_data, hostname, "roles")
 
-            # Обробка дисків
             disks_data = raw_data.get("disks", {})
             physical_disks = await self.process_component_list(disks_data, hostname, "physical_disks")
             logical_disks = await self.process_component_list(disks_data, hostname, "logical_disks")
 
-            # Створення схеми ComputerCreate
             computer_schema = ComputerCreate(
                 hostname=hostname,
                 os_name=raw_data.get("os_name", "Unknown"),
@@ -197,45 +143,34 @@ class ComputerService:
             logger.error(f"Помилка валідації даних для {hostname}: {str(e)}", extra={"hostname": hostname})
             raise
 
-
     @log_function_call
     async def _save_computer_data(self, computer_schema: ComputerCreate) -> None:
-            """Зберігає дані комп'ютера в базі даних."""
-            try:
-                # Крок 1: Створити або оновити основний запис комп'ютера.
-                # Цей метод поверне ID існуючого або щойно створеного запису.
-                db_computer_id = await self.computer_repo.async_upsert_computer(
-                    computer_schema, computer_schema.hostname
-                )
+        """Зберігає дані комп'ютера в базі даних."""
+        try:
+            db_computer_id = await self.computer_repo.async_upsert_computer(
+                computer_schema, computer_schema.hostname
+            )
+            result = await self.db.execute(
+                select(models.Computer).where(models.Computer.id == db_computer_id)
+            )
+            db_computer = result.scalars().first()
+            
+            if not db_computer:
+                logger.error(f"Не вдалося знайти або створити комп'ютер: {computer_schema.hostname}")
+                raise Exception(f"Failed to upsert computer {computer_schema.hostname}")
 
-                # Крок 2: Отримати повний об'єкт комп'ютера з БД, щоб працювати з ним.
-                # Це гарантує, що db_computer ніколи не буде None.
-                result = await self.db.execute(
-                    select(models.Computer).where(models.Computer.id == db_computer_id)
-                )
-                db_computer = result.scalars().first()
-                
-                if not db_computer:
-                    logger.error(f"Не вдалося знайти або створити комп'ютер: {computer_schema.hostname}")
-                    raise Exception(f"Failed to upsert computer {computer_schema.hostname}")
-
-                # Крок 3: Оновити всі пов'язані сутності (IP, ПО, диски тощо).
-                await self.computer_repo.update_computer_entities(db_computer, computer_schema)
-                
-                logger.info(f"Дані комп'ютера {computer_schema.hostname} збережено успішно", extra={"hostname": computer_schema.hostname})
-
-            except Exception as e:
-                logger.error(f"Помилка збереження даних комп'ютера {computer_schema.hostname}: {str(e)}")
-                await self.db.rollback()
-                raise
+            await self.computer_repo.update_computer_entities(db_computer, computer_schema)
+            logger.info(f"Дані комп'ютера {computer_schema.hostname} збережено успішно", extra={"hostname": computer_schema.hostname})
+        except Exception as e:
+            logger.error(f"Помилка збереження даних комп'ютера {computer_schema.hostname}: {str(e)}")
+            await self.db.rollback()
+            raise
 
     @log_function_call
     async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обробляє один хост із створенням нової сесії бази даних."""
         async with async_session_factory() as host_db:
-            # Створюємо новий сервіс з новою сесією БД для ізоляції
             service_for_host = ComputerService(host_db)
-
             return await service_for_host.process_single_host_inner(host, logger_adapter)
         
     @log_function_call
@@ -245,17 +180,7 @@ class ComputerService:
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 
-            # Определяем имя домена
-            if not db_computer or not db_computer.domain:
-                logger_adapter.error(f"Не удалось определить домен для хоста {host}. Сканирование прервано.")
-                # Можно установить статус failed или unreachable
-                await self.computer_repo.async_update_computer_check_status(host, "failed")
-                await self.computer_repo.db.commit()
-                return False
-            
-            domain_name = db_computer.domain.name
-
-            raw_data = await self._fetch_data_from_host(host, mode, last_updated, domain_name=domain_name)
+            raw_data = await self._fetch_data_from_host(host, mode, last_updated)
 
             if raw_data.get("check_status") in ("unreachable", "failed"):
                 logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")})
@@ -268,7 +193,6 @@ class ComputerService:
 
             logger_adapter.info(f"Хост {host} успішно оброблено.")
             return True
-
         except Exception as e:
             logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
             await self.computer_repo.db.rollback()
@@ -285,7 +209,7 @@ class ComputerService:
             )
             existing_task = result.scalars().first()
             if existing_task:
-                if existing_task.status in [models.ScanTask.completed, models.ScanTask.failed]:
+                if existing_task.status in [models.ScanStatus.completed, models.ScanStatus.failed]:
                     logger.warning(f"Задача {task_id} існує зі статусом {existing_task.status}, видаляємо", extra={"task_id": task_id})
                     await self.computer_repo.db.delete(existing_task)
                     await self.computer_repo.db.flush()
@@ -368,7 +292,6 @@ class ComputerService:
                 scanned_hosts=len(hosts), 
                 successful_hosts=successful
             )
-
         except Exception as e:
             await self.computer_repo.db.rollback()
             await self.update_scan_task_status(

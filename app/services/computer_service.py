@@ -3,19 +3,20 @@ import asyncio
 from hashlib import md5
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
-from ..schemas import ComputerCreate
+from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress
 from ..data_collector import WinRMDataCollector
-from ..database import async_session_factory
+from ..database import async_session_factory, get_db_session
 from ..decorators import log_function_call
-from ..services.encryption_service import get_encryption_service
+from ..utils.validators import validate_ip_address_format, validate_mac_address_format
+from ..services.encryption_service import get_encryption_service, EncryptionService
 from ..services.winrm_service import WinRMService
-from ..main import get_winrm_service
-from fastapi import Depends 
+from ..dependencies import get_winrm_service  # Оновлено імпорт
 
 logger = logging.getLogger(__name__)
 

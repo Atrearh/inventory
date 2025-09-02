@@ -10,7 +10,7 @@ from ..data_collector import WinRMDataCollector, SCRIPTS_DIR
 from pydantic import BaseModel, ValidationError
 from ..services.encryption_service import EncryptionService
 from ..services.winrm_service import WinRMService
-from ..dependencies import get_winrm_service  # Оновлено імпорт
+from ..dependencies import get_winrm_service
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,10 @@ async def execute_script(
     
     try:
         encryption_service = EncryptionService(settings.encryption_key)
-        collector = WinRMDataCollector(hostname=hostname, db=db, encryption_service=encryption_service, winrm_service=winrm_service)
-        async with winrm_service.create_session(hostname) as session:
-            result = await collector._execute_script(script_name)
-            logger_adapter.info(f"Скрипт {script_name} успішно виконано на {hostname}")
-            return {"output": result.get("stdout", ""), "error": result.get("stderr", "")}
+        collector = WinRMDataCollector(hostname=hostname, db=db, encryption_service=encryption_service)
+        result = await collector._execute_script(script_name, winrm_service)
+        logger_adapter.info(f"Скрипт {script_name} успішно виконано на {hostname}")
+        return {"output": result.get("stdout", ""), "error": result.get("stderr", "")}
     except Exception as e:
         logger_adapter.error(f"Помилка виконання скрипта {script_name} на {hostname}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Помилка виконання скрипта: {str(e)}")

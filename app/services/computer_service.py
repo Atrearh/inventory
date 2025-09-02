@@ -3,20 +3,20 @@ import asyncio
 from hashlib import md5
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
-from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
-from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress
+from ..schemas import ComputerCreate
 from ..data_collector import WinRMDataCollector
-from ..database import async_session_factory, get_db_session
+from ..database import async_session_factory
 from ..decorators import log_function_call
-from ..utils.validators import validate_ip_address_format, validate_mac_address_format
-from ..services.encryption_service import get_encryption_service, EncryptionService
+from ..services.encryption_service import get_encryption_service
+from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress
+from app.utils.validators import validate_ip_address_format, validate_mac_address_format
 from ..services.winrm_service import WinRMService
-from ..dependencies import get_winrm_service  # Оновлено імпорт
+from ..dependencies import get_winrm_service  
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,57 @@ class ComputerService:
         self.semaphore = asyncio.Semaphore(settings.scan_max_workers)
         self.db = db
         self.computer_repo = ComputerRepository(db)
+
+    COMPONENT_CONFIG = {
+        "ip_addresses": {
+            "model": IPAddress,
+            "unique_field": "address",
+            "validate": lambda x: validate_ip_address_format(x),
+            "fields": ["address"]
+        },
+        "mac_addresses": {
+            "model": MACAddress,
+            "unique_field": "address",
+            "validate": lambda x: validate_mac_address_format(x),
+            "fields": ["address"]
+        },
+        "processors": {
+            "model": Processor,
+            "unique_field": "name",
+            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
+            "fields": ["name", "number_of_cores", "number_of_logical_processors"]
+        },
+        "video_cards": {
+            "model": VideoCard,
+            "unique_field": "name",
+            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
+            "fields": ["name", "driver_version"]
+        },
+        "physical_disks": {
+            "model": PhysicalDisk,
+            "unique_field": "serial",
+            "validate": lambda x: x.get("serial", "").strip() if isinstance(x, dict) else x,
+            "fields": ["model", "serial", "interface", "media_type"]
+        },
+        "logical_disks": {
+            "model": LogicalDisk,
+            "unique_field": "device_id",
+            "validate": lambda x: x.get("device_id", "").strip() if isinstance(x, dict) else x,
+            "fields": ["device_id", "volume_label", "total_space", "free_space", "parent_disk_serial"]
+        },
+        "software": {
+            "model": Software,
+            "unique_field": "name",
+            "validate": lambda x: x.get("DisplayName", x.get("name", "")).strip() if isinstance(x, dict) else x,
+            "fields": ["name", "version", "install_date"]
+        },
+        "roles": {
+            "model": Role,
+            "unique_field": "name",
+            "validate": lambda x: x.strip() if isinstance(x, str) else x.get("name", "").strip(),
+            "fields": ["name"]
+        }
+    }
 
     async def process_component_list(self, raw_data: Dict[str, Any], hostname: str, component_key: str) -> List[Any]:
         config = self.COMPONENT_CONFIG.get(component_key)
@@ -98,11 +149,11 @@ class ComputerService:
         return db_computer, mode
 
     @log_function_call
-    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime], winrm_service: WinRMService = Depends(get_winrm_service)) -> Dict[str, Any]:
+    async def _fetch_data_from_host(self, host: str, mode: str, last_updated: Optional[datetime], winrm_service: WinRMService) -> Dict[str, Any]:
         """Викликає WinRMDataCollector для збору даних з хоста."""
         encryption_service = get_encryption_service()
-        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service, winrm_service=winrm_service)
-        return await collector.collect_pc_info(mode=mode, last_updated=last_updated)
+        collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service)
+        return await collector.collect_pc_info(mode=mode, last_updated=last_updated, winrm_service=winrm_service)
 
     @log_function_call
     async def _prepare_and_validate_data(self, raw_data: Dict[str, Any], hostname: str) -> ComputerCreate:
@@ -178,15 +229,19 @@ class ComputerService:
     async def process_single_host_inner(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обробляє один хост, розбиваючи процес на логічні кроки."""
         try:
+            # Ініціалізуємо WinRM сервіс тут
+            winrm_service = await get_winrm_service(self.db)
+
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 
-            raw_data = await self._fetch_data_from_host(host, mode, last_updated)
+            # Передаємо ініціалізований сервіс
+            raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
 
             if raw_data.get("check_status") in ("unreachable", "failed"):
                 logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")})
                 await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status"))
-                await self.computer_repo.db.commit()
+                await self.computer_repo.db.commit() # [cite: 480, 481]
                 return False
 
             computer_schema = await self._prepare_and_validate_data(raw_data, host)
@@ -197,6 +252,8 @@ class ComputerService:
         except Exception as e:
             logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
             await self.computer_repo.db.rollback()
+            # Можливо, варто також ініціалізувати winrm_service перед оновленням статусу, якщо виникла помилка до його створення.
+            # Однак async_update_computer_check_status не залежить від winrm_service, тому це безпечно.
             await self.computer_repo.async_update_computer_check_status(host, "failed")
             await self.computer_repo.db.commit()
             return False

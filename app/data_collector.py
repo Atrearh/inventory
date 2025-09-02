@@ -80,13 +80,12 @@ def decode_output(output: bytes) -> str:
 
 class WinRMDataCollector:
     """Збирає інформацію з віддалених хостів Windows за допомогою WinRM."""
-    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService, winrm_service: Optional[WinRMService] = None):
+    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService):
         self.hostname = hostname
         self.db = db
         self.encryption_service = encryption_service
-        self.winrm_service = winrm_service or WinRMService(encryption_service, db)
 
-    async def _execute_script(self, script_name: str, last_updated: Optional[datetime] = None) -> Any:
+    async def _execute_script(self, script_name: str, winrm_service: WinRMService, last_updated: Optional[datetime] = None) -> Any:
         """Асинхронно виконує PowerShell-скрипт на віддаленому хості."""
         try:
             script_content = script_cache.get(script_name)
@@ -103,7 +102,7 @@ class WinRMDataCollector:
             logger.warning(f"Команда для {script_name} на {self.hostname} перевищує 3000 символів", extra={"hostname": self.hostname, "script_name": script_name})
 
         try:
-            async with self.winrm_service.create_session(self.hostname) as session:
+            async with winrm_service.create_session(self.hostname) as session:
                 result = await asyncio.to_thread(session.run_ps, command)
                 if result.status_code != 0:
                     error_message = decode_output(result.std_err)
@@ -117,8 +116,11 @@ class WinRMDataCollector:
             logger.error(f"Непередбачена помилка при виконанні скрипта {script_name} на {self.hostname}: {str(e)}", extra={"hostname": self.hostname, "script_name": script_name})
             raise
 
-    async def collect_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None) -> Dict[str, Any]:
+    async def collect_pc_info(self, mode: str = "Full", last_updated: Optional[datetime] = None, winrm_service: WinRMService = None) -> Dict[str, Any]:
         """Збирає повну інформацію про ПК."""
+        if not winrm_service:
+            raise ValueError("winrm_service is required")
+        
         result: Dict[str, Any] = {"hostname": self.hostname, "check_status": "failed", "errors": []}
         logger.info(f"Початок збору даних для {self.hostname}", extra={"hostname": self.hostname})
 
@@ -133,7 +135,7 @@ class WinRMDataCollector:
             successful_components = 0
             failed_components = 0
 
-            hardware_data = await self._execute_script("system_info.ps1")
+            hardware_data = await self._execute_script("system_info.ps1", winrm_service)
             if isinstance(hardware_data, dict) and "error" not in hardware_data:
                 result.update({
                     "os_name": hardware_data.get("os_name", "Unknown"),
@@ -154,7 +156,7 @@ class WinRMDataCollector:
                 result["errors"].append(hardware_data.get("error", "Невідома помилка system_info.ps1"))
                 logger.error(f"Помилка збору даних system_info.ps1: {hardware_data.get('error', 'Невідома помилка')}", extra={"hostname": self.hostname})
 
-            disk_data = await self._execute_script("disk_info.ps1")
+            disk_data = await self._execute_script("disk_info.ps1", winrm_service)
             if isinstance(disk_data, dict) and "error" not in disk_data:
                 result["disks"]["physical_disks"] = disk_data.get("physical_disks", [])
                 result["disks"]["logical_disks"] = disk_data.get("logical_disks", [])
@@ -166,7 +168,7 @@ class WinRMDataCollector:
                 logger.error(f"Помилка збору даних disk_info.ps1: {disk_data.get('error', 'Невідома помилка')}", extra={"hostname": self.hostname})
 
             software_script = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
-            software_data = await self._execute_script(software_script, last_updated=last_updated)
+            software_data = await self._execute_script(software_script, winrm_service, last_updated=last_updated)
             if isinstance(software_data, list):
                 result["software"] = software_data
                 successful_components += 1

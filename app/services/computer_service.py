@@ -1,6 +1,5 @@
 import logging
 import asyncio
-from hashlib import md5
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +13,6 @@ from ..database import async_session_factory
 from ..decorators import log_function_call
 from ..services.encryption_service import get_encryption_service
 from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress
-from app.utils.validators import validate_ip_address_format, validate_mac_address_format
 from ..services.winrm_service import WinRMService
 from ..dependencies import get_winrm_service  
 
@@ -25,103 +23,6 @@ class ComputerService:
         self.semaphore = asyncio.Semaphore(settings.scan_max_workers)
         self.db = db
         self.computer_repo = ComputerRepository(db)
-
-    COMPONENT_CONFIG = {
-        "ip_addresses": {
-            "model": IPAddress,
-            "unique_field": "address",
-            "validate": lambda x: validate_ip_address_format(x),
-            "fields": ["address"]
-        },
-        "mac_addresses": {
-            "model": MACAddress,
-            "unique_field": "address",
-            "validate": lambda x: validate_mac_address_format(x),
-            "fields": ["address"]
-        },
-        "processors": {
-            "model": Processor,
-            "unique_field": "name",
-            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
-            "fields": ["name", "number_of_cores", "number_of_logical_processors"]
-        },
-        "video_cards": {
-            "model": VideoCard,
-            "unique_field": "name",
-            "validate": lambda x: x.get("name", "").strip() if isinstance(x, dict) else x,
-            "fields": ["name", "driver_version"]
-        },
-        "physical_disks": {
-            "model": PhysicalDisk,
-            "unique_field": "serial",
-            "validate": lambda x: x.get("serial", "").strip() if isinstance(x, dict) else x,
-            "fields": ["model", "serial", "interface", "media_type"]
-        },
-        "logical_disks": {
-            "model": LogicalDisk,
-            "unique_field": "device_id",
-            "validate": lambda x: x.get("device_id", "").strip() if isinstance(x, dict) else x,
-            "fields": ["device_id", "volume_label", "total_space", "free_space", "parent_disk_serial"]
-        },
-        "software": {
-            "model": Software,
-            "unique_field": "name",
-            "validate": lambda x: x.get("DisplayName", x.get("name", "")).strip() if isinstance(x, dict) else x,
-            "fields": ["name", "version", "install_date"]
-        },
-        "roles": {
-            "model": Role,
-            "unique_field": "name",
-            "validate": lambda x: x.strip() if isinstance(x, str) else x.get("name", "").strip(),
-            "fields": ["name"]
-        }
-    }
-
-    async def process_component_list(self, raw_data: Dict[str, Any], hostname: str, component_key: str) -> List[Any]:
-        config = self.COMPONENT_CONFIG.get(component_key)
-        if not config:
-            logger.warning("Немає конфігурації для компонента", extra={"component_key": component_key, "hostname": hostname})
-            return []
-
-        result = []
-        seen_identifiers = set()
-        component_data_list = raw_data.get(component_key, [])
-        if not isinstance(component_data_list, list):
-            component_data_list = [component_data_list] if component_data_list else []
-
-        logger.debug(f"Обробка {component_key}: {len(component_data_list)} елементів", extra={"hostname": hostname, "component_key": component_key})
-
-        for item in component_data_list:
-            if not isinstance(item, (dict, str)):
-                logger.warning(f"Пропущено некоректний елемент: {item}", extra={"component_key": component_key, "hostname": hostname})
-                continue
-            try:
-                identifier_source = item if isinstance(item, str) else item.get(config["unique_field"])
-                identifier = config["validate"](identifier_source)
-                
-                if not identifier or identifier in seen_identifiers:
-                    continue
-                seen_identifiers.add(identifier)
-
-                if component_key in ["ip_addresses", "mac_addresses"] and isinstance(item, str):
-                    component_data = {"address": item}
-                elif component_key == "roles" and isinstance(item, str):
-                    component_data = {"name": item}
-                else:
-                    component_data = {field: item.get(field, None) for field in config["fields"]}
-                    if component_key == "software":
-                        component_data["name"] = item.get("DisplayName", item.get("name", ""))
-                    if component_key == "physical_disks" and not component_data.get("serial"):
-                        model = item.get("model", "")
-                        component_data["serial"] = md5(f"{model}_{item.get('size', '')}_{hostname}".encode()).hexdigest()[:100]
-                    if component_key == "logical_disks" and component_data.get("volume_label") == "":
-                        component_data["volume_label"] = None
-
-                result.append(config["model"](**component_data))
-            except Exception as e:
-                logger.warning(f"Помилка валідації: {str(e)}", extra={"data": item, "component_key": component_key, "hostname": hostname})
-                continue
-        return result
 
     async def get_hosts_to_scan(self) -> List[str]:
         """Отримання хостів для сканування"""
@@ -160,17 +61,19 @@ class ComputerService:
         """Підготовка та валідація даних для збереження."""
         logger.debug(f"Підготовка даних для хоста {hostname}", extra={"hostname": hostname})
         try:
-            ip_addresses = await self.process_component_list(raw_data, hostname, "ip_addresses")
-            mac_addresses = await self.process_component_list(raw_data, hostname, "mac_addresses")
-            processors = await self.process_component_list(raw_data, hostname, "processors")
-            video_cards = await self.process_component_list(raw_data, hostname, "video_cards")
-            software = await self.process_component_list(raw_data, hostname, "software")
-            roles = await self.process_component_list(raw_data, hostname, "roles")
+            # Виклик методів from_raw_data для кожної схеми компонентів
+            ip_addresses = IPAddress.from_raw_data(raw_data.get("ip_addresses", []), hostname)
+            mac_addresses = MACAddress.from_raw_data(raw_data.get("mac_addresses", []), hostname)
+            processors = Processor.from_raw_data(raw_data.get("processors", []), hostname)
+            video_cards = VideoCard.from_raw_data(raw_data.get("video_cards", []), hostname)
+            software = Software.from_raw_data(raw_data.get("software", []), hostname)
+            roles = Role.from_raw_data(raw_data.get("roles", []), hostname)
 
             disks_data = raw_data.get("disks", {})
-            physical_disks = await self.process_component_list(disks_data, hostname, "physical_disks")
-            logical_disks = await self.process_component_list(disks_data, hostname, "logical_disks")
+            physical_disks = PhysicalDisk.from_raw_data(disks_data.get("physical_disks", []), hostname)
+            logical_disks = LogicalDisk.from_raw_data(disks_data.get("logical_disks", []), hostname)
 
+            # Створення Pydantic-схеми комп'ютера
             computer_schema = ComputerCreate(
                 hostname=hostname,
                 os_name=raw_data.get("os_name", "Unknown"),
@@ -229,19 +132,16 @@ class ComputerService:
     async def process_single_host_inner(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обробляє один хост, розбиваючи процес на логічні кроки."""
         try:
-            # Ініціалізуємо WinRM сервіс тут
             winrm_service = await get_winrm_service(self.db)
-
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 
-            # Передаємо ініціалізований сервіс
             raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
 
             if raw_data.get("check_status") in ("unreachable", "failed"):
                 logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")})
                 await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status"))
-                await self.computer_repo.db.commit() # [cite: 480, 481]
+                await self.computer_repo.db.commit()
                 return False
 
             computer_schema = await self._prepare_and_validate_data(raw_data, host)
@@ -252,8 +152,6 @@ class ComputerService:
         except Exception as e:
             logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
             await self.computer_repo.db.rollback()
-            # Можливо, варто також ініціалізувати winrm_service перед оновленням статусу, якщо виникла помилка до його створення.
-            # Однак async_update_computer_check_status не залежить від winrm_service, тому це безпечно.
             await self.computer_repo.async_update_computer_check_status(host, "failed")
             await self.computer_repo.db.commit()
             return False

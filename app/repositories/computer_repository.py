@@ -19,24 +19,24 @@ class ComputerRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _get_base_computer_query(self):
+        """Повертає базовий запит з усіма пов'язаними сутностями."""
+        return select(models.Computer).options(
+            selectinload(models.Computer.ip_addresses),
+            selectinload(models.Computer.mac_addresses),
+            selectinload(models.Computer.processors),
+            selectinload(models.Computer.video_cards),
+            selectinload(models.Computer.physical_disks).selectinload(models.PhysicalDisk.logical_disks),
+            selectinload(models.Computer.software),
+            selectinload(models.Computer.roles)
+        )
+
     @log_function_call
     async def get_computer_by_guid(self, db: AsyncSession, object_guid: str) -> Optional[models.Computer]:
         """Отримує комп'ютер за object_guid."""
         try:
-            result = await db.execute(
-                select(models.Computer)
-                .options(
-                    selectinload(models.Computer.ip_addresses),
-                    selectinload(models.Computer.mac_addresses),
-                    selectinload(models.Computer.processors),
-                    selectinload(models.Computer.physical_disks),
-                    selectinload(models.Computer.logical_disks),
-                    selectinload(models.Computer.video_cards),
-                    selectinload(models.Computer.software),
-                    selectinload(models.Computer.roles)
-                )
-                .filter(models.Computer.object_guid == object_guid)
-            )
+            query = self._get_base_computer_query().filter(models.Computer.object_guid == object_guid)
+            result = await db.execute(query)
             computer = result.unique().scalars().first()
             logger.debug("Комп'ютер отримано за object_guid" if computer else "Комп'ютер не знайдено", extra={"object_guid": object_guid})
             return computer
@@ -222,18 +222,26 @@ class ComputerRepository:
     @log_function_call
     async def get_computer_details_by_id(self, computer_id: int) -> Optional[models.Computer]:
         """Отримує повну інформацію про комп'ютер за ID з використанням selectinload."""
-        stmt = select(models.Computer).options(
-            selectinload(models.Computer.roles),
-            selectinload(models.Computer.physical_disks).selectinload(models.PhysicalDisk.logical_disks),
-            selectinload(models.Computer.logical_disks),
-            selectinload(models.Computer.software),
-            selectinload(models.Computer.ip_addresses),
-            selectinload(models.Computer.processors),
-            selectinload(models.Computer.mac_addresses),
-            selectinload(models.Computer.video_cards)
-        ).filter(models.Computer.id == computer_id)
-        result = await self.db.execute(stmt)
-        return result.unique().scalars().first()
+        try:
+            query = self._get_base_computer_query().filter(models.Computer.id == computer_id)
+            result = await self.db.execute(query)
+            computer = result.unique().scalars().first()
+            
+            if computer:
+                # Примусово завантажуємо всі пов’язані дані
+                await self.db.refresh(computer, [
+                    "ip_addresses", "mac_addresses", "processors", "video_cards",
+                    "physical_disks", "logical_disks", "software", "roles"
+                ])
+                # Переконуємося, що logical_disks для physical_disks завантажені
+                for disk in computer.physical_disks:
+                    await self.db.refresh(disk, ["logical_disks"])
+            
+            logger.debug(f"Комп'ютер отримано за ID: {'знайдено' if computer else 'не знайдено'}", extra={"computer_id": computer_id})
+            return computer
+        except SQLAlchemyError as e:
+            logger.error(f"Помилка отримання комп'ютера за ID: {str(e)}", extra={"computer_id": computer_id})
+            raise
 
     async def async_update_computer_check_status(self, hostname: str, check_status: str) -> Optional[models.Computer]:
         """Оновлює статус перевірки комп'ютера."""
@@ -328,8 +336,6 @@ class ComputerRepository:
             if physical_disk:
                 new_logical_disk.physical_disk_id = physical_disk.id
         return new_logical_disk
-
-
 
     @log_function_call
     async def update_related_entities(
@@ -547,21 +553,10 @@ class ComputerRepository:
     async def get_computer_by_hostname(self, db: AsyncSession, hostname: str) -> Optional[models.Computer]:
         """Отримує комп'ютер за hostname з усіма пов’язаними сутностями."""
         try:
-            result = await db.execute(
-                select(models.Computer)
-                .options(
-                    selectinload(models.Computer.domain),
-                    selectinload(models.Computer.ip_addresses),
-                    selectinload(models.Computer.mac_addresses),
-                    selectinload(models.Computer.processors),
-                    selectinload(models.Computer.physical_disks),
-                    selectinload(models.Computer.logical_disks),
-                    selectinload(models.Computer.video_cards),
-                    selectinload(models.Computer.software),
-                    selectinload(models.Computer.roles)
-                )
-                .filter(models.Computer.hostname == hostname)
-            )
+            query = self._get_base_computer_query().options(
+                selectinload(models.Computer.domain)
+            ).filter(models.Computer.hostname == hostname)
+            result = await db.execute(query)
             computer = result.scalars().first()
             logger.debug(f"Комп'ютер отримано за hostname: {'знайдено' if computer else 'не знайдено'}", extra={"hostname": hostname})
             return computer

@@ -103,5 +103,8 @@
   "show_disabled": "Show disabled",
   "select_domain": "Select domain",
   "all_domains": "All domains",
-  "clear_filters": "Clear filters"
+  "clear_filters": "Clear filters",
+  "tasks": "Tasks",
+  "no_active_tasks": "No active tasks",
+  "status": "Status"
 }

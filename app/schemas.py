@@ -543,3 +543,11 @@ class DomainUpdate(BaseSchema):
 
 class DomainRead(DomainBase):    
     password: Optional[str] = Field(None, exclude=True)
+
+
+class TaskRead(BaseModel):
+    id: str
+    name: str
+    status: str
+    created_at: str
+

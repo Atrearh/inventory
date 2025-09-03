@@ -4,10 +4,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
-import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
-import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import HeaderWidget from './HeaderWidget';
+import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import './Layout.css';
 
-const { Sider, Content } = Layout;
+const { Sider, Content, Header } = Layout;
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
@@ -53,7 +54,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
             position: 'absolute',
             top: 0,
-            zIndex: 1000, // Вище LanguageAndThemeSwitch
+            zIndex: 1000,
           }}
           aria-label={collapsed ? t('expand_menu') : t('collapse_menu')}
         >
@@ -86,7 +87,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             },
             {
               key: 'logout',
-              icon: <LogoutOutlined />,
+
               label: (
                 <Button
                   type="text"
@@ -98,16 +99,17 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               ),
             },
           ]}
-          style={{ paddingTop: '56px', paddingBottom: '60px' }} // Додаємо paddingTop для кнопки згортання
+          style={{ paddingTop: '56px' }}
         />
-        <LanguageAndThemeSwitch />
       </Sider>
       <Layout>
+        <Header style={{ padding: 0, background: dark ? '#1f1f1f' : '#fff', display: 'flex', justifyContent: 'flex-end' }}>
+          <HeaderWidget />
+        </Header>
         <Content
           style={{
             margin: 0,
             padding: '16px',
-            position: 'relative',
             minHeight: 'calc(100vh - 64px)',
           }}
         >

@@ -1,6 +1,5 @@
-// front/src/components/ActionPanel.tsx
 import { Button, message, notification, Space, Select, Modal } from 'antd';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { startHostScan, updatePolicies, restartPrintSpooler, getScriptsList, executeScript } from '../api/api';
 import { useState } from 'react';
 
@@ -12,6 +11,7 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
   const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [scriptOutput, setScriptOutput] = useState<{ output: string; error: string } | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: scripts = [], isLoading: isScriptsLoading } = useQuery({
     queryKey: ['scripts'],
@@ -25,6 +25,9 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
         message: 'Сканування розпочато',
         description: `Task ID: ${data.task_id}`,
       });
+      // Інвалідуємо запити комп'ютерів і завдань після сканування
+      queryClient.invalidateQueries({ queryKey: ['computers'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
     onError: (error: any) => {
       notification.error({

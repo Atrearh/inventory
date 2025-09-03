@@ -314,12 +314,15 @@ class ComputerRepository:
 
     async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: LogicalDisk) -> models.LogicalDisk:
         """Створює логічний диск із прив’язкою до фізичного диску."""
-        entity_data = pydantic_model.model_dump()
-        entity_data.pop('parent_disk_serial', None) 
-        # Видаляємо computer_id, detected_on і removed_on, щоб уникнути дублювання
+        entity_data = pydantic_model.model_dump(exclude={"total_space_gb", "free_space_gb"})  # Виключаємо обчислювані поля
+        entity_data.pop('parent_disk_serial', None)
         entity_data.pop('computer_id', None)
         entity_data.pop('detected_on', None)
         entity_data.pop('removed_on', None)
+        
+        # Логування для діагностики
+        logger.debug(f"Дані для створення LogicalDisk: {entity_data}", extra={"computer_id": db_computer.id})
+        
         new_logical_disk = models.LogicalDisk(
             **entity_data,
             computer_id=db_computer.id,

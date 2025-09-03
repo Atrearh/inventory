@@ -10,7 +10,9 @@ interface TimezoneContextType {
 const TimezoneContext = createContext<TimezoneContextType | undefined>(undefined);
 
 export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
-  const [timezone, setTimezoneState] = useState('UTC');
+  const [timezone, setTimezoneState] = useState<string>(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
           setTimezoneState(response.data.timezone);
         }
       } catch (error) {
-        console.error('Failed to fetch timezone setting', error);
+        console.error('Failed to fetch timezone setting, using local timezone', error);
       } finally {
         setIsLoading(false);
       }

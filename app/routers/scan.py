@@ -31,7 +31,6 @@ async def start_scan(
     hostname = payload.get("hostname") if payload else None
     logger_adapter.info(f"Запуск фонового сканування з ID: {task_id}", extra={"hostname": hostname or "всі хости"})
     try:
-        # Створюємо задачу
         task = await computer_service.create_scan_task(task_id)
         if task.status != models.ScanStatus.running:
             logger_adapter.warning(f"Задача {task_id} вже існує і має статус {task.status}", extra={"task_id": task_id})
@@ -40,7 +39,6 @@ async def start_scan(
                 detail=f"Задача з ID {task_id} вже існує"
             )
         
-        # Передаємо task_id у фонову задачу без повторного створення
         background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter, hostname=hostname)
         
         return {"status": "success", "task_id": task_id}
@@ -48,6 +46,7 @@ async def start_scan(
         raise
     except Exception as e:
         logger_adapter.error(f"Помилка запуску сканування {task_id}: {str(e)}", extra={"task_id": task_id})
+        await computer_service.update_scan_task_status(task_id, models.ScanStatus.failed, error=str(e))
         raise HTTPException(status_code=500, detail="Помилка сервера")
     
 @router.get("/scan/status/{task_id}", response_model=ScanTask)

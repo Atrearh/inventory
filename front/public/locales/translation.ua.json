@@ -106,5 +106,8 @@
   "clear_filters": "Очистити фільтри",
   "select_domain": "Оберіть домен",
   "all_domains": "Усі домени",
-  "domain": "Домен"
+  "domain": "Домен",
+  "tasks": "Завдання",
+  "no_active_tasks": "Немає активних завдань",
+  "status": "Статус"
 }

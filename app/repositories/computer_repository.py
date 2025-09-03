@@ -341,19 +341,19 @@ class ComputerRepository:
     async def update_related_entities(
         self,
         db_computer: models.Computer,
-        new_entities: List[Any],
+        new_entities: List[T],
         model_class: Type[DeclarativeBase],
         unique_field: Union[str, Tuple[str, ...]],
         collection_name: str,
         update_fields: Optional[List[str]] = None,
-        custom_logic: Optional[Callable] = None
+        custom_logic: Optional[Callable[[models.Computer, T], Any]] = None,
     ) -> None:
-        """Оновлює пов'язані сутності комп'ютера з підтримкою soft delete."""
+        """Оновлює пов’язані сутності для вказаного комп’ютера."""
         try:
-            # Перевірка, чи завантажені пов’язані сутності
+            # Перевіряємо, чи сутності попередньо завантажено
             current_entities = getattr(db_computer, collection_name)
-            if not current_entities and not isinstance(current_entities, list):
-                logger.warning(f"Пов’язані сутності {collection_name} не завантажено для комп’ютера {db_computer.hostname}")
+            if current_entities is None:
+                logger.warning(f"Пов’язані сутності {collection_name} не завантажено для комп’ютера з ID {db_computer.id}")
                 current_entities = []
 
             # Формуємо словник поточних сутностей
@@ -379,7 +379,7 @@ class ComputerRepository:
                     entity_to_remove = current_entities_map[key]
                     if entity_to_remove.removed_on is None:
                         entity_to_remove.removed_on = datetime.utcnow()
-                        logger.debug(f"Позначено як видалене: {model_class.__name__} з {unique_field}={key}", extra={"hostname": db_computer.hostname})
+                        logger.debug(f"Позначено як видалене: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
 
             # Додати нові або оновити існуючі
             for key in new_keys:
@@ -406,7 +406,7 @@ class ComputerRepository:
                             if existing_entity:
                                 if existing_entity.removed_on is not None:
                                     existing_entity.removed_on = None
-                                    logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"hostname": db_computer.hostname})
+                                    logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
                                 for field in update_fields or entity_data.keys():
                                     if hasattr(pydantic_model, field):
                                         setattr(existing_entity, field, getattr(pydantic_model, field))
@@ -419,12 +419,12 @@ class ComputerRepository:
                             removed_on=None
                         )
                     getattr(db_computer, collection_name).append(new_db_entity)
-                    logger.debug(f"Додано нову сутність: {model_class.__name__} з {unique_field}={key}", extra={"hostname": db_computer.hostname})
+                    logger.debug(f"Додано нову сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
                 else:
                     existing_entity = current_entities_map[key]
                     if existing_entity.removed_on is not None:
                         existing_entity.removed_on = None
-                        logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"hostname": db_computer.hostname})
+                        logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
                     # Оновити лише вказані поля
                     fields_to_update = update_fields or pydantic_model.model_dump().keys()
                     for field in fields_to_update:
@@ -432,9 +432,9 @@ class ComputerRepository:
                             setattr(existing_entity, field, getattr(pydantic_model, field))
 
             await self.db.flush()
-            logger.debug(f"Оновлено {collection_name}", extra={"hostname": db_computer.hostname})
+            logger.debug(f"Оновлено {collection_name}", extra={"computer_id": db_computer.id})
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення {collection_name}: {str(e)}", extra={"hostname": db_computer.hostname})
+            logger.error(f"Помилка оновлення {collection_name}: {str(e)}", extra={"computer_id": db_computer.id})
             await self.db.rollback()
             raise
 
@@ -483,11 +483,11 @@ class ComputerRepository:
                     update_fields=["name"]
                 )
             await self.db.commit()
-            logger.debug("Транзакцію для пов’язаних сутностей зафіксовано", extra={"hostname": db_computer.hostname})
+            logger.debug(f"Транзакцію для пов’язаних сутностей зафіксовано", extra={"computer_id": db_computer.id})
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення пов’язаних сутностей: {str(e)}", extra={"hostname": db_computer.hostname})
+            logger.error(f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}")
             await self.db.rollback()
-            raise
+            raise 
 
     async def stream_computers(
         self,

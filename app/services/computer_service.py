@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from ..settings import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
@@ -100,19 +101,34 @@ class ComputerService:
 
     @log_function_call
     async def _save_computer_data(self, computer_schema: ComputerCreate) -> None:
-        """Зберігає дані комп'ютера в базі даних."""
+        """Зберігає дані комп'ютера в базі даних з попереднім завантаженням пов’язаних сутностей."""
         try:
             db_computer_id = await self.computer_repo.async_upsert_computer(
                 computer_schema, computer_schema.hostname
             )
+            # Попереднє завантаження всіх пов’язаних сутностей
             result = await self.db.execute(
-                select(models.Computer).where(models.Computer.id == db_computer_id)
+                select(models.Computer)
+                .where(models.Computer.id == db_computer_id)
+                .options(
+                    selectinload(models.Computer.ip_addresses),
+                    selectinload(models.Computer.mac_addresses),
+                    selectinload(models.Computer.processors),
+                    selectinload(models.Computer.video_cards),
+                    selectinload(models.Computer.software),
+                    selectinload(models.Computer.roles),
+                    selectinload(models.Computer.physical_disks).selectinload(models.PhysicalDisk.logical_disks),
+                    selectinload(models.Computer.logical_disks),
+                )
             )
             db_computer = result.scalars().first()
             
             if not db_computer:
                 logger.error(f"Не вдалося знайти або створити комп'ютер: {computer_schema.hostname}")
                 raise Exception(f"Failed to upsert computer {computer_schema.hostname}")
+
+            # Явне оновлення об’єкта для забезпечення ініціалізації всіх атрибутів
+            await self.db.refresh(db_computer, ["hostname", "ip_addresses", "mac_addresses", "processors", "video_cards", "software", "roles", "physical_disks", "logical_disks"])
 
             await self.computer_repo.update_computer_entities(db_computer, computer_schema)
             logger.info(f"Дані комп'ютера {computer_schema.hostname} збережено успішно", extra={"hostname": computer_schema.hostname})

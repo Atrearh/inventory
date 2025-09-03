@@ -104,4 +104,4 @@ class DomainRepository:
             return domains
         except Exception as e:
             logger.error(f"Помилка отримання всіх доменів: {str(e)}")
-            raise
+            raise 

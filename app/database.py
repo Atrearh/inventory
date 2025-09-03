@@ -37,20 +37,16 @@ async_session_factory = async_sessionmaker(
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Предоставляет асинхронную сессию базы данных для FastAPI Depends."""
     session = async_session_factory()
-    logger.debug(f"Открытие новой сессии базы данных: {id(session)}")
+
     try:
         yield session
-        #logger.debug(f"Виклик commit для сесії {id(session)}")
         await session.commit()
-        #logger.debug(f"Сессия {id(session)} успешно закоммичена")
     except Exception as e:
         logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
         await session.rollback()
         raise
     finally:
-        logger.debug(f"Закриття сесії {id(session)}")
         await session.close()
-        logger.debug(f"Сессия {id(session)} базы данных закрыта")
 
 def get_db_session() -> AsyncSession:
     """Возвращает сессию базы данных как асинхронный контекстный менеджер для lifespan."""

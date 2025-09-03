@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from .. import models
-from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComputerCreate, ComputerList, ComputerListItem
+from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComputerCreate, ComputerList, ComputerListItem, Computer
 from ..decorators import log_function_call
 from typing import Union, Callable
 from sqlalchemy.orm import DeclarativeBase
@@ -562,4 +562,30 @@ class ComputerRepository:
             return computer
         except SQLAlchemyError as e:
             logger.error(f"Помилка отримання комп'ютера за hostname: {str(e)}", extra={"hostname": hostname})
+            raise
+
+    async def get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[Computer]:
+        """Отримує комп'ютер за hostname та domain_id."""
+        try:
+            result = await db.execute(
+                select(Computer).filter(
+                    Computer.hostname.ilike(hostname.lower()),
+                    Computer.domain_id == domain_id
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Помилка пошуку комп'ютера за hostname={hostname} і domain_id={domain_id}: {str(e)}", exc_info=True)
+            raise
+        
+    async def get_all_computers_by_domain_id(self, db: AsyncSession, domain_id: int) -> List[models.Computer]:
+        """Отримує всі комп'ютери для вказаного domain_id."""
+        try:
+            query = select(models.Computer).filter(models.Computer.domain_id == domain_id)
+            result = await db.execute(query)
+            computers = result.unique().scalars().all()
+            logger.debug(f"Знайдено {len(computers)} комп'ютерів для domain_id={domain_id}")
+            return computers
+        except SQLAlchemyError as e:
+            logger.error(f"Помилка отримання комп'ютерів за domain_id: {str(e)}", exc_info=True)
             raise

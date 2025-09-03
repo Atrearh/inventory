@@ -25,7 +25,6 @@ class ScriptCache:
     def _load_script(self, file_name: str) -> str:
         """Завантажує скрипт з диска."""
         file_path = SCRIPTS_DIR / file_name
-        logger.debug(f"Завантаження скрипта {file_name}", extra={"file_name": file_name})
         if not file_path.exists():
             logger.error(f"Скрипт {file_path} не знайдено", extra={"file_name": file_name})
             raise FileNotFoundError(f"Скрипт {file_path} не знайдено")

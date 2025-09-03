@@ -1,9 +1,8 @@
 import ipaddress
 import logging
 import uvicorn
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import AsyncSession
 from .database import get_db_session, init_db, shutdown_db
 from .settings import settings
 from .settings_manager import SettingsManager
@@ -12,7 +11,7 @@ from .routers import auth, computers, scan, statistics, scripts, domain_router
 from .routers.settings import router as settings_router
 from .data_collector import script_cache
 from .services.encryption_service import get_encryption_service
-from .dependencies import get_winrm_service  # Оновлено імпорт
+from .dependencies import get_winrm_service  
 from .middlewares import add_correlation_id, log_requests, check_ip_allowed
 from .exceptions import global_exception_handler
 from .utils.security import setup_cors 
@@ -43,14 +42,12 @@ async def lifespan(app: FastAPI):
             setup_logging(log_level=settings_manager.log_level)
             # Ініціалізація WinRMService
             await get_winrm_service(db)  # Ініціалізація через виклик get_winrm_service
-            logger.info("WinRMService ініціалізовано під час старту")
 
         app.state.encryption_service = get_encryption_service()
         await init_db()
 
         # Попереднє завантаження скриптів
         await script_cache.preload_scripts()
-        logger.info("Все скрипты предварительно загружены в кэш")
 
         yield
     except Exception as e:
@@ -80,7 +77,7 @@ app.include_router(computers.router, prefix="/api")
 app.include_router(scan.router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
-app.include_router(scripts.router, prefix="")
+app.include_router(scripts.router)
 app.include_router(domain_router.router)
 
 if __name__ == "__main__":

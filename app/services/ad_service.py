@@ -107,11 +107,20 @@ class ADService:
             "domain_id": ad_data["domain_id"],
             "object_guid": ad_data["object_guid"]
         }
-        has_changes = any(
-            getattr(db_computer, key) != value
-            for key, value in update_data.items()
-            if value is not None
-        )
+        changed_fields = []
+        for key, value in update_data.items():
+            db_value = getattr(db_computer, key)
+            if value is not None and db_value != value:
+                changed_fields.append((key, db_value, value))
+        
+        has_changes = len(changed_fields) > 0
+        if has_changes:
+            logger.debug(
+                f"Комп'ютер {db_computer.hostname} (GUID: {db_computer.object_guid}) має зміни: "
+                f"{', '.join(f'{field} з {old} на {new}' for field, old, new in changed_fields)}",
+                extra={"hostname": db_computer.hostname, "changed_fields": changed_fields}
+            )
+        
         return has_changes, update_data
 
     async def _get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[Computer]:

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from ..models import Computer, IPAddress, CheckStatus, MACAddress, PhysicalDisk, Processor, VideoCard
+from ..models import Computer, IPAddress, CheckStatus, MACAddress, PhysicalDisk, Processor, VideoCard, Domain
 from ..database import get_db
 from ..services.computer_service import ComputerService
 from ..repositories.computer_repository import ComputerRepository
@@ -201,21 +201,32 @@ async def get_component_history(computer_id: int, db: AsyncSession = Depends(get
         logger.error("Ошибка получения истории компонентов", extra={"computer_id": computer_id, "error": str(e)})
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
-# Изменённый участок в get_computers
-@router.get("/computers", response_model=ComputersResponse, operation_id="get_computers", dependencies=[Depends(get_current_user)])
+@router.get("/computers", response_model=ComputersResponse, dependencies=[Depends(get_current_user)])
 async def get_computers(
-    hostname: Optional[str] = Query(None, description="Фильтр по hostname"),
-    ip_range: Optional[str] = Query(None, description="Фильтр по диапазону IP-адресов (например, '192.168.0.[0-1]' или 'none')"),
-    os_name: Optional[str] = Query(None, description="Фильтр по имени ОС"),
-    check_status: Optional[str] = Query(None, description="Фильтр по check_status"),
-    sort_by: Optional[str] = Query("hostname", description="Поле для сортировки"),
-    sort_order: Optional[str] = Query("asc", description="Порядок сортировки: asc или desc"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(1000, ge=1, le=1000, description="Количество записей на странице"),
-    server_filter: Optional[str] = Query(None, description="Фильтр для серверных ОС"),
+    hostname: Optional[str] = Query(None, description="Фільтр по hostname"),
+    ip_range: Optional[str] = Query(None, description="Фільтр по діапазону IP-адрес"),
+    os_name: Optional[str] = Query(None, description="Фільтр по імені ОС"),
+    check_status: Optional[str] = Query(None, description="Фільтр по check_status"),
+    domain: Optional[str] = Query(None, description="Фільтр по імені домену"),
+    sort_by: str = Query("hostname", description="Поле для сортування"),
+    sort_order: str = Query("asc", description="Порядок: asc або desc"),
+    page: int = Query(1, ge=1, description="Номер сторінки"),
+    limit: int = Query(100, ge=1, le=1000, description="Кількість записів на сторінку"),
+    server_filter: Optional[str] = Query(None, description="Фільтр для серверних ОС"),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info("Запрос списка компьютеров", extra={"hostname": hostname, "ip_range": ip_range, "os_name": os_name, "check_status": check_status, "sort_by": sort_by, "sort_order": sort_order, "page": page, "limit": limit, "server_filter": server_filter})
+    logger.info("Запит списку комп’ютерів", extra={
+        "hostname": hostname, 
+        "ip_range": ip_range, 
+        "os_name": os_name, 
+        "check_status": check_status, 
+        "domain": domain,
+        "sort_by": sort_by, 
+        "sort_order": sort_order, 
+        "page": page, 
+        "limit": limit, 
+        "server_filter": server_filter
+    })
     try:
         query = select(Computer).options(
             selectinload(Computer.ip_addresses),
@@ -225,48 +236,51 @@ async def get_computers(
             selectinload(Computer.mac_addresses),
             selectinload(Computer.roles),
             selectinload(Computer.software),
-            selectinload(Computer.video_cards)
-        )
-
-        query = query.outerjoin(IPAddress, Computer.id == IPAddress.computer_id)
+            selectinload(Computer.video_cards),
+            selectinload(Computer.domain)
+        ).outerjoin(Domain, Computer.domain_id == Domain.id)
 
         if hostname:
             query = query.filter(Computer.hostname.ilike(f"%{hostname}%"))
         if ip_range:
-            logger.debug("Processing ip_range filter", extra={"ip_range": ip_range})
+            logger.debug("Обробка фільтру ip_range", extra={"ip_range": ip_range})
             if ip_range == 'none':
-                logger.debug("Applying filter for computers without IP addresses")
+                logger.debug("Фільтр для комп’ютерів без IP-адрес")
                 query = query.filter(IPAddress.address.is_(None))
             else:
                 try:
-                    logger.debug("Parsing ip_range", extra={"ip_range": ip_range})
+                    logger.debug("Парсинг ip_range", extra={"ip_range": ip_range})
                     base_ip, octet_range = ip_range.split('.[')
                     start_octet, end_octet = map(int, octet_range.replace(']', '').split('-'))
-                    logger.debug("Applying IP filter", extra={"base_ip": base_ip, "start_octet": start_octet, "end_octet": end_octet})
+                    logger.debug("Застосування IP-фільтру", extra={"base_ip": base_ip, "start_octet": start_octet, "end_octet": end_octet})
                     query = query.filter(
                         IPAddress.address.startswith(base_ip),
                         IPAddress.address.between(f"{base_ip}.{start_octet}.0", f"{base_ip}.{end_octet}.255")
                     )
                 except ValueError as e:
-                    logger.error("Некорректный формат ip_range", extra={"ip_range": ip_range, "error": str(e)})
-                    raise HTTPException(status_code=400, detail=f"Некорректный формат ip_range: {ip_range}")
+                    logger.error("Некоректний формат ip_range", extra={"ip_range": ip_range, "error": str(e)})
+                    raise HTTPException(status_code=400, detail=f"Некоректний формат ip_range: {ip_range}")
         if os_name:
             query = query.filter(Computer.os_name.ilike(f"%{os_name}%"))
         if check_status:
             try:
-                logger.debug("Validating check_status", extra={"check_status": check_status})
+                logger.debug("Валідація check_status", extra={"check_status": check_status})
                 CheckStatus(check_status)
                 query = query.filter(Computer.check_status == check_status)
             except ValueError:
-                logger.error("Некорректное значение check_status", extra={"check_status": check_status})
-                raise HTTPException(status_code=422, detail=f"Некорректное значение check_status: {check_status}")
+                logger.error("Некоректне значення check_status", extra={"check_status": check_status})
+                raise HTTPException(status_code=422, detail=f"Некоректне значення check_status: {check_status}")
+        if domain:
+            query = query.filter(Domain.name.ilike(f"%{domain}%"))
         if server_filter:
             if server_filter == "server":
                 query = query.filter(Computer.os_name.ilike("%server%"))
             elif server_filter == "client":
                 query = query.filter(~Computer.os_name.ilike("%server%"))
 
-        sort_column = getattr(Computer, sort_by if sort_by in ["hostname", "os_name", "check_status", "last_updated"] else "hostname")
+        sort_column = getattr(Computer, sort_by if sort_by in ["hostname", "os_name", "check_status", "last_updated", "last_full_scan", "domain_id"] else "hostname")
+        if sort_by == "domain_id":
+            sort_column = Domain.name  # Сортування за ім’ям домену
         if sort_order.lower() == "desc":
             sort_column = sort_column.desc()
         query = query.order_by(sort_column)
@@ -276,11 +290,11 @@ async def get_computers(
         result = await db.execute(query)
         computers = result.scalars().all()
         pydantic_computers = [ComputerList.model_validate(comp, from_attributes=True) for comp in computers]
-        logger.info(f"Получено {len(pydantic_computers)} компьютеров, всего: {total}")
+        logger.info(f"Отримано {len(pydantic_computers)} комп’ютерів, усього: {total}")
         return ComputersResponse(data=pydantic_computers, total=total)
     except Exception as e:
-        logger.error("Ошибка получения списка компьютеров", extra={"error": str(e)})
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+        logger.error("Помилка отримання списку комп’ютерів", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"Помилка сервера: {str(e)}")
 
 @router.get("/computers/{computer_id}", response_model=ComputerSchema, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
 async def get_computer_by_id(

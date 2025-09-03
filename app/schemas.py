@@ -341,10 +341,14 @@ class ComputerBase(BaseSchema):
 class ComputerList(ComputerBase):
     id: int
     last_updated: Optional[datetime] = None
+    last_full_scan: Optional[datetime] = None
+
+
 
 class ComputerListItem(ComputerBase):
     id: int
     last_updated: datetime
+    last_full_scan: Optional[datetime] = None
 
 class Computer(ComputerBase):
     id: int

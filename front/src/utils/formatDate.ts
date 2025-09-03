@@ -8,9 +8,14 @@ export const formatDateInUserTimezone = (
 ): string => {
   if (!date) return '-';
   try {
-    return formatInTimeZone(new Date(date), timezone, formatString, { locale: uk });
+    const parsedDate = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(parsedDate.getTime())) {
+      console.error(`Invalid date: ${date}`);
+      return 'Невірна дата';
+    }
+    return formatInTimeZone(parsedDate, timezone, formatString, { locale: uk });
   } catch (error) {
-    console.error(`Invalid date or timezone: date=${date}, timezone=${timezone}`, error);
+    console.error(`Error formatting date: date=${date}, timezone=${timezone}`, error);
     return 'Невірна дата';
   }
 };

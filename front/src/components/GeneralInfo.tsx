@@ -1,10 +1,13 @@
 import { Descriptions, Button, Modal, Input, notification } from 'antd';
-import { useState } from 'react';
+import { useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Computer } from '../types/schemas';
 import { EditOutlined } from '@ant-design/icons';
 import { apiInstance } from '../api/api';
 import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
+import { handleApiError } from '../utils/apiErrorHandler';
 
 interface GeneralInfoProps {
   computer: Computer | undefined;
@@ -13,12 +16,14 @@ interface GeneralInfoProps {
 }
 
 const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, lastCheckColor }) => {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   const [localNotes, setLocalNotes] = useState(computer?.local_notes || '');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { timezone } = useTimezone();
 
   if (!computer) {
-    return <div>Данные о компьютере недоступны</div>;
+    return <div>{t('no_computer_data', 'Дані про комп\'ютер недоступні')}</div>;
   }
 
   const handleEditNotes = () => {
@@ -29,10 +34,16 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
   const handleSaveNotes = async () => {
     try {
       await apiInstance.put(`/computers/${computer.id}/local_notes`, { local_notes: localNotes });
-      notification.success({ message: 'Локальні примітки збережено' });
+      notification.success({ message: t('notes_saved', 'Локальні примітки збережено') });
       setIsModalVisible(false);
     } catch (error) {
-      notification.error({ message: 'Помилка збереження приміток', description: (error as Error).message });
+      const apiError = handleApiError(error, t('error_saving_notes', 'Помилка збереження приміток'));
+      if ((error as any).response?.status === 401) {
+        notification.error({ message: t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.') });
+        navigate('/login');
+      } else {
+        notification.error({ message: apiError.message });
+      }
     }
   };
 
@@ -40,27 +51,35 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
     <>
       {!computer.enabled && computer.when_changed && (
         <div style={{ color: '#faad14', marginBottom: 16, fontWeight: 'bold' }}>
-          Відключено в AD з {formatDateInUserTimezone(computer.when_changed, timezone)}
+          {t('disabled_in_ad', 'Відключено в AD з')} {formatDateInUserTimezone(computer.when_changed, timezone)}
         </div>
       )}
-      <Descriptions title="Характеристики" bordered column={2} size="small" style={{ marginBottom: 24 }}>
-        <Descriptions.Item label="IP">{computer.ip_addresses && computer.ip_addresses.length > 0 ? computer.ip_addresses[0].address : '-'}</Descriptions.Item>
-        <Descriptions.Item label="Назва ОС">{computer.os_name ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Версія ОС">{computer.os_version ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Процесор">{computer.processors && computer.processors.length > 0 ? computer.processors[0].name : '-'}</Descriptions.Item>
-        <Descriptions.Item label="RAM">{computer.ram ?? '-'} МБ</Descriptions.Item>
-        <Descriptions.Item label="MAC">{computer.mac_addresses && computer.mac_addresses.length > 0 ? computer.mac_addresses[0].address : '-'}</Descriptions.Item>
-        <Descriptions.Item label="Материнська плата">{computer.motherboard ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label="Перезавантажений">{formatDateInUserTimezone(computer.last_boot, timezone)} </Descriptions.Item>
-        <Descriptions.Item label="Останній вхід в AD">{formatDateInUserTimezone(computer.last_logon, timezone)} </Descriptions.Item>
-        <Descriptions.Item label="Остання перевірка">{lastCheckDate ? (<span style={{ color: lastCheckColor }}> {formatDateInUserTimezone(lastCheckDate, timezone)}
-        </span>) : '-'}
+      <Descriptions title={t('specifications', 'Характеристики')} bordered column={2} size="small" style={{ marginBottom: 24 }}>
+        <Descriptions.Item label={t('ip_address', 'IP')}>{computer.ip_addresses && computer.ip_addresses.length > 0 ? computer.ip_addresses[0].address : '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('os_name', 'Назва ОС')}>{computer.os_name ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('os_version', 'Версія ОС')}>{computer.os_version ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('processor', 'Процесор')}>{computer.processors && computer.processors.length > 0 ? computer.processors[0].name : '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('ram', 'RAM')}>{computer.ram ?? '-'} {t('mb', 'МБ')}</Descriptions.Item>
+        <Descriptions.Item label={t('mac_address', 'MAC')}>{computer.mac_addresses && computer.mac_addresses.length > 0 ? computer.mac_addresses[0].address : '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('motherboard', 'Материнська плата')}>{computer.motherboard ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('last_boot', 'Перезавантажений')}>{formatDateInUserTimezone(computer.last_boot, timezone)}</Descriptions.Item>
+        <Descriptions.Item label={t('last_ad_login', 'Останній вхід в AD')}>{formatDateInUserTimezone(computer.last_logon, timezone)}</Descriptions.Item>
+        <Descriptions.Item label={t('last_check', 'Остання перевірка')}>
+          {lastCheckDate ? (
+            <span style={{ color: lastCheckColor }}>{formatDateInUserTimezone(lastCheckDate, timezone)}</span>
+          ) : '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="Дата створення в AD"> {formatDateInUserTimezone(computer.when_created, timezone)} </Descriptions.Item>
-        <Descriptions.Item label="Дата зміни в AD">{formatDateInUserTimezone(computer.when_changed, timezone)} </Descriptions.Item>
-        {computer.check_status === 'is_deleted' && (<Descriptions.Item label="Видалено з AD" span={2} style={{ color: '#ff4d4f', fontWeight: 'bold' }}> "Так"  </Descriptions.Item>)}
-        {computer.ad_notes && (<Descriptions.Item label="Примітки AD">{computer.ad_notes}</Descriptions.Item>)}
-        <Descriptions.Item label="Локальні примітки" span={2}>
+        <Descriptions.Item label={t('ad_created', 'Дата створення в AD')}>{formatDateInUserTimezone(computer.when_created, timezone)}</Descriptions.Item>
+        <Descriptions.Item label={t('ad_changed', 'Дата зміни в AD')}>{formatDateInUserTimezone(computer.when_changed, timezone)}</Descriptions.Item>
+        {computer.check_status === 'is_deleted' && (
+          <Descriptions.Item label={t('deleted_from_ad', 'Видалено з AD')} span={2} style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+            {t('yes', 'Так')}
+          </Descriptions.Item>
+        )}
+        {computer.ad_notes && (
+          <Descriptions.Item label={t('ad_notes', 'Примітки AD')}>{computer.ad_notes}</Descriptions.Item>
+        )}
+        <Descriptions.Item label={t('local_notes', 'Локальні примітки')} span={2}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {computer.local_notes ?? '-'}
             <Button
@@ -72,22 +91,22 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
         </Descriptions.Item>
       </Descriptions>
       <Modal
-        title={`Редагування локальних приміток для ${computer.hostname}`}
+        title={t('edit_local_notes', { hostname: computer.hostname })}
         open={isModalVisible}
         onOk={handleSaveNotes}
         onCancel={() => setIsModalVisible(false)}
-        okText="Зберегти"
-        cancelText="Скасувати"
+        okText={t('save', 'Зберегти')}
+        cancelText={t('cancel', 'Скасувати')}
       >
         <Input.TextArea
           value={localNotes}
           onChange={(e) => setLocalNotes(e.target.value)}
           rows={4}
-          placeholder="Введіть локальні примітки"
+          placeholder={t('enter_local_notes', 'Введіть локальні примітки')}
         />
       </Modal>
     </>
   );
 };
 
-export default GeneralInfo;
+export default memo(GeneralInfo);

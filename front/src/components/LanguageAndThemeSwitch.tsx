@@ -38,7 +38,7 @@ const LanguageAndThemeSwitch: React.FC = () => {
       </Button>
       <Button
         size="small"
-        icon={dark ? <SunOutlined /> : <MoonOutlined />} // Іконка залежно від теми
+        icon={dark ? <SunOutlined /> : <MoonOutlined />} 
         onClick={toggleTheme}
         aria-label={t('switch_theme')}
       >

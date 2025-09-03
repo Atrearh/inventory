@@ -315,6 +315,7 @@ class ComputerRepository:
     async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: LogicalDisk) -> models.LogicalDisk:
         """Створює логічний диск із прив’язкою до фізичного диску."""
         entity_data = pydantic_model.model_dump()
+        entity_data.pop('parent_disk_serial', None) 
         # Видаляємо computer_id, detected_on і removed_on, щоб уникнути дублювання
         entity_data.pop('computer_id', None)
         entity_data.pop('detected_on', None)
@@ -577,7 +578,7 @@ class ComputerRepository:
         except Exception as e:
             logger.error(f"Помилка пошуку комп'ютера за hostname={hostname} і domain_id={domain_id}: {str(e)}", exc_info=True)
             raise
-        
+
     async def get_all_computers_by_domain_id(self, db: AsyncSession, domain_id: int) -> List[models.Computer]:
         """Отримує всі комп'ютери для вказаного domain_id."""
         try:

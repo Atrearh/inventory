@@ -6,6 +6,14 @@ import { cleanAndSerializeParams } from '../utils/apiUtils';
 // Отримання списку комп’ютерів з бекенду
 export const getComputers = async (params: Filters) => {
   const response = await apiInstance.get<ComputersResponse>('/computers', {
+    params: {
+      ...params,
+      hostname: undefined, // Фільтрація на клієнтській стороні
+      os_name: undefined, // Фільтрація на клієнтській стороні
+      check_status: undefined, // Фільтрація на клієнтській стороні
+      sort_by: undefined, // Сортування на клієнтській стороні
+      sort_order: undefined, // Сортування на клієнтській стороні
+    },
     paramsSerializer: () => cleanAndSerializeParams(params).toString(),
     withCredentials: true,
   });

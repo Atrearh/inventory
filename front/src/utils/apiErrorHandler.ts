@@ -1,4 +1,3 @@
-// src/utils/apiErrorHandler.ts
 import { AxiosError } from 'axios';
 
 interface ApiErrorResponse {
@@ -13,6 +12,9 @@ export function handleApiError(error: AxiosError<ApiErrorResponse> | any, defaul
   }
   if (error.response?.status === 404) {
     return new Error('Ресурс не знайдено');
+  }
+  if (error.response?.status === 401) {
+    return new Error('Ваша сесія закінчилася. Будь ласка, увійдіть знову.');
   }
   if (error.response?.status === 500) {
     return new Error('Внутрішня помилка сервера');

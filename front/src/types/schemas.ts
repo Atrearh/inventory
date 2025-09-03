@@ -205,6 +205,7 @@ export interface ComputerList {
   domain_id?: number | null;
   id: number;
   last_updated?: string | null;
+  last_full_scan?: string | null;
 }
 export interface ComputerListItem {
   hostname: string;
@@ -233,6 +234,7 @@ export interface ComputerListItem {
   domain_id?: number | null;
   id: number;
   last_updated: string;
+  last_full_scan?: string | null;
 }
 export interface ComputerUpdateCheckStatus {
   hostname: string;

@@ -1,14 +1,13 @@
-// src/hooks/useApiQueries.ts
 import { useQuery } from '@tanstack/react-query';
 import { getComputers, getStatistics, getUsers } from '../api/api';
 import { ComputersResponse, DashboardStats, UserRead } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
+import { Filters } from '../hooks/useComputerFilters';
 
-// Хук для отримання статистики
 export const useStatistics = (metrics: string[]) => {
   const { isAuthenticated } = useAuth();
   return useQuery<DashboardStats, Error>({
-    queryKey: ['statistics'],
+    queryKey: ['statistics', metrics],
     queryFn: () => getStatistics({ metrics }),
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
@@ -18,12 +17,11 @@ export const useStatistics = (metrics: string[]) => {
   });
 };
 
-// Хук для отримання списку комп'ютерів
-export const useComputers = (params: any) => {
+export const useComputers = (params: Partial<Filters>) => {
   const { isAuthenticated } = useAuth();
   return useQuery<ComputersResponse, Error>({
-    queryKey: ['computers', params],
-    queryFn: () => getComputers(params),
+    queryKey: ['computers', params.show_disabled, params.server_filter, params.ip_range],
+    queryFn: () => getComputers(params as Filters),
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -34,7 +32,6 @@ export const useComputers = (params: any) => {
   });
 };
 
-// Хук для отримання списку користувачів
 export const useUsers = () => {
   const { isAuthenticated } = useAuth();
   return useQuery<UserRead[], Error>({
@@ -42,5 +39,9 @@ export const useUsers = () => {
     queryFn: getUsers,
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
 };

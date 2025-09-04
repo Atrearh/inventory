@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi_users import FastAPIUsers, BaseUserManager
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
+from fastapi_users.authentication.strategy.db import DatabaseStrategy
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from ..database import get_db
-from ..models import User
+from ..models import User, RefreshToken
 from ..schemas import UserRead, UserCreate, UserUpdate
 from ..settings import settings
 import logging
@@ -18,24 +19,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 users_router = APIRouter(tags=["users"])
 
-# Налаштування транспорту для access_token
+# Налаштування транспорту для access- і refresh-токенів
 cookie_transport = CookieTransport(
-    cookie_name="access_token",
-    cookie_max_age=360000,
+    cookie_name="auth_token",
+    cookie_max_age=604800,  # 7 днів
     cookie_httponly=True,
     cookie_secure=False,  # Для локальної розробки
     cookie_samesite="lax",
 )
 
-# Стратегія JWT
+# Стратегія JWT для access-токенів
 def get_jwt_strategy() -> JWTStrategy:
     return JWTStrategy(secret=settings.secret_key, lifetime_seconds=3600)
+
+# Стратегія для refresh-токенів
+async def get_refresh_token_db(session: AsyncSession = Depends(get_db)):
+    return SQLAlchemyUserDatabase(session, RefreshToken)
+
+def get_refresh_strategy() -> DatabaseStrategy:
+    logger.debug("Initializing refresh token database strategy")
+    return DatabaseStrategy(
+        get_refresh_token_db, lifetime_seconds=604800
+    )
 
 # Backend для автентифікації
 auth_backend = AuthenticationBackend(
     name="cookie",
     transport=cookie_transport,
     get_strategy=get_jwt_strategy,
+    get_refresh_strategy=get_refresh_strategy,
 )
 
 class UserManager(BaseUserManager[User, int]):
@@ -151,7 +163,7 @@ router.include_router(
 @router.post("/jwt/logout")
 async def logout(response: Response):
     """Вихід користувача з видаленням cookies."""
-    response.delete_cookie("access_token")
+    response.delete_cookie("auth_token")
     logger.info("User logged out successfully")
     return {"message": "Успішний вихід"}
 
@@ -223,6 +235,7 @@ router.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/jwt",
 )
+
 @users_router.get("/me", response_model=UserRead)
 async def read_users_me(current_user: User = Depends(fastapi_users.current_user(active=True))):
     return current_user

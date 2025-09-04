@@ -1,14 +1,14 @@
-// src/components/AdminPanel.tsx
-import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Flex, Card, Typography } from 'antd';
+import { Button, Form, Input, Table, Popconfirm, message, Modal, Space,  Card, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
-import { useState, useMemo } from 'react';
+import {  useMemo, useEffect  } from 'react';
 import { startScan, register, updateUser, deleteUser } from '../api/api';
 import { scanDomains } from '../api/domain.api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
-import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useApiQueries';
-import { useModalForm } from '../hooks/useModalForm'; // Додано
+import { useModalForm } from '../hooks/useModalForm'; 
 import DomainManagement from './DomainManagement';
+import { usePageTitle } from '../context/PageTitleContext';
+import { useTranslation } from 'react-i18next';
 
 // Утилітна функція для уніфікованої обробки помилок
 const getErrorMessage = (error: Error | any): string =>
@@ -21,6 +21,8 @@ interface MutationResponse {
 }
 
 const AdminPanel: React.FC = () => {
+  const { t } = useTranslation();
+  const { setPageTitle } = usePageTitle();
   const [form] = Form.useForm();
   const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<UserRead>({ form });
   const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useUsers();
@@ -83,6 +85,9 @@ const AdminPanel: React.FC = () => {
       message.error(getErrorMessage(error));
     }
   };
+  useEffect(() => {
+    setPageTitle(t('admin')); 
+  }, [setPageTitle, t]);
 
   // Визначення стовпців таблиці (без змін)
   const columns = useMemo(
@@ -118,7 +123,6 @@ const AdminPanel: React.FC = () => {
 
   return (
     <div style={{ padding: '16px 24px' }}>
-      <Typography.Title level={1}>Адміністрування</Typography.Title>
 
       <Card title="Глобальні дії" style={{ marginBottom: 24 }}>
         <Space>

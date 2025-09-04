@@ -1,13 +1,11 @@
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import { Layout, Menu, Button, Typography } from 'antd';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
-import { ThemeContext } from '../context/ThemeContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
 import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
-
 
 const { Sider, Content, Header } = Layout;
 
@@ -15,7 +13,6 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const { logout } = useAuth();
-  const { dark } = useContext(ThemeContext);
   const { pageTitle } = usePageTitle();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -29,18 +26,14 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   };
 
-  React.useEffect(() => {
-    document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
-  }, [dark]);
-
   return (
-    <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200  }}>
+    <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200 }}>
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         trigger={null}
-        style={{ position: 'fixed', height: '100vh', left: 0, top: 0, bottom: 0, zIndex: 1000  }}
+        style={{ position: 'fixed', height: '100vh', left: 0, top: 0, bottom: 0, zIndex: 1000 }}
       >
         <Button
           type="text"
@@ -93,7 +86,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <Header
           style={{
             padding: '0 16px',
-            background: dark ? '#1f1f1f' : '#fff',
+            background: '#fff', // Залишаємо значення за замовчуванням, оскільки тема керується через ConfigProvider
             height: '48px',
             lineHeight: '48px',
             display: 'flex',
@@ -101,7 +94,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             justifyContent: 'space-between',
           }}
         >
-          <Typography.Title level={4} style={{ margin: 0, color: dark ? '#fff' : '#000' }}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
             {pageTitle || t('app_title', 'Inventory Management')}
           </Typography.Title>
           <div style={{ position: 'absolute', top: 0, right: 0 }}>

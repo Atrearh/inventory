@@ -42,8 +42,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthenticated(false);
       if (error.message === 'Сервер недоступний. Перевірте підключення до мережі.') {
         console.warn('Server is unavailable');
-      } else if (error.response?.status === 401) {
-        await handleLogout();
       }
     } finally {
       setIsLoading(false);
@@ -60,13 +58,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const handleLogout = useCallback(async () => {
-    try {
-      await logout();
-      setUser(null);
-      setIsAuthenticated(false);
-    } catch (error: any) {
-      throw error;
-    }
+    await logout();
+    setUser(null);
+    setIsAuthenticated(false);
   }, []);
 
   return (

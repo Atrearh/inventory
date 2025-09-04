@@ -11,7 +11,6 @@ export const useExportCSV = (filters: Filters) => {
         hostname: filters.hostname || undefined,
         os_name: filters.os_name || undefined,
         check_status: filters.check_status === 'is_deleted' ? undefined : filters.check_status || undefined,
-        is_deleted: filters.is_deleted,
         sort_by: filters.sort_by || 'hostname',
         sort_order: filters.sort_order === 'asc' || filters.sort_order === 'desc' ? filters.sort_order : 'asc',
         server_filter: filters.server_filter || undefined,

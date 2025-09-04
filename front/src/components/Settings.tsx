@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Form, Select, Button, message, Spin, Card, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import { apiInstance } from '../api/api';
 import { useTimezone } from '../context/TimezoneContext';
 import { usePageTitle } from '../context/PageTitleContext';
@@ -19,7 +18,6 @@ interface SettingsData {
 
 const Settings: React.FC = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [form] = Form.useForm();
   const { timezone, setTimezone, isLoading: isTimezoneLoading } = useTimezone();
   const { setPageTitle } = usePageTitle();
@@ -49,12 +47,7 @@ const Settings: React.FC = () => {
     },
     onError: (error: Error) => {
       const apiError = handleApiError(error, t('error_updating_settings', 'Помилка оновлення налаштувань'));
-      if ((error as any).response?.status === 401) {
-        message.error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
-        navigate('/login');
-      } else {
-        message.error(apiError.message);
-      }
+      message.error(apiError.message);
     },
   });
 
@@ -73,10 +66,6 @@ const Settings: React.FC = () => {
 
   if (error) {
     const apiError = handleApiError(error, t('error_loading_settings', 'Помилка завантаження налаштувань'));
-        if ((error as any).response?.status === 401) {
-      message.error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
-      navigate('/login');
-    }
     return <div>{t('error_loading_settings', 'Помилка завантаження налаштувань')}: {apiError.message}</div>;
   }
 

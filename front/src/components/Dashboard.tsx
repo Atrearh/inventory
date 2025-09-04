@@ -14,17 +14,23 @@ import { ITEMS_PER_PAGE } from '../config';
 import { startHostScan } from '../api/api';
 import { useScanEvents } from '../hooks/useScanEvents';
 import { useTranslation } from 'react-i18next';
+import { usePageTitle } from '../context/PageTitleContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 // Компонент для відображення дашборду зі статистикою
 const Dashboard: React.FC = () => {
+  const { setPageTitle } = usePageTitle();
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const params = new URLSearchParams(location.search);
   const activeTab = params.get('tab') || 'summary';
   const events = useScanEvents();
+
+    useEffect(() => {
+    setPageTitle(t('statistics')); 
+  }, [setPageTitle, t]);
 
   // Використання хука useComputerFilters для уніфікованих фільтрів
   const { filters, handleFilterChange, handleTableChange } = useComputerFilters([]);
@@ -34,19 +40,18 @@ const Dashboard: React.FC = () => {
     handleFilterChange('os_name', os === 'Unknown' || os === 'Other Servers' ? undefined : os);
     handleFilterChange('server_filter', os === 'Other Servers' ? 'server' : undefined);
     handleFilterChange('ip_range', undefined);
-    handleFilterChange('page', 1);
-    handleFilterChange('limit', ITEMS_PER_PAGE);
+    handleFilterChange('page', '1');
+    handleFilterChange('limit', String(ITEMS_PER_PAGE));
   };
 
   // Оновлення фільтрів при кліку на підмережу
   const handleSubnetClick = (subnet: string) => {
     const ipRange = subnet === 'Невідомо' ? 'none' : subnet;
-    console.log('Applying ip_range filter:', ipRange);
     handleFilterChange('ip_range', ipRange);
     handleFilterChange('os_name', undefined);
     handleFilterChange('server_filter', undefined);
-    handleFilterChange('page', 1);
-    handleFilterChange('limit', ITEMS_PER_PAGE);
+    handleFilterChange('page', '1');
+    handleFilterChange('limit', String(ITEMS_PER_PAGE));
   };
 
   // Запит для отримання статистики
@@ -103,7 +108,6 @@ const Dashboard: React.FC = () => {
   // Оновлення відфільтрованих комп’ютерів
   useEffect(() => {
     if (computersData?.data && (filters.os_name || filters.ip_range)) {
-      console.log('Фільтровані комп’ютери:', computersData.data.slice(0, 5));
     }
   }, [computersData, filters.os_name, filters.ip_range]);
 
@@ -173,10 +177,8 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: 12 }}>
-      <h1 style={{ marginBottom: 0, marginTop: 0 }}>{t('statistics')}</h1>
+    <div style={{ padding: 2 }}>
       <DashboardMenu activeTab={activeTab} onTabChange={handleTabChange} />
-
       {activeTab === 'summary' && (
         <CombinedStats
           totalComputers={data.total_computers}
@@ -233,8 +235,7 @@ const Dashboard: React.FC = () => {
                 handleTableChange(
                   { current: page, pageSize },
                   {},
-                  {},
-                  { currentDataSource: transformedComputers, action: 'paginate' }
+                  {}
                 ),
             }}
             locale={{ emptyText: renderEmptyState() }}

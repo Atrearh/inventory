@@ -32,6 +32,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         show_disabled: true,
         sort_by: 'hostname',
         sort_order: 'asc',
+        domain: undefined,
       }),
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
@@ -55,11 +56,11 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
           description: `Не вдалося завантажити дані комп’ютерів: ${error.message}`,
         });
       }
-      console.log('Повторний запит даних комп’ютерів');
+
       refetch();
     }
     if (!isAuthenticated) {
-      console.log('Користувач не автентифікований');
+
       return;
     }
     if (computersData?.data && Array.isArray(computersData.data)) {
@@ -78,14 +79,14 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
               subnet = `${baseIp}.${subnetThirdOctet}.0/23`;
             }
           }
-          console.log(`Обробка комп’ютера: IP=${ip}, Підмережа=${subnet}`);
+
           subnetMap.set(subnet, (subnetMap.get(subnet) || 0) + 1);
         });
       const subnets = Array.from(subnetMap.entries()).map(([subnet, count]) => ({ subnet, count }));
-      console.log('Розраховані дані мереж:', subnets);
+
       setSubnetData(subnets);
     } else {
-      console.log('Отримано некоректні дані:', computersData);
+
     }
   }, [computersData, error, isAuthenticated, refetch]);
 
@@ -125,7 +126,6 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         const index = elements[0].index;
         const subnet = chart.data.labels?.[index];
         if (typeof subnet === 'string') {
-          console.log('Вибрана мережа:', subnet);
           onSubnetClick(subnet);
         }
       }
@@ -141,7 +141,6 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         <a
           style={{ cursor: 'pointer', color: '#1890ff' }}
           onClick={() => {
-            console.log('Вибрана мережа в таблиці:', subnet);
             onSubnetClick && onSubnetClick(subnet);
           }}
         >

@@ -7,6 +7,7 @@ import { PageTitleProvider } from './context/PageTitleContext';
 import Login from './components/Login';
 import NotFound from './components/NotFound';
 import Layout from './components/Layout';
+import { useTranslation } from 'react-i18next';
 
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ComputerList = lazy(() => import('./components/ComputerList'));
@@ -14,17 +15,20 @@ const ComputerDetail = lazy(() => import('./components/ComputerDetail'));
 const Settings = lazy(() => import('./components/Settings'));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
+
 const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <div>Загрузка...</div>;
+  if (isLoading) return <div>{t('loading')}</div>; 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 };
 
 const App: React.FC = () => {
   const {isAuthenticated,  isLoading } = useAuth();
+  const { t } = useTranslation();
 
-  if (isLoading) return <div>Загрузка...</div>;
+  if (isLoading) return <div>{t('loading')}</div>; 
 
   return (
     <ThemeProvider>
@@ -36,7 +40,7 @@ const App: React.FC = () => {
               path="*"
               element={
               isAuthenticated ? (
-                <Suspense fallback={<div>Загрузка...</div>}>
+                <Suspense fallback={<div>{t('loading')}</div>}>
                   <Layout>
                     <Routes>
                       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

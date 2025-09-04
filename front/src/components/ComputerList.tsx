@@ -196,16 +196,12 @@ const ComputerListComponent: React.FC = () => {
     [t, filters.sort_by, filters.sort_order, columnWidths, timezone]
   ) as NonNullable<TableProps<ComputerListItem>['columns']>;
 
-  const handleResize = useCallback(
-    (key: keyof typeof columnWidths) =>
-      debounce((_: any, { size }: { size: { width: number } }) => {
-        setColumnWidths((prev) => ({
-          ...prev,
-          [key]: size.width,
-        }));
-      }, 100),
-    []
-  );
+  const handleResize = useCallback((key: keyof typeof columnWidths) => (_: any, { size }: { size: { width: number } }) => {
+      setColumnWidths((prev) => ({
+        ...prev,
+        [key]: size.width,
+      }));
+    }, []);
 
   const resizableColumns = columns.map((col) => ({
     ...col,

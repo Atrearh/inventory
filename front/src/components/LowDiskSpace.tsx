@@ -9,7 +9,6 @@ interface LowDiskSpaceProps {
 }
 
 const LowDiskSpace: React.FC<LowDiskSpaceProps> = ({ lowDiskSpace, emptyComponent }) => {
-  console.log('Дані lowDiskSpace:', lowDiskSpace);
 
   // Фільтрація комп'ютерів з низьким обсягом диска (менше або дорівнює 1024 ГБ)
   const filteredLowDiskSpace = lowDiskSpace.filter(

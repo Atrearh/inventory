@@ -35,7 +35,6 @@ const Login: React.FC = () => {
   const onFinish = async (values: { email: string; password: string }) => {
     try {
       await login(values.email, values.password);
-      console.log('Login successful. Starting prefetching...');
       
       await queryClient.prefetchQuery({
         queryKey: ['statistics'],
@@ -60,7 +59,6 @@ const Login: React.FC = () => {
         queryFn: getUsers,
       });
 
-      console.log('Prefetching complete.');
       navigate('/');
     } catch (err: any) {
       setError(err.message);

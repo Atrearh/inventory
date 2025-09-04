@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { handleApiError } from '../utils/apiErrorHandler';
+import { logout } from './auth.api';
 
 // Тип для кастомної конфігурації запиту
 interface CustomAxiosRequestConfig extends AxiosRequestConfig {
@@ -19,7 +20,6 @@ export const apiInstance = axios.create({
   withCredentials: true,
 });
 
-
 // Інтерцептор для обробки відповідей
 apiInstance.interceptors.response.use(
   (response) => response,
@@ -31,9 +31,10 @@ apiInstance.interceptors.response.use(
       originalRequest._retry = true;
       try {
         // Спроба повторного виконання запиту
-        return apiInstance(originalRequest);
+        return await apiInstance(originalRequest);
       } catch (refreshError) {
-        // Перенаправлення на сторінку логіну при невдалій спробі
+        // Очищення сесії та перенаправлення на сторінку логіну
+        await logout(); // Виклик logout для очищення сесії
         window.location.href = '/login';
         throw new Error('Сесія закінчилася, будь ласка, увійдіть знову');
       }

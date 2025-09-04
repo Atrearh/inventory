@@ -1,6 +1,7 @@
+// front/src/components/HeaderWidget.tsx
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Space, Dropdown, MenuProps, Badge, Typography } from 'antd';
+import { Button, Space, Dropdown, MenuProps, Badge, Typography, theme } from 'antd'; // Додаємо theme
 import { useAuth } from '../context/AuthContext';
 import { useTimezone } from '../context/TimezoneContext';
 import { ThemeContext } from '../context/ThemeContext';
@@ -25,6 +26,7 @@ const HeaderWidget: React.FC = () => {
   const { dark } = useContext(ThemeContext);
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const { token } = theme.useToken(); // Отримуємо токени теми
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -65,14 +67,14 @@ const HeaderWidget: React.FC = () => {
   }];
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} style={{ background: token.colorBgContainer }}>
       <Space align="center">
-        <Typography.Text style={{ color: dark ? '#d9d9d9' : '#000' }}>
+        <Typography.Text style={{ color: token.colorText }}>
           {formattedTime}
         </Typography.Text>
         {user && (
           <>
-            <Typography.Text strong style={{ color: dark ? '#d9d9d9' : '#000' }}>
+            <Typography.Text strong style={{ color: token.colorText }}>
               {user.username}
             </Typography.Text>
             <Dropdown

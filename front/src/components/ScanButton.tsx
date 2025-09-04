@@ -46,7 +46,7 @@ const ScanButton: React.FC = () => {
       <Button
         type="primary"
         onClick={handleClick}
-        loading={startScanMutation.isLoading}
+        loading={startScanMutation.isPending}
         disabled={!!taskId && scanStatus?.status === 'running'}
       >
         Запустить сканирование

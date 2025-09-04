@@ -1,13 +1,16 @@
-# app/models.py
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, ForeignKey, UniqueConstraint, Index, func, BigInteger
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 import enum
 from app.database import Base 
 from typing import Optional, List
 from datetime import datetime
+from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTable
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 import logging
+from datetime import datetime, timedelta
+
 logger = logging.getLogger(__name__)
+
 
 class CheckStatus(enum.Enum):
     success = "success"
@@ -214,18 +217,23 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
 
 
-class RefreshToken(Base):
+class RefreshToken(Base, SQLAlchemyBaseAccessTokenTable):
     __tablename__ = "refresh_tokens"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
     user: Mapped["User"] = relationship("User", backref="refresh_tokens")
-
     __table_args__ = (
         Index('idx_user_token', 'user_id', 'token', unique=True),
         Index('idx_token_expires', 'token', 'expires_at'),
     )
+
+    def __init__(self, **kwargs):
+        # Встановлюємо значення за замовчуванням для expires_at, якщо не передано
+        if "expires_at" not in kwargs or kwargs["expires_at"] is None:
+            kwargs["expires_at"] = datetime.utcnow() + timedelta(seconds=604800)  # 7 днів
+        super().__init__(**kwargs)

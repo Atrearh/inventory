@@ -9,8 +9,10 @@ import { Filters, isServerOs } from '../hooks/useComputerFilters';
 import { ITEMS_PER_PAGE } from '../config';
 import { useTranslation } from 'react-i18next';
 import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
+import { theme } from 'antd';
 
 const Login: React.FC = () => {
+  const { token } = theme.useToken();
   const { login } = useAuth();
   const navigate = useNavigate();
   const { dark } = useContext(ThemeContext);
@@ -72,11 +74,11 @@ const Login: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: dark ? '#1a1a1a' : '#f0f2f5',
+        backgroundColor: token.colorBgLayout,
       }}
     >
-      <Card style={{ width: 400, background: dark ? '#2c2c2c' : '#ffffff', color: dark ? '#d9d9d9' : '#000000' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: 24, color: dark ? '#d9d9d9' : '#000000', userSelect: 'none' }}>
+      <Card style={{ width: 400, background: dark ? '#2c2c2c' : '#ffffff', color: token.colorText}}>
+        <h2 style={{ textAlign: 'center', marginBottom: 24, color: token.colorText, userSelect: 'none' }}>
           {t('login', 'Вхід')}
         </h2>
         <Form onFinish={onFinish} layout="vertical">
@@ -98,7 +100,7 @@ const Login: React.FC = () => {
           >
             <Input.Password placeholder={t('password', 'Пароль')} />
           </Form.Item>
-          {error && <p style={{ color: dark ? '#ff4d4f' : '#ff0000', marginBottom: 16 }}>{error}</p>}
+          {error && <p style={{ color: token.colorText, marginBottom: 16 }}>{error}</p>}
           <Form.Item>
             <Button type="primary" htmlType="submit" block>
               {t('login', 'Вхід')}

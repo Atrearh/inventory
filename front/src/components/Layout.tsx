@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Layout, Menu, Button, Typography } from 'antd';
+import React, { useState, useContext } from 'react';
+import { Layout, Menu, Button, Typography, theme } from 'antd';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
 import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { ThemeContext } from '../context/ThemeContext';
+
 
 const { Sider, Content, Header } = Layout;
 
@@ -16,6 +18,9 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { pageTitle } = usePageTitle();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const { token } = theme.useToken();
+  const { dark } = useContext(ThemeContext);
+
 
   const handleLogout = async () => {
     try {
@@ -27,20 +32,20 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200 }}>
+    <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200,  background: token.colorBgLayout }}>
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         trigger={null}
-        style={{ position: 'fixed', height: '100vh', left: 0, top: 0, bottom: 0, zIndex: 1000 }}
+        style={{ position: 'fixed', height: '100vh', left: 0, top: 0, bottom: 0, zIndex: 1000, background: token.colorBgContainer }}
       >
         <Button
           type="text"
           icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={() => setCollapsed(!collapsed)}
           style={{
-            color: '#fff',
+            color:  token.colorText,
             width: '100%',
             textAlign: 'left',
             padding: '16px',
@@ -54,7 +59,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           {!collapsed && (collapsed ? t('expand_menu') : t('collapse_menu'))}
         </Button>
         <Menu
-          theme="dark"
+          theme={dark ? "dark" : "light"}
           mode="inline"
           selectedKeys={[location.pathname]}
           items={[
@@ -85,10 +90,10 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <Layout>
         <Header
           style={{
-            padding: '0 16px',
-            background: '#fff', // Залишаємо значення за замовчуванням, оскільки тема керується через ConfigProvider
+            padding: '0 20px',
+            background: token.colorBgContainer, 
             height: '48px',
-            lineHeight: '48px',
+            lineHeight: '30px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -104,8 +109,9 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <Content
           style={{
             margin: 0,
-            padding: '16px',
+            padding: '10px',
             minHeight: 'calc(100vh - 48px)',
+            background: token.colorBgLayout,
           }}
         >
           {children}

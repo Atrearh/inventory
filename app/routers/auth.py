@@ -1,18 +1,19 @@
+import logging
+from typing import Callable
+from argon2 import PasswordHasher
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi_users import FastAPIUsers, BaseUserManager
-from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
+from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
+from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_users.password import PasswordHelper
 from ..database import get_db
 from ..models import User, RefreshToken
 from ..schemas import UserRead, UserCreate, UserUpdate
-from ..settings import settings
-import logging
-from fastapi.security import OAuth2PasswordRequestForm
-from argon2 import PasswordHasher
-from fastapi_users.password import PasswordHelper
 
 logger = logging.getLogger(__name__)
 
@@ -28,68 +29,72 @@ cookie_transport = CookieTransport(
     cookie_samesite="lax",
 )
 
-# Стратегія JWT для access-токенів
-def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.secret_key, lifetime_seconds=3600)
-
-# Стратегія для refresh-токенів
+# Стратегія для access- і refresh-токенів
 async def get_refresh_token_db(session: AsyncSession = Depends(get_db)):
-    return SQLAlchemyUserDatabase(session, RefreshToken)
+    return SQLAlchemyAccessTokenDatabase(session, RefreshToken)
 
-def get_refresh_strategy() -> DatabaseStrategy:
-    logger.debug("Initializing refresh token database strategy")
-    return DatabaseStrategy(
-        get_refresh_token_db, lifetime_seconds=604800
-    )
+def get_refresh_strategy() -> Callable[[], DatabaseStrategy]:
+    def strategy(session: AsyncSession = Depends(get_db)) -> DatabaseStrategy:
+        logger.debug("Initializing token database strategy")
+        db = SQLAlchemyAccessTokenDatabase(session, RefreshToken)
+        logger.info(f"Database strategy initialized for table: {RefreshToken.__tablename__}, adapter: {type(db).__name__}")
+        strategy_instance = DatabaseStrategy(
+            database=db,
+            lifetime_seconds=604800,  # Час життя refresh-токена (7 днів)
+        )
+        logger.debug(f"DatabaseStrategy created: {strategy_instance}")
+        return strategy_instance
+    return strategy
 
 # Backend для автентифікації
 auth_backend = AuthenticationBackend(
     name="cookie",
     transport=cookie_transport,
-    get_strategy=get_jwt_strategy,
-    get_refresh_strategy=get_refresh_strategy,
+    get_strategy=get_refresh_strategy(),
 )
 
 class UserManager(BaseUserManager[User, int]):
     password_helper = PasswordHelper(PasswordHasher())
 
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
-        async with self.user_db.session as session:
-            try:
-                result = await session.execute(
-                    select(User).filter_by(email=credentials.username)
-                )
-                user = result.scalars().first()
-                if not user:
-                    logger.debug(f"User with email {credentials.username} not found")
-                    return None
-                
-                logger.debug(f"Found user: {user.email}, user type: {type(user)}")
+            logger.debug(f"Authenticating user with email: {credentials.username}")
+            async with self.user_db.session as session:
                 try:
-                    verified, updated_hash = self.password_helper.verify_and_update(
-                        credentials.password, user.hashed_password
+                    result = await session.execute(
+                        select(User).filter_by(email=credentials.username)
                     )
-                    if verified:
-                        if updated_hash:  # Оновлення хешу, якщо потрібне
-                            user.hashed_password = updated_hash
-                            session.add(user)
-                            await session.commit()
-                        return user
-                    else:
-                        logger.debug(f"Password verification failed for user: {user.email}")
+                    user = result.scalars().first()
+                    if not user:
+                        logger.debug(f"User with email {credentials.username} not found")
                         return None
+                    
+                    logger.debug(f"Found user: {user.email}, user type: {type(user)}")
+                    try:
+                        verified, updated_hash = self.password_helper.verify_and_update(
+                            credentials.password, user.hashed_password
+                        )
+                        if verified:
+                            if updated_hash:
+                                user.hashed_password = updated_hash
+                                session.add(user)
+                                await session.commit()
+                            logger.info(f"User {user.email} authenticated successfully")
+                            return user
+                        else:
+                            logger.debug(f"Password verification failed for user: {user.email}")
+                            return None
+                    except Exception as e:
+                        logger.error(f"Password verification error for user {user.email}: {str(e)}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Помилка перевірки пароля"
+                        )
                 except Exception as e:
-                    logger.error(f"Password verification error for user {user.email}: {str(e)}")
+                    logger.error(f"Database or authentication error: {str(e)}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Помилка перевірки пароля"
+                        detail="Внутрішня помилка сервера під час автентифікації"
                     )
-            except Exception as e:
-                logger.error(f"Database or authentication error: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Внутрішня помилка сервера під час автентифікації"
-                )
 
     async def create(self, user_create: UserCreate, safe: bool = False, **kwargs) -> User:
         logger.debug(f"Creating user with email: {user_create.email}")
@@ -123,19 +128,19 @@ class UserManager(BaseUserManager[User, int]):
             logger.error(f"Error parsing user_id '{user_id}' to int: {str(e)}")
             raise
 
+   
+
 async def get_user_manager(db: AsyncSession = Depends(get_db)):
-    logger.info("Initializing get_user_manager")
-    async with db as session:
-        logger.debug(f"Session type: {type(session)}")
-        user_db = SQLAlchemyUserDatabase(session, User)
-        logger.info(f"Creating UserManager for table: {User.__tablename__}")
-        try:
-            user_manager = UserManager(user_db)
-            logger.info(f"UserManager created: {user_manager}")
-            yield user_manager
-        except Exception as e:
-            logger.error(f"Error creating UserManager: {str(e)}")
-            raise
+    logger.debug(f"Creating SQLAlchemyUserDatabase for table: {User.__tablename__}")
+    user_db = SQLAlchemyUserDatabase(db, User)
+    logger.info(f"Creating UserManager for table: {User.__tablename__}")
+    try:
+        user_manager = UserManager(user_db)
+        logger.info(f"UserManager created: {user_manager}")
+        yield user_manager
+    except Exception as e:
+        logger.error(f"Error creating UserManager: {str(e)}")
+        raise
 
 # Ініціалізація FastAPIUsers
 fastapi_users = FastAPIUsers[User, int](
@@ -143,15 +148,9 @@ fastapi_users = FastAPIUsers[User, int](
     [auth_backend],
 )
 
-# Кастомна залежність для перевірки активного користувача
-async def custom_current_user(user: User = Depends(fastapi_users.current_user(active=True))):
-    logger.info(f"Calling custom_current_user, user: {user.email if user else 'None'}")
-    if user is None:
-        logger.error("User not found or not active")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-    return user
 
-get_current_user = custom_current_user
+    
+get_current_user = fastapi_users.current_user()
 
 # Використання стандартного роутера для логіну
 router.include_router(

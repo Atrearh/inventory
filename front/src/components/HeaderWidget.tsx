@@ -1,7 +1,6 @@
-// front/src/components/HeaderWidget.tsx
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Space, Dropdown, MenuProps, Badge, Typography, theme } from 'antd'; // Додаємо theme
+import { Button, Space, Dropdown, MenuProps, Badge, Typography, theme } from 'antd'; 
 import { useAuth } from '../context/AuthContext';
 import { useTimezone } from '../context/TimezoneContext';
 import { ThemeContext } from '../context/ThemeContext';
@@ -26,7 +25,7 @@ const HeaderWidget: React.FC = () => {
   const { dark } = useContext(ThemeContext);
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const { token } = theme.useToken(); // Отримуємо токени теми
+  const { token } = theme.useToken(); 
 
   useEffect(() => {
     const interval = setInterval(() => {

@@ -340,6 +340,12 @@ export interface ScanTask {
   successful_hosts: number;
   error?: string | null;
 }
+export interface TaskRead {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+}
 export interface TrackableComponent {
   detected_on?: string | null;
   removed_on?: string | null;

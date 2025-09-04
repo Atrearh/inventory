@@ -1,8 +1,0 @@
-.layout-container {
-  position: relative;
-  min-height: 100vh;
-}
-
-main {
-  margin-top: 64px; /* Відступ для Header */
-}

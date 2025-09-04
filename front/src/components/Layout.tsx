@@ -1,12 +1,12 @@
 import React, { useState, useContext } from 'react';
-import { Layout, Menu, Button } from 'antd';
+import { Layout, Menu, Button, Typography } from 'antd';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
 import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
-import './Layout.css';
 
 const { Sider, Content, Header } = Layout;
 
@@ -15,10 +15,10 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
   const { logout } = useAuth();
   const { dark } = useContext(ThemeContext);
+  const { pageTitle } = usePageTitle();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
-  // Функція для розлогінювання
   const handleLogout = async () => {
     try {
       await logout();
@@ -28,7 +28,6 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   };
 
-  // Встановлюємо атрибут data-theme на body
   React.useEffect(() => {
     document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
   }, [dark]);
@@ -85,32 +84,34 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               icon: <SettingOutlined />,
               label: <Link to="/settings">{t('settings')}</Link>,
             },
-            {
-              key: 'logout',
-
-              label: (
-                <Button
-                  type="text"
-                  onClick={handleLogout}
-                  style={{ color: '#fff', width: '100%', textAlign: 'left' }}
-                >
-                  {!collapsed && t('logout')}
-                </Button>
-              ),
-            },
           ]}
           style={{ paddingTop: '56px' }}
         />
       </Sider>
       <Layout>
-        <Header style={{ padding: 0, background: dark ? '#1f1f1f' : '#fff', display: 'flex', justifyContent: 'flex-end' }}>
-          <HeaderWidget />
+        <Header
+          style={{
+            padding: '0 16px',
+            background: dark ? '#1f1f1f' : '#fff',
+            height: '48px',
+            lineHeight: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography.Title level={4} style={{ margin: 0, color: dark ? '#fff' : '#000' }}>
+            {pageTitle || t('app_title', 'Inventory Management')}
+          </Typography.Title>
+          <div style={{ position: 'absolute', top: 0, right: 0 }}>
+            <HeaderWidget />
+          </div>
         </Header>
         <Content
           style={{
             margin: 0,
             padding: '16px',
-            minHeight: 'calc(100vh - 64px)',
+            minHeight: 'calc(100vh - 48px)',
           }}
         >
           {children}

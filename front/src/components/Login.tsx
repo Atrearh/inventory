@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { Button, Form, Input, Card } from 'antd'; 
+import { Button, Form, Input, Card, Space } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStatistics, getComputers, getUsers } from '../api/api';
 import { Filters, isServerOs } from '../hooks/useComputerFilters';
@@ -29,6 +29,7 @@ const Login: React.FC = () => {
     limit: ITEMS_PER_PAGE,
     server_filter: undefined,
     ip_range: undefined,
+    domain: undefined,
   };
 
   const onFinish = async (values: { email: string; password: string }) => {
@@ -36,7 +37,6 @@ const Login: React.FC = () => {
       await login(values.email, values.password);
       console.log('Login successful. Starting prefetching...');
       
-      // Попереднє завантаження даних
       await queryClient.prefetchQuery({
         queryKey: ['statistics'],
         queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
@@ -74,42 +74,43 @@ const Login: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: dark ? '#1a1a1a' : '#f0f2f5', 
+        backgroundColor: dark ? '#1a1a1a' : '#f0f2f5',
       }}
     >
-
-      <Card style={{ width: 400 }}> 
-        <h2 style={{ textAlign: 'center', marginBottom: 24, color: dark ? '#d9d9d9' : '#000', userSelect: 'none' }}>
-          {t('login')}
+      <Card style={{ width: 400, background: dark ? '#2c2c2c' : '#ffffff', color: dark ? '#d9d9d9' : '#000000' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 24, color: dark ? '#d9d9d9' : '#000000', userSelect: 'none' }}>
+          {t('login', 'Вхід')}
         </h2>
-        <Form onFinish={onFinish} layout="vertical" > 
+        <Form onFinish={onFinish} layout="vertical">
           <Form.Item
             name="email"
             rules={[
-              { required: true, message: t('enter_email') },
-              { type: 'email', message: t('invalid_email') },
+              { required: true, message: t('enter_email', 'Введіть email') },
+              { type: 'email', message: t('invalid_email', 'Некоректний email') },
             ]}
           >
-            <Input placeholder={t('email')} />
+            <Input placeholder={t('email', 'Email')} />
           </Form.Item>
           <Form.Item
             name="password"
             rules={[
-              { required: true, message: t('enter_password') },
-              { min: 6, message: t('password_min_length') },
+              { required: true, message: t('enter_password', 'Введіть пароль') },
+              { min: 6, message: t('password_min_length', 'Пароль має містити щонайменше 6 символів') },
             ]}
           >
-            <Input.Password placeholder={t('password')} />
+            <Input.Password placeholder={t('password', 'Пароль')} />
           </Form.Item>
-          {error && <p style={{ color: dark ? '#ff4d4f' : 'red', marginBottom: 16 }}>{error}</p>}
+          {error && <p style={{ color: dark ? '#ff4d4f' : '#ff0000', marginBottom: 16 }}>{error}</p>}
           <Form.Item>
             <Button type="primary" htmlType="submit" block>
-              {t('login')}
+              {t('login', 'Вхід')}
             </Button>
+          </Form.Item>
+          <Form.Item>
+            <LanguageAndThemeSwitch />
           </Form.Item>
         </Form>
       </Card>
-      <LanguageAndThemeSwitch />
     </div>
   );
 };

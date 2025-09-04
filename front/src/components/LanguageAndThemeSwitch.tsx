@@ -21,12 +21,6 @@ const LanguageAndThemeSwitch: React.FC = () => {
 
   return (
     <Space
-      style={{
-        position: 'fixed',
-        bottom: 16,
-        right: 16,
-        zIndex: 999, // Залишаємо високий zIndex, але нижче кнопки згортання
-      }}
     >
       <Button
         size="small"

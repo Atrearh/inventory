@@ -14,7 +14,7 @@ i18n
       escapeValue: false
     },
     backend: {
-      loadPath: '/locales/translation.{{lng}}.json'
+      loadPath: '/locales/translation.{{lng}}.json', 
     },
     detection: {
       order: ['querystring', 'localStorage', 'navigator'], 

@@ -1,5 +1,5 @@
 import { ConfigProvider, theme } from 'antd';
-import React, { useContext } from 'react';
+import React, { useContext, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
@@ -9,26 +9,7 @@ import { AuthProvider } from './context/AuthContext';
 import { TimezoneProvider } from './context/TimezoneContext';
 import { ThemeContext, ThemeProvider } from './context/ThemeContext';
 import './components/i18n';
-
-// Кастомні стилі для скролу в темній темі
-const globalStyles = (dark: boolean) => `
-  body {
-    margin: 0; 
-  }
-  body::-webkit-scrollbar {
-    width: 8px;
-  }
-  body::-webkit-scrollbar-track {
-    background: ${dark ? '#2c2c2c' : '#f1f1f1'};
-  }
-  body::-webkit-scrollbar-thumb {
-    background: ${dark ? '#555' : '#888'};
-    border-radius: 4px;
-  }
-  body::-webkit-scrollbar-thumb:hover {
-    background: ${dark ? '#777' : '#555'};
-  }
-`;
+import './index.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,18 +21,11 @@ const queryClient = new QueryClient({
   },
 });
 
-// Компонент для застосування теми
 const AppWithTheme: React.FC = () => {
   const { dark } = useContext(ThemeContext);
 
-  // Додаємо глобальні стилі для скролу
-  React.useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = globalStyles(dark);
-    document.head.appendChild(styleSheet);
-    return () => {
-      document.head.removeChild(styleSheet);
-    };
+  useEffect(() => {
+    document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
   }, [dark]);
 
   return (
@@ -60,10 +34,10 @@ const AppWithTheme: React.FC = () => {
         algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1890ff',
-          colorTextBase: dark ? '#d9d9d9' : '#000',
-          colorBgBase: dark ? '#1a1a1a' : '#fff',
-          colorBgContainer: dark ? '#2c2c2c' : '#fff',
-          colorBorder: dark ? '#444' : '#d9d9d9',
+          colorTextBase: dark ? '#d9d9d9' : '#000000',
+          colorBgBase: dark ? '#1a1a1a' : '#ffffff',
+          colorBgContainer: dark ? '#2c2c2c' : '#ffffff',
+          colorBorder: dark ? '#444444' : '#d9d9d9',
         },
       }}
     >

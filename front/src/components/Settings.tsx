@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { apiInstance } from '../api/api';
 import { useTimezone } from '../context/TimezoneContext';
+import { usePageTitle } from '../context/PageTitleContext';
 import { handleApiError } from '../utils/apiErrorHandler';
 
 const { Title } = Typography;
@@ -21,6 +22,11 @@ const Settings: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { timezone, setTimezone, isLoading: isTimezoneLoading } = useTimezone();
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle(t('settings', 'Налаштування'));
+  }, [setPageTitle, t]);
 
   const { data, isLoading, error } = useQuery<SettingsData, Error>({
     queryKey: ['settings'],
@@ -62,11 +68,12 @@ const Settings: React.FC = () => {
   }, [data, timezone, form]);
 
   if (isLoading || isTimezoneLoading) {
-    return <div style={{ padding: 50, textAlign: 'center' }}><Spin size="large" /></div>;
+    return <Spin size="large" style={{ display: 'block', margin: '50px auto' }} />;
   }
+
   if (error) {
     const apiError = handleApiError(error, t('error_loading_settings', 'Помилка завантаження налаштувань'));
-    if ((error as any).response?.status === 401) {
+        if ((error as any).response?.status === 401) {
       message.error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
       navigate('/login');
     }
@@ -75,7 +82,6 @@ const Settings: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Title level={2}>{t('settings', 'Налаштування')}</Title>
       <Card>
         <Form
           form={form}

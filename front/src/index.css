@@ -1,48 +1,78 @@
-/* src/index.css */
 html, body {
-  font-family: Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   margin: 0;
   padding: 0;
-  background-color: var(--background-color, #fff) !important;
-  border: none !important;
+  background: var(--background-color, #ffffff);
+  color: var(--text-color, #000000);
 }
 
-/* Стили для компонентів Ant Design */
+[data-theme='dark'] {
+  --background-color: #1a1a1a;
+  --sider-background: #141414;
+  --border-color: #444444;
+  --th-background: #2c2c2c;
+  --button-bg: #1890ff;
+  --button-color: #d9d9d9;
+  --button-disabled-bg: #555555;
+  --button-hover-bg: #40a9ff;
+  --input-background: #2c2c2c;
+  --text-color: #d9d9d9;
+}
+
+:root {
+  --background-color: #ffffff;
+  --sider-background: #001529;
+  --border-color: #d9d9d9;
+  --th-background: #f5f5f5;
+  --button-bg: #1890ff;
+  --button-color: #ffffff;
+  --button-disabled-bg: #cccccc;
+  --button-hover-bg: #40a9ff;
+  --input-background: #ffffff;
+  --text-color: #000000;
+}
+
 .ant-layout {
-  background: var(--background-color, #fff) !important;
-  border: none !important;
+  background: var(--background-color);
 }
 
 .ant-layout-sider {
-  background: var(--sider-background, #001529) !important;
-  border: none !important;
+  background: var(--sider-background);
 }
 
 .ant-layout-content {
-  background: var(--background-color, #fff) !important;
-  border: none !important;
+  background: var(--background-color);
 }
 
 .ant-table-container, .ant-modal-content, .ant-menu {
-  background: var(--background-color, #fff) !important;
-  border: none !important;
+  background: var(--background-color);
+  color: var(--text-color);
 }
 
-/* Стили для форми та полів вводу */
 .ant-form, .ant-input, .ant-input-password {
-  background: var(--input-background, #fff) !important;
-  border-color: var(--border-color, #ddd) !important;
-  color: var(--text-color, #000) !important;
+  background: var(--input-background);
+  border-color: var(--border-color);
+  color: var(--text-color);
 }
 
 .ant-form-item-label > label {
-  color: var(--text-color, #000) !important;
+  color: var(--text-color);
 }
 
 .ant-btn-primary {
-  background: var(--button-bg, #007bff) !important;
-  border-color: var(--button-bg, #007bff) !important;
-  color: var(--button-color, white) !important;
+  background: var(--button-bg);
+  border-color: var(--button-bg);
+  color: var(--button-color);
+}
+
+.ant-btn-primary:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-bg);
+}
+
+.ant-btn-primary:disabled {
+  background: var(--button-disabled-bg);
+  border-color: var(--button-disabled-bg);
 }
 
 table {
@@ -52,56 +82,28 @@ table {
 }
 
 th, td {
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--border-color);
   padding: 8px;
   text-align: left;
 }
 
 th {
-  background-color: var(--th-background, #f2f2f2);
+  background: var(--th-background);
 }
 
-button {
-  padding: 10px 20px;
-  margin: 10px 0;
-  background-color: var(--button-bg, #007bff);
-  color: var(--button-color, white);
-  border: none;
-  cursor: pointer;
+body::-webkit-scrollbar {
+  width: 8px;
 }
 
-button:disabled {
-  background-color: var(--button-disabled-bg, #6c757d);
-  cursor: not-allowed;
+body::-webkit-scrollbar-track {
+  background: var(--background-color);
 }
 
-button:hover:not(:disabled) {
-  background-color: var(--button-hover-bg, #0056b3);
+body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
 }
 
-/* Кастомні змінні для тем */
-:root {
-  --background-color: #fff;
-  --sider-background: #001529;
-  --border-color: #ddd;
-  --th-background: #f2f2f2;
-  --button-bg: #007bff;
-  --button-color: white;
-  --button-disabled-bg: #6c757d;
-  --button-hover-bg: #0056b3;
-  --input-background: #fff;
-  --text-color: #000;
-}
-
-[data-theme="dark"] {
-  --background-color: #1a1a1a;
-  --sider-background: #141414;
-  --border-color: #444;
-  --th-background: #2c2c2c;
-  --button-bg: #1890ff;
-  --button-color: #d9d9d9;
-  --button-disabled-bg: #555;
-  --button-hover-bg: #40a9ff;
-  --input-background: #2c2c2c;
-  --text-color: #d9d9d9;
+body::-webkit-scrollbar-thumb:hover {
+  background: var(--button-hover-bg);
 }

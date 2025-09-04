@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { Button, Form, Input, Card, Space } from 'antd';
+import { Button, Form, Input, Card } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStatistics, getComputers, getUsers } from '../api/api';
 import { Filters, isServerOs } from '../hooks/useComputerFilters';

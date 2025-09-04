@@ -8,6 +8,7 @@ import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
 import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 
+
 const { Sider, Content, Header } = Layout;
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -33,13 +34,13 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [dark]);
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200  }}>
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         trigger={null}
-        style={{ position: 'relative' }}
+        style={{ position: 'fixed', height: '100vh', left: 0, top: 0, bottom: 0, zIndex: 1000  }}
       >
         <Button
           type="text"

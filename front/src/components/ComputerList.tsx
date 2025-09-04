@@ -10,7 +10,7 @@ import { useComputers, useStatistics } from '../hooks/useApiQueries';
 import { Resizable } from 'react-resizable';
 import type { TableProps } from 'antd';
 import styles from './ComputerList.module.css';
-import { useComputerFilters} from '../hooks/useComputerFilters';
+import { useComputerFilters } from '../hooks/useComputerFilters';
 import ComputerFiltersPanel from './ComputerFiltersPanel';
 import { handleApiError } from '../utils/apiErrorHandler';
 import { AxiosError } from 'axios';
@@ -19,6 +19,7 @@ import { formatDateInUserTimezone } from '../utils/formatDate';
 import 'react-resizable/css/styles.css';
 import { getDomains } from '../api/domain.api';
 import { ComputerListItem } from '../types/schemas';
+import { usePageTitle } from '../context/PageTitleContext';
 
 // Компонент для зміни розміру колонок
 const ResizableTitle = (props: any) => {
@@ -52,6 +53,7 @@ const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { timezone } = useTimezone();
+  const { setPageTitle } = usePageTitle();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
   const [columnWidths, setColumnWidths] = useState({
     hostname: 200,
@@ -63,9 +65,9 @@ const ComputerListComponent: React.FC = () => {
   });
 
   const { data: domainsData, isLoading: isDomainsLoading } = useQuery({
-      queryKey: ['domains'],
-      queryFn: getDomains,
-    });
+    queryKey: ['domains'],
+    queryFn: getDomains,
+  });
 
   const domainMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -77,13 +79,14 @@ const ComputerListComponent: React.FC = () => {
 
   const { filters, filteredComputers, debouncedSetHostname, handleFilterChange, clearAllFilters, handleTableChange } =
     useComputerFilters(cachedComputers);
+
   const { data: computersData, error: computersError, isLoading: isComputersLoading } = useComputers({
     ...filters,
-    hostname: undefined, 
-    os_name: undefined, 
-    check_status: undefined, 
-    sort_by: undefined, 
-    sort_order: undefined, 
+    hostname: undefined,
+    os_name: undefined,
+    check_status: undefined,
+    sort_by: undefined,
+    sort_order: undefined,
     limit: 1000,
   });
 
@@ -99,10 +102,10 @@ const ComputerListComponent: React.FC = () => {
       const transformedComputers = uniqueComputers.slice(0, 1000).map((computer) => ({
         ...computer,
         last_updated: computer.last_updated || '',
-        last_check: computer.last_full_scan
-|| '',
+        last_check: computer.last_full_scan || '',
       }));
       setCachedComputers(transformedComputers);
+      setPageTitle(`${t('computers_list', 'Список комп’ютерів')} (${filteredComputers.total || 0})`);
       if (computersData.total > 1000) {
         notification.warning({
           message: t('data_limit', 'Обмеження даних'),
@@ -110,7 +113,7 @@ const ComputerListComponent: React.FC = () => {
         });
       }
     }
-  }, [computersData, t]);
+  }, [computersData, t, filteredComputers.total, setPageTitle]);
 
   const getCheckStatusColor = (status: string | null | undefined) => {
     switch (status) {
@@ -189,21 +192,20 @@ const ComputerListComponent: React.FC = () => {
           return <span style={{ color: getCheckStatusColor(text) }}>{statusMap[text || ''] || text || '-'}</span>;
         },
       },
-
     ],
     [t, filters.sort_by, filters.sort_order, columnWidths, timezone]
   ) as NonNullable<TableProps<ComputerListItem>['columns']>;
 
   const handleResize = useCallback(
-      (key: keyof typeof columnWidths) =>
-        debounce((_: any, { size }: { size: { width: number } }) => {
-          setColumnWidths((prev) => ({
-            ...prev,
-            [key]: size.width,
-          }));
-        }, 100),
-      []
-    );
+    (key: keyof typeof columnWidths) =>
+      debounce((_: any, { size }: { size: { width: number } }) => {
+        setColumnWidths((prev) => ({
+          ...prev,
+          [key]: size.width,
+        }));
+      }, 100),
+    []
+  );
 
   const resizableColumns = columns.map((col) => ({
     ...col,
@@ -235,7 +237,7 @@ const ComputerListComponent: React.FC = () => {
         <>
           <h2 className={styles.title}>
             {t('computers_list', 'Список комп’ютерів')} ({filteredComputers.total || 0})
-            <Button type="primary" onClick={handleExportCSV} style={{ float: 'right', marginLeft: 8 }}>
+            <Button type="primary" onClick={handleExportCSV} className={styles.csvButton}>
               {t('export_csv', 'Експорт у CSV')}
             </Button>
           </h2>

@@ -37,29 +37,31 @@ const Login: React.FC = () => {
   const onFinish = async (values: { email: string; password: string }) => {
     try {
       await login(values.email, values.password);
-      
-      await queryClient.prefetchQuery({
-        queryKey: ['statistics'],
-        queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
-      });
-      await queryClient.prefetchQuery({
-        queryKey: ['computers', defaultFilters],
-        queryFn: () => {
-          const params: Partial<Filters> = { ...defaultFilters, hostname: undefined, limit: 1000 };
-          if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
-            params.os_name = 'unknown';
-          } else if (params.os_name && isServerOs(params.os_name)) {
-            params.server_filter = 'server';
-          } else {
-            params.server_filter = undefined;
-          }
-          return getComputers(params as Filters);
-        },
-      });
-      await queryClient.prefetchQuery({
-        queryKey: ['users'],
-        queryFn: getUsers,
-      });
+
+      await Promise.all([
+        queryClient.prefetchQuery({
+          queryKey: ['statistics'],
+          queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
+        }),
+        queryClient.prefetchQuery({
+          queryKey: ['computers', defaultFilters],
+          queryFn: () => {
+            const params: Partial<Filters> = { ...defaultFilters, hostname: undefined, limit: 1000 };
+            if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
+              params.os_name = 'unknown';
+            } else if (params.os_name && isServerOs(params.os_name)) {
+              params.server_filter = 'server';
+            } else {
+              params.server_filter = undefined;
+            }
+            return getComputers(params as Filters);
+          },
+        }),
+        queryClient.prefetchQuery({
+          queryKey: ['users'],
+          queryFn: getUsers,
+        }),
+      ]);
 
       navigate('/');
     } catch (err: any) {

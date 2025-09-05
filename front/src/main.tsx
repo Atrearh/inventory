@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './context/AuthContext';
 import { TimezoneProvider } from './context/TimezoneContext';
 import { ThemeContext, ThemeProvider } from './context/ThemeContext';
+import { PageTitleProvider } from './context/PageTitleContext';
 import './components/i18n';
 import './index.css';
 
@@ -51,15 +52,17 @@ const Root = () => {
     <React.StrictMode>
       <ErrorBoundary>
         <AuthProvider>
-          <TimezoneProvider>
-            <ThemeProvider>
-              <QueryClientProvider client={queryClient}>
-                <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-                  <AppWithTheme />
-                </BrowserRouter>
-              </QueryClientProvider>
-            </ThemeProvider>
-          </TimezoneProvider>
+          <ThemeProvider>
+            <TimezoneProvider>
+              <PageTitleProvider>
+                <QueryClientProvider client={queryClient}>
+                  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                    <AppWithTheme />
+                  </BrowserRouter>
+                </QueryClientProvider>
+              </PageTitleProvider>
+            </TimezoneProvider>
+          </ThemeProvider>
         </AuthProvider>
       </ErrorBoundary>
     </React.StrictMode>

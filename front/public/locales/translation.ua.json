@@ -152,7 +152,7 @@
   "confirm_delete_domain": "Впевнені, що хочете видалити домен?",
   "edit_domain": "Редагувати домен {{name}}",
   "delete_domain": "Видалити домен {{name}}",
-  "scan_domain": "Опитати домен {{name}}",
+  "scan_domain": "Опитати домен",
   "add_domain": "Додати домен",
   "domains_table": "Таблиця доменів",
   "edit_domain_title": "Редагування домену",

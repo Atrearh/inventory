@@ -149,7 +149,7 @@
   "confirm_delete_domain": "Are you sure you want to delete the domain?",
   "edit_domain": "Edit domain {{name}}",
   "delete_domain": "Delete domain {{name}}",
-  "scan_domain": "Scan domain {{name}}",
+  "scan_domain": "Scan domain",
   "add_domain": "Add domain",
   "domains_table": "Domains Table",
   "edit_domain_title": "Edit Domain",

@@ -163,7 +163,7 @@ const AdminPanel: React.FC = () => {
         />
       </Card>
 
-      <Card title={t('domain_management')}>
+      <Card>
         <DomainManagement />
       </Card>
 

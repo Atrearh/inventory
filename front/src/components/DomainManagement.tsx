@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Popconfirm, message, Space } from 'antd';
+import { Table, Button, Modal, Form, Input, Popconfirm, message, Space, Card} from 'antd';
 import { useQuery} from '@tanstack/react-query';
 import { DomainRead, DomainCreate, DomainUpdate } from '../types/schemas';
 import { createDomain, getDomains, updateDomain, deleteDomain, validateDomain, scanDomains } from '../api/domain.api';
@@ -20,7 +20,7 @@ const DomainManagement: React.FC = () => {
   });
 
   // Запит для отримання списку доменів
-  const { data: domains = [], refetch, isLoading } = useQuery<DomainRead[]>({
+  const { data: domains = [], isLoading } = useQuery<DomainRead[]>({
     queryKey: ['domains'],
     queryFn: getDomains,
     enabled: true,
@@ -137,7 +137,7 @@ const DomainManagement: React.FC = () => {
               onClick={() => scanDomainsMutate(record.id)}
               loading={isDomainADScanLoading}
               disabled={isDomainADScanLoading}
-              aria-label={t('scan_domain', { name: record.name })}
+              aria-label={`${t('scan_domain')} ${record.name}`}
             >
               {t('scan_domain')}
             </Button>
@@ -159,13 +159,12 @@ const DomainManagement: React.FC = () => {
   );
 
   return (
-    <div>
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" onClick={openCreateModal} aria-label={t('add_domain')}>
-          {t('add_domain')}
-        </Button>
-      </Space>
-
+  <Card title={t('domain_management')} style={{ marginBottom: 24 }}
+          extra={
+          <Button type="primary" onClick={openCreateModal} aria-label={t('add_domain')}>
+            {t('add_domain')}
+          </Button>
+        }  >
       <Table
         dataSource={domains}
         columns={columns}
@@ -267,7 +266,7 @@ const DomainManagement: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+  </Card>
   );
 };
 

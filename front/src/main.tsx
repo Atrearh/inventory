@@ -35,9 +35,9 @@ const AppWithTheme: React.FC = () => {
         algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1890ff',
-          colorTextBase: dark ? '#d9d9d9' : '#000000',
-          colorBgBase: dark ? '#1a1a1a' : '#ffffff',
-          colorBgContainer: dark ? '#2c2c2c' : '#ffffff',
+          colorTextBase: dark ? '#d9d9d9' : '#333',
+          colorBgBase: dark ? '#1a1a1a' : '#f5f5f5',
+          colorBgContainer: dark ? '#2c2c2c' : '#fafafa',
           colorBorder: dark ? '#444444' : '#d9d9d9',
         },
       }}

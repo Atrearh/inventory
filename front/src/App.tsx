@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, lazy, useContext } from 'react';
+import { Suspense, lazy} from 'react';
 import { useAuth } from './context/AuthContext';
-import { ThemeContext } from './context/ThemeContext';
 import Login from './components/Login';
 import NotFound from './components/NotFound';
 import Layout from './components/Layout';
@@ -24,7 +23,6 @@ const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
 const App: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useTranslation();
-  const { dark } = useContext(ThemeContext);
 
   if (isLoading) return <div>{t('loading')}</div>;
 

@@ -1,88 +1,87 @@
-import { Button, message, notification, Space, Select, Modal } from 'antd';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, notification, Space, Select, Modal } from 'antd';
+import {  useQuery } from '@tanstack/react-query';
 import { startHostScan, updatePolicies, restartPrintSpooler, getScriptsList, executeScript } from '../api/api';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useApiMutation } from '../hooks/useApiMutation';
 
 interface ActionPanelProps {
   hostname: string;
 }
 
 const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
+  const { t } = useTranslation();
   const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [scriptOutput, setScriptOutput] = useState<{ output: string; error: string } | null>(null);
-  const queryClient = useQueryClient();
 
   const { data: scripts = [], isLoading: isScriptsLoading } = useQuery({
     queryKey: ['scripts'],
     queryFn: getScriptsList,
   });
 
-  const { mutate: scanHost, isPending: isScanLoading } = useMutation({
+  // Типи для відповідей API
+  interface ScanHostResponse {
+    task_id: string;
+  }
+
+  interface ActionResponse {
+    output: string;
+    error: string;
+  }
+
+  interface ScriptExecutionResponse {
+    output: string;
+    error: string;
+  }
+
+  const { mutate: scanHost, isPending: isScanLoading } = useApiMutation<ScanHostResponse, void>({
     mutationFn: () => startHostScan(hostname),
-    onSuccess: (data) => {
+    successMessage: t('scan_started'),
+    invalidateQueryKeys: [['computers'], ['tasks']],
+    useNotification: true,
+    onSuccessCallback: (data) => {
       notification.success({
-        message: 'Сканування розпочато',
-        description: `Task ID: ${data.task_id}`,
-      });
-      // Інвалідуємо запити комп'ютерів і завдань після сканування
-      queryClient.invalidateQueries({ queryKey: ['computers'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-    },
-    onError: (error: any) => {
-      notification.error({
-        message: 'Помилка сканування',
-        description: error.message,
+        message: t('scan_started'),
+        description: t('scan_task_id', { task_id: data.task_id }),
       });
     },
   });
 
-  const { mutate: runGpUpdate, isPending: isGpUpdateLoading } = useMutation({
+  const { mutate: runGpUpdate, isPending: isGpUpdateLoading } = useApiMutation<ActionResponse, void>({
     mutationFn: () => updatePolicies(hostname),
-    onSuccess: (data) => {
+    successMessage: t('update_policies'),
+    useNotification: true,
+    onSuccessCallback: (data) => {
       notification.success({
-        message: 'Оновлення політик',
-        description: data.message,
-      });
-    },
-    onError: (error: any) => {
-      notification.error({
-        message: 'Помилка оновлення політик',
-        description: error.message,
+        message: t('update_policies'),
+        description: data.output || t('operation_successful'), // Використовуємо output замість message
       });
     },
   });
 
-  const { mutate: restartSpooler, isPending: isSpoolerLoading } = useMutation({
+  const { mutate: restartSpooler, isPending: isSpoolerLoading } = useApiMutation<ActionResponse, void>({
     mutationFn: () => restartPrintSpooler(hostname),
-    onSuccess: (data) => {
+    successMessage: t('restart_print'),
+    useNotification: true,
+    onSuccessCallback: (data) => {
       notification.success({
-        message: 'Перезапуск друку',
-        description: data.message,
-      });
-    },
-    onError: (error: any) => {
-      notification.error({
-        message: 'Помилка перезапуску друку',
-        description: error.message,
+        message: t('restart_print'),
+        description: data.output || t('operation_successful'), // Використовуємо output замість message
       });
     },
   });
 
-  const { mutate: runScript, isPending: isScriptLoading } = useMutation({
+  const { mutate: runScript, isPending: isScriptLoading } = useApiMutation<ScriptExecutionResponse, string>({
     mutationFn: (scriptName: string) => executeScript(hostname, scriptName),
-    onSuccess: (data) => {
+    successMessage: t('script_execution'),
+    useNotification: true,
+    onSuccessCallback: (data) => {
       setScriptOutput(data);
       setIsModalVisible(true);
       notification.success({
-        message: 'Виконання скрипту',
-        description: `Скрипт ${selectedScript} виконано`,
-      });
-    },
-    onError: (error: any) => {
-      notification.error({
-        message: 'Помилка виконання скрипту',
-        description: error.message,
+        message: t('script_execution'),
+        description: t('script_executed', { script: selectedScript }),
       });
     },
   });
@@ -99,17 +98,17 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
   return (
     <Space wrap>
       <Button type="primary" onClick={() => scanHost()} loading={isScanLoading}>
-        Сканувати хост
+        {t('scan_host', 'Scan host')}
       </Button>
       <Button onClick={() => runGpUpdate()} loading={isGpUpdateLoading}>
-        Оновити політики
+        {t('update_policies', 'Update policies')}
       </Button>
       <Button onClick={() => restartSpooler()} loading={isSpoolerLoading}>
-        Перезапустити друк
+        {t('restart_print', 'Restart print')}
       </Button>
       <Select
         style={{ width: 200 }}
-        placeholder="Виберіть скрипт"
+        placeholder={t('select_script', 'Select script')}
         onChange={handleScriptSelect}
         loading={isScriptsLoading}
         disabled={isScriptsLoading || scripts.length === 0}
@@ -125,15 +124,15 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
         disabled={!selectedScript || isScriptLoading}
         loading={isScriptLoading}
       >
-        Виконати скрипт
+        {t('execute_script', 'Execute script')}
       </Button>
       <Modal
-        title={`Результат виконання скрипту ${selectedScript}`}
+        title={t('script_execution_result', { script: selectedScript })}
         open={isModalVisible}
         onCancel={handleModalClose}
         footer={[
           <Button key="close" onClick={handleModalClose}>
-            Закрити
+            {t('close', 'Close')}
           </Button>,
         ]}
         width={800}
@@ -141,14 +140,14 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ hostname }) => {
         <pre style={{ maxHeight: '400px', overflow: 'auto' }}>
           {scriptOutput?.output && (
             <div>
-              <strong>Вивід:</strong>
+              <strong>{t('output', 'Output')}:</strong>
               <br />
               {scriptOutput.output}
             </div>
           )}
           {scriptOutput?.error && (
             <div style={{ color: 'red', marginTop: '16px' }}>
-              <strong>Помилка:</strong>
+              <strong>{t('error', 'Error')}:</strong>
               <br />
               {scriptOutput.error}
             </div>

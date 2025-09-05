@@ -1,39 +1,30 @@
-// front/src/api/domain.api.ts
-import { apiInstance } from './api';
+import { apiRequest, cleanAndSerializeParams } from '../utils/apiUtils';
 import { DomainCreate, DomainRead, DomainUpdate } from '../types/schemas';
 
-// Отримуємо список всіх доменів
 export const getDomains = async (): Promise<DomainRead[]> => {
-  const response = await apiInstance.get('/domains/');
-  return response.data;
+  return apiRequest<DomainRead[]>('get', '/domains/');
 };
 
-// Створюємо новий домен
 export const createDomain = async (data: DomainCreate): Promise<DomainRead> => {
-  const response = await apiInstance.post('/domains/', data);
-  return response.data;
+  return apiRequest<DomainRead>('post', '/domains/', data);
 };
 
-// Оновлюємо існуючий домен
-export const updateDomain = async (id: number, data: DomainUpdate): Promise<DomainRead> => {
-  const response = await apiInstance.put(`/domains/${id}`, data);
-  return response.data;
+export const updateDomain = async (id: number, data: Partial<DomainUpdate>): Promise<DomainRead> => {
+  return apiRequest<DomainRead>('patch', `/domains/${id}`, data);
 };
 
-// Видаляємо домен
 export const deleteDomain = async (id: number): Promise<void> => {
-  await apiInstance.delete(`/domains/${id}`);
+  return apiRequest<void>('delete', `/domains/${id}`);
 };
 
-// Перевіряємо з'єднання з доменом
 export const validateDomain = async (data: DomainCreate): Promise<{ status: string; message: string }> => {
-  const response = await apiInstance.post('/domains/validate', data);
-  return response.data;
+  return apiRequest<{ status: string; message: string }>('post', '/domains/validate', data);
 };
 
-// Запускаємо сканування AD для доменів
 export const scanDomains = async (domainId?: number): Promise<{ status: string; task_id?: string; task_ids?: string[] }> => {
-  const url = `/domains/scan${domainId ? `?domain_id=${domainId}` : ''}`;
-  const response = await apiInstance.post(url);
-  return response.data;
+  const params = domainId ? { domain_id: domainId } : {};
+  return apiRequest('post', '/domains/scan', undefined, {
+    params,
+    paramsSerializer: () => cleanAndSerializeParams(params).toString(),
+  });
 };

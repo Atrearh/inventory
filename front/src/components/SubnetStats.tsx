@@ -1,4 +1,3 @@
-// front/src/components/SubnetStats.tsx
 import { useQuery } from '@tanstack/react-query';
 import { getComputers } from '../api/api';
 import { ComputersResponse, ComputerList } from '../types/schemas';
@@ -7,6 +6,8 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend, ChartData, ChartOptions 
 import { Pie } from 'react-chartjs-2';
 import { notification, Table } from 'antd';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { AxiosError } from 'axios';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -17,6 +18,7 @@ interface SubnetStatsProps {
 }
 
 const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent }) => {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const [subnetData, setSubnetData] = useState<{ subnet: string; count: number }[]>([]);
 
@@ -43,24 +45,24 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
 
   useEffect(() => {
     if (error) {
-      console.error('Помилка запиту:', error);
+      console.error(t('error_query', 'Query error'), error);
       if (error instanceof AxiosError && error.response?.data) {
-        console.error('Деталі помилки сервера:', JSON.stringify(error.response.data, null, 2));
+        console.error(t('error_server_details', 'Server error details'), JSON.stringify(error.response.data, null, 2));
         notification.error({
-          message: 'Помилка завантаження даних',
-          description: `Не вдалося завантажити дані комп’ютерів: ${JSON.stringify(error.response.data.detail || error.message)}`,
+          message: t('error_loading_data', 'Error loading data'),
+          description: t('error_loading_computers', {
+            error: JSON.stringify(error.response.data.detail || error.message),
+          }),
         });
       } else {
         notification.error({
-          message: 'Помилка завантаження даних',
-          description: `Не вдалося завантажити дані комп’ютерів: ${error.message}`,
+          message: t('error_loading_data', 'Error loading data'),
+          description: t('error_loading_computers', { error: error.message }),
         });
       }
-
       refetch();
     }
     if (!isAuthenticated) {
-
       return;
     }
     if (computersData?.data && Array.isArray(computersData.data)) {
@@ -69,7 +71,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         .filter((computer) => computer.check_status !== 'disabled' && computer.check_status !== 'is_deleted')
         .forEach((computer: ComputerList) => {
           const ip = computer.ip_addresses?.[0]?.address;
-          let subnet = 'Невідомо';
+          let subnet = t('unknown', 'Unknown');
           if (ip) {
             const match = ip.match(/^(\d+\.\d+)\.(\d+)\.\d+$/);
             if (match) {
@@ -79,29 +81,27 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
               subnet = `${baseIp}.${subnetThirdOctet}.0/23`;
             }
           }
-
           subnetMap.set(subnet, (subnetMap.get(subnet) || 0) + 1);
         });
       const subnets = Array.from(subnetMap.entries()).map(([subnet, count]) => ({ subnet, count }));
-
       setSubnetData(subnets);
-    } else {
-
     }
-  }, [computersData, error, isAuthenticated, refetch]);
+  }, [computersData, error, isAuthenticated, refetch, t]);
 
-  if (!isAuthenticated) return <div>Потрібна автентифікація</div>;
-  if (isLoading) return <div>Завантаження...</div>;
-  if (error) return <div style={{ color: 'red' }}>Помилка: {error.message}</div>;
+  if (!isAuthenticated) return <div>{t('auth_required', 'Authentication required')}</div>;
+  if (isLoading) return <div>{t('loading', 'Loading...')}</div>;
+  if (error) return <div style={{ color: 'red' }}>{t('error', 'Error')}: {error.message}</div>;
   if (!computersData || !computersData.data || !Array.isArray(computersData.data) || computersData.data.length === 0) {
-    return emptyComponent || <div>Немає даних про комп’ютери для мережі</div>;
+    return emptyComponent || <div>{t('no_computer_data', 'No computer data available')}</div>;
   }
+
+  const totalComputers = subnetData.reduce((sum, item) => sum + item.count, 0);
 
   const chartData: ChartData<'pie', number[], string> = {
     labels: subnetData.map((item) => item.subnet),
     datasets: [
       {
-        label: 'Комп’ютери за мережами',
+        label: t('computers_by_subnets', 'Computers by subnets'),
         data: subnetData.map((item) => item.count),
         backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'],
         borderColor: ['#fff'],
@@ -118,7 +118,13 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         position: 'top' as const,
       },
       tooltip: {
-        enabled: true,
+        callbacks: {
+          label: (context) => {
+            const value = context.raw as number;
+            const percentage = totalComputers ? ((value / totalComputers) * 100).toFixed(1) : '0';
+            return `${context.label}: ${value} ${t('os_tooltip_computers', 'Computers')} (${percentage} ${t('os_tooltip_percentage', 'Percentage')})`;
+          },
+        },
       },
     },
     onClick: (e, elements, chart) => {
@@ -134,7 +140,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
 
   const subnetColumns = [
     {
-      title: 'Мережа',
+      title: t('subnet', 'Subnet'),
       dataIndex: 'subnet',
       key: 'subnet',
       render: (subnet: string) => (
@@ -148,12 +154,12 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
         </a>
       ),
     },
-    { title: 'Кількість комп’ютерів', dataIndex: 'count', key: 'count' },
+    { title: t('count', 'Count'), dataIndex: 'count', key: 'count' },
   ];
 
   return (
     <div style={{ padding: 12 }}>
-      <h2>Розподіл комп’ютерів за мережами (/23)</h2>
+      <h2>{t('computers_by_subnets', 'Computers by subnets (/23)')}</h2>
       {subnetData.length > 0 ? (
         <>
           <div style={{ height: 300, marginBottom: 24 }}>
@@ -165,11 +171,11 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({ onSubnetClick, emptyComponent
             rowKey="subnet"
             size="small"
             pagination={false}
-            locale={{ emptyText: emptyComponent || 'Немає даних' }}
+            locale={{ emptyText: emptyComponent || t('no_data', 'No data') }}
           />
         </>
       ) : (
-        emptyComponent || <div>Немає даних про мережі</div>
+        emptyComponent || <div>{t('no_subnet_data', 'No subnet data available')}</div>
       )}
     </div>
   );

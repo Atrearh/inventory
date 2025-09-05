@@ -1,9 +1,7 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react from '@vitejs/plugin-react-swc';
 import run from 'vite-plugin-run';
-import type { OutgoingHttpHeaders } from 'http';
 
-// Расширяем тип Error для поддержки свойства code
 interface NodeJSError extends Error {
   code?: string;
 }
@@ -22,6 +20,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 8080,
+    hmr: {
+      overlay: true, // Показувати помилки в браузері
+    },
     proxy: {
       '/api': {
         target: 'http://192.168.0.143:8000',

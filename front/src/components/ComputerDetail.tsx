@@ -11,10 +11,14 @@ import { ComponentHistory, Software } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
 import { useTimezone } from '../context/TimezoneContext'; 
 import { formatDateInUserTimezone } from '../utils/formatDate';
+import { useTranslation } from 'react-i18next';
+import { handleApiError } from '../utils/apiErrorHandler';
+
 
 const { Title } = Typography;
 
 const ComputerDetail: React.FC = () => {
+  const { t } = useTranslation();
   const { computerId } = useParams<{ computerId: string }>();
   const computerIdNum = Number(computerId);
   const { isAuthenticated } = useAuth();
@@ -33,7 +37,7 @@ const ComputerDetail: React.FC = () => {
   });
 
   if (isNaN(computerIdNum)) {
-    return <div className={styles.error}>Неверный ID компьютера</div>;
+    return <div className={styles.error}>{t('invalid_computer_id')}</div>;
   }
 
   if (compLoading) {
@@ -41,11 +45,11 @@ const ComputerDetail: React.FC = () => {
   }
 
   if (compError) {
-    return <div className={styles.error}>Ошибка: {compError.message}</div>;
+    return <div className={styles.error}>{t('error')}: {handleApiError(compError).message}</div>;
   }
 
   if (!computer) {
-    return <div className={styles.error}>Компьютер не найден</div>;
+    return <div className={styles.error}>{t('computer_not_found')}</div>;
   }
 
   const lastCheckDate = computer.last_updated ? new Date(computer.last_updated) : null;
@@ -54,14 +58,14 @@ const ComputerDetail: React.FC = () => {
 
   const softwareColumns = [
     {
-      title: 'Назва',
+      title: t('name'),
       dataIndex: 'DisplayName',
       key: 'DisplayName',
       sorter: (a: Software, b: Software) => a.DisplayName.localeCompare(b.DisplayName),
     },
-    { title: 'Версия', dataIndex: 'DisplayVersion', key: 'DisplayVersion' },
+    { title: t('version'), dataIndex: 'DisplayVersion', key: 'DisplayVersion' },
     {
-      title: 'Дата установки',
+      title: t('install_date'),
       dataIndex: 'InstallDate',
       key: 'InstallDate',
       render: (val: string) => formatDateInUserTimezone(val, timezone, 'dd.MM.yyyy'),
@@ -70,16 +74,16 @@ const ComputerDetail: React.FC = () => {
   ];
 
   const historyColumns = [
-    { title: 'Тип компонента', dataIndex: 'component_type', key: 'component_type' },
-    { title: 'Детали', key: 'details', render: (_: any, rec: ComponentHistory) => JSON.stringify(rec.data) },
+    { title: t('component_type'), dataIndex: 'component_type', key: 'component_type' },
+    { title: t('details'), key: 'details', render: (_: any, rec: ComponentHistory) => JSON.stringify(rec.data) },
     {
-      title: 'Дата обнаружения',
+      title: t('detected_on'),
       dataIndex: 'detected_on',
       key: 'detected_on',
       render: (val: string) => formatDateInUserTimezone(val, timezone),
     },
     {
-      title: 'Дата удаления',
+      title: t('removed_on'),
       dataIndex: 'removed_on',
       key: 'removed_on',
       render: (val: string) => formatDateInUserTimezone(val, timezone),
@@ -89,13 +93,13 @@ const ComputerDetail: React.FC = () => {
   const tabItems = [
     {
       key: '1',
-      label: 'Обзор',
+      label: t('overview'),
       children: (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <Card title="Общая информация">
+          <Card title={t('general_information')}>
             <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
           </Card>
-          <Card title="Действия">
+          <Card title={t('actions')}>
             <ActionPanel hostname={computer.hostname} />
           </Card>
         </Space>
@@ -103,12 +107,12 @@ const ComputerDetail: React.FC = () => {
     },
     {
       key: '2',
-      label: 'Оборудование',
+      label: t('hardware'),
       children: <HardwareInfo computer={computer} />,
     },
     {
       key: '3',
-      label: 'Программы',
+      label: t('software'),
       children: (
         <Card>
           <Table
@@ -116,21 +120,23 @@ const ComputerDetail: React.FC = () => {
             columns={softwareColumns}
             rowKey={(rec) => `${rec.DisplayName}-${rec.DisplayVersion}`}
             pagination={{ pageSize: 15 }}
+            locale={{ emptyText: t('no_data') }}
           />
         </Card>
       ),
     },
     {
       key: '4',
-      label: 'История',
+      label: t('history'),
       children: (
         <Card>
           <Table
             dataSource={history}
             columns={historyColumns}
-            rowKey={(rec) => `${rec.component_type}-${rec.detected_on || ''}-${rec.removed_on || ''}`} // Уникальный ключ без индекса
+            rowKey={(rec) => `${rec.component_type}-${rec.detected_on || ''}-${rec.removed_on || ''}`}
             loading={histLoading}
             pagination={{ pageSize: 15 }}
+            locale={{ emptyText: t('no_data') }}
           />
         </Card>
       ),
@@ -147,4 +153,4 @@ const ComputerDetail: React.FC = () => {
   ); 
 };
 
-export default ComputerDetail; 
+export default ComputerDetail;

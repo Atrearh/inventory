@@ -1,21 +1,35 @@
-import { Filters } from '../hooks/useComputerFilters';
+import { AxiosRequestConfig} from 'axios';
+import { apiInstance } from '../api/api';
+import { handleApiError } from './apiErrorHandler';
 
-export const cleanAndSerializeParams = (params: Filters): URLSearchParams => {
-  const cleanedParams = {
-    hostname: params.hostname || undefined,
-    os_name: params.os_name || undefined,
-    check_status: params.check_status || undefined,
-    sort_by: params.sort_by || 'hostname',
-    sort_order: params.sort_order === 'asc' || params.sort_order === 'desc' ? params.sort_order : 'asc',
-    page: params.page || 1,
-    limit: params.limit || 10,
-    server_filter: params.server_filter || undefined,
-    ip_range: params.ip_range || undefined, // Додано для сумісності з іншими функціями
-  };
+interface ApiRequestOptions extends AxiosRequestConfig {
+  paramsSerializer?: (params: any) => string;
+}
 
+export async function apiRequest<T>(
+  method: 'get' | 'post' | 'put' | 'patch' | 'delete',
+  url: string,
+  data?: any,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  try {
+    const response = await apiInstance({
+      method,
+      url,
+      data,
+      withCredentials: true,
+      ...options,
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
+}
+
+export const cleanAndSerializeParams = (params: Record<string, any>): URLSearchParams => {
   const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(cleanedParams)) {
-    if (value !== undefined && value !== '') {
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '' && value !== null) {
       searchParams.append(key, String(value));
     }
   }

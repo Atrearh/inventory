@@ -1,24 +1,14 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Popconfirm, message, Space } from 'antd';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery} from '@tanstack/react-query';
 import { DomainRead, DomainCreate, DomainUpdate } from '../types/schemas';
 import { createDomain, getDomains, updateDomain, deleteDomain, validateDomain, scanDomains } from '../api/domain.api';
 import { useModalForm } from '../hooks/useModalForm'; 
-
-// Утилітна функція для уніфікованої обробки помилок
-const getErrorMessage = (error: Error | any): string => {
-  if (error.response?.data?.detail) {
-    if (Array.isArray(error.response.data.detail)) {
-      return error.response.data.detail
-        .map((err: { msg: string; loc: string[] }) => `${err.loc.join('.')}: ${err.msg}`)
-        .join('; ');
-    }
-    return error.response.data.detail;
-  }
-  return error.message || 'Невідома помилка';
-};
+import { useTranslation } from 'react-i18next';
+import{  useApiMutation } from '../hooks/useApiMutation';
 
 const DomainManagement: React.FC = () => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [isValidating, setIsValidating] = useState(false);
   const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<DomainRead>({
@@ -39,52 +29,46 @@ const DomainManagement: React.FC = () => {
     refetchOnWindowFocus: false, // Вимикаємо повторний запит при фокусі
   });
 
-  // Мутації
-  const { mutate: createMutate, isPending: isCreating } = useMutation({
+
+  const { mutate: createMutate, isPending: isCreating } = useApiMutation({
     mutationFn: (payload: DomainCreate) => createDomain(payload),
-    onSuccess: () => {
-      message.success('Домен створено');
-      refetch();
-      handleCancel();
-    },
-    onError: (error: Error) => message.error(getErrorMessage(error)),
+    successMessage: t('domain_created'),
+    invalidateQueryKeys: [['domains']],
+    onSuccessCallback: () => handleCancel(),
   });
 
-  const { mutate: validateMutate, isPending: isValidatingConnection } = useMutation({
+  const { mutate: validateMutate, isPending: isValidatingConnection } = useApiMutation({
     mutationFn: (payload: DomainCreate) => validateDomain(payload),
-    onSuccess: (result) => message.success(result.message),
-    onError: (error: Error) => message.error(getErrorMessage(error)),
+    successMessage: t('connection_validated', { message: '{message}' }), // Placeholder для форматування
+    onSuccessCallback: (data: any) => {
+      // Форматуємо повідомлення з даними
+      message.success(t('connection_validated', { message: data.message }));
+    },
   });
 
-  const { mutate: scanDomainsMutate, isPending: isDomainADScanLoading } = useMutation({
+  const { mutate: scanDomainsMutate, isPending: isDomainADScanLoading } = useApiMutation({
     mutationFn: (domainId?: number) => scanDomains(domainId),
-    onSuccess: (data) => {
+    onSuccessCallback: (data: any) => {
       if (data.task_id) {
-        message.success(`Сканування AD для домену запущено, task_id: ${data.task_id}`);
+        message.success(t('domain_scan_started', { task_id: data.task_id }));
       } else if (data.task_ids) {
-        message.success(`Сканування всіх доменів запущено, task_ids: ${data.task_ids.join(', ')}`);
+        message.success(t('scan_all_domains_started', { task_ids: data.task_ids.join(', ') }));
       }
     },
-    onError: (error: Error) => message.error(`Помилка сканування AD: ${getErrorMessage(error)}`),
+    errorMessage: t('domain_scan_error'),
   });
 
-  const { mutate: updateMutate, isPending: isUpdating } = useMutation({
+  const { mutate: updateMutate, isPending: isUpdating } = useApiMutation({
     mutationFn: ({ id, data }: { id: number; data: DomainUpdate }) => updateDomain(id, data),
-    onSuccess: () => {
-      message.success('Домен оновлено');
-      refetch();
-      handleCancel();
-    },
-    onError: (error: Error) => message.error(getErrorMessage(error)),
+    successMessage: t('domain_updated'),
+    invalidateQueryKeys: [['domains']],
+    onSuccessCallback: () => handleCancel(),
   });
 
-  const { mutate: deleteMutate, isPending: isDeleting } = useMutation({
+  const { mutate: deleteMutate, isPending: isDeleting } = useApiMutation({
     mutationFn: (id: number) => deleteDomain(id),
-    onSuccess: () => {
-      message.success('Домен видалено');
-      refetch();
-    },
-    onError: (error: Error) => message.error(getErrorMessage(error)),
+    successMessage: t('domain_deleted'),
+    invalidateQueryKeys: [['domains']],
   });
 
   // Перевірка зв’язку
@@ -101,7 +85,8 @@ const DomainManagement: React.FC = () => {
       };
       validateMutate(payload);
     } catch (error: any) {
-      message.error(getErrorMessage(error));
+      // Обробка помилок валідатора форми
+      message.error(error.message || t('error'));
     } finally {
       setIsValidating(false);
     }
@@ -127,59 +112,57 @@ const DomainManagement: React.FC = () => {
         createMutate(createPayload as DomainCreate);
       }
     } catch (error: any) {
-      message.error(getErrorMessage(error));
+      // Обробка помилок валідатора форми
+      message.error(error.message || t('error'));
     }
   };
-
+  
   // Колонки таблиці
   const columns = useMemo(
     () => [
-      { title: 'Домен', dataIndex: 'name', key: 'name', sorter: (a: DomainRead, b: DomainRead) => a.name.localeCompare(b.name) },
-      { title: 'Користувач', dataIndex: 'username', key: 'username', sorter: (a: DomainRead, b: DomainRead) => a.username.localeCompare(b.username) },
-      { title: 'URL сервера', dataIndex: 'server_url', key: 'server_url' },
-      { title: 'AD Base DN', dataIndex: 'ad_base_dn', key: 'ad_base_dn' },
-      { title: 'Оновлено', dataIndex: 'last_updated', key: 'last_updated' },
+      { title: t('domain'), dataIndex: 'name', key: 'name', sorter: (a: DomainRead, b: DomainRead) => a.name.localeCompare(b.name) },
+      { title: t('username'), dataIndex: 'username', key: 'username', sorter: (a: DomainRead, b: DomainRead) => a.username.localeCompare(b.username) },
+      { title: t('server_url'), dataIndex: 'server_url', key: 'server_url' },
+      { title: t('ad_base_dn'), dataIndex: 'ad_base_dn', key: 'ad_base_dn' },
+      { title: t('last_updated'), dataIndex: 'last_updated', key: 'last_updated' },
       {
-        title: 'Дії',
+        title: t('actions'),
         key: 'actions',
         render: (_: any, record: DomainRead) => (
           <Space>
-            <Button onClick={() => openEditModal(record)} aria-label={`Редагувати домен ${record.name}`}>
-              Редагувати
+            <Button onClick={() => openEditModal(record)} aria-label={t('edit_domain', { name: record.name })}>
+              {t('edit')}
             </Button>
             <Button
               onClick={() => scanDomainsMutate(record.id)}
               loading={isDomainADScanLoading}
               disabled={isDomainADScanLoading}
-              aria-label={`Опитати домен ${record.name}`}
+              aria-label={t('scan_domain', { name: record.name })}
             >
-              Опитати домен
+              {t('scan_domain')}
             </Button>
             <Popconfirm
-              title="Впевнені, що хочете видалити домен?"
+              title={t('confirm_delete_domain')}
               onConfirm={() => deleteMutate(record.id)}
-              okText="Так"
-              cancelText="Ні"
+              okText={t('yes')}
+              cancelText={t('no')}
             >
-              <Button danger loading={isDeleting} aria-label={`Видалити домен ${record.name}`}>
-                Видалити
+              <Button danger loading={isDeleting} aria-label={t('delete_domain', { name: record.name })}>
+                {t('delete')}
               </Button>
             </Popconfirm>
           </Space>
         ),
       },
     ],
-    [isDeleting, isDomainADScanLoading, deleteMutate, openEditModal, scanDomainsMutate]
+    [isDeleting, isDomainADScanLoading, deleteMutate, openEditModal, scanDomainsMutate, t]
   );
 
   return (
     <div>
       <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" onClick={openCreateModal} aria-label="Додати новий домен">
-          Додати домен
-        </Button>
-        <Button onClick={() => refetch()} aria-label="Оновити список доменів">
-          Оновити список
+        <Button type="primary" onClick={openCreateModal} aria-label={t('add_domain')}>
+          {t('add_domain')}
         </Button>
       </Space>
 
@@ -189,98 +172,98 @@ const DomainManagement: React.FC = () => {
         rowKey="id"
         loading={isLoading}
         pagination={false}
-        aria-label="Таблиця доменів"
+        aria-label={t('domains_table')}
       />
 
       <Modal
-        title={editingItem ? 'Редагування домену' : 'Новий домен'}
+        title={editingItem ? t('edit_domain_title') : t('new_domain')}
         open={isModalOpen}
         onCancel={handleCancel}
         footer={[
-          <Button key="back" onClick={handleCancel} aria-label="Скасувати">
-            Відміна
+          <Button key="back" onClick={handleCancel} aria-label={t('cancel')}>
+            {t('cancel')}
           </Button>,
           <Button
             key="validate"
             loading={isValidatingConnection}
             onClick={handleValidate}
-            aria-label="Перевірити зв’язок з доменом"
+            aria-label={t('validate_connection')}
           >
-            Перевірити зв’язок
+            {t('validate_connection')}
           </Button>,
           <Button
             key="submit"
             type="primary"
             loading={isCreating || isUpdating}
             onClick={() => form.submit()}
-            aria-label={editingItem ? 'Зберегти зміни домену' : 'Створити домен'}
+            aria-label={editingItem ? t('save_domain_changes') : t('create_domain')}
           >
-            {editingItem ? 'Зберегти' : 'Створити'}
+            {editingItem ? t('save') : t('create')}
           </Button>,
         ]}
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
           <Form.Item
             name="name"
-            label="Домен"
+            label={t('domain')}
             rules={[
-              { required: true, message: 'Введіть назву домену' },
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { required: true, message: t('enter_domain') },
+              { whitespace: true, message: t('no_whitespace') },
               {
                 pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+$/,
-                message: 'Домен має містити лише літери, цифри, дефіси та точки (наприклад, example.com)',
+                message: t('invalid_domain_format'),
               },
             ]}
           >
-            <Input placeholder="Наприклад, example.com" />
+            <Input placeholder={t('domain_placeholder')} />
           </Form.Item>
           <Form.Item
             name="username"
-            label="Користувач"
+            label={t('username')}
             rules={[
-              { required: true, message: 'Введіть ім’я користувача' },
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { required: true, message: t('enter_username') },
+              { whitespace: true, message: t('no_whitespace') },
             ]}
-            tooltip={editingItem ? 'Заповніть у вигляді DOMEN\\USER' : undefined}
+            tooltip={editingItem ? t('username_format_tip') : undefined}
           >
-            <Input placeholder="Наприклад, admin" />
+            <Input placeholder={t('username_placeholder')} />
           </Form.Item>
           <Form.Item
             name="password"
-            label={editingItem ? 'Новий пароль (заповніть для зміни)' : 'Пароль'}
+            label={editingItem ? t('new_password') : t('password')}
             rules={editingItem ? [
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { whitespace: true, message: t('no_whitespace') },
             ] : [
-              { required: true, message: 'Введіть пароль' },
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { required: true, message: t('enter_password') },
+              { whitespace: true, message: t('no_whitespace') },
             ]}
-            tooltip={editingItem ? 'Заповніть це поле, лише якщо хочете змінити пароль' : undefined}
+            tooltip={editingItem ? t('password_change_tip') : undefined}
           >
-            <Input.Password placeholder="Введіть пароль" />
+            <Input.Password placeholder={t('password_placeholder')} />
           </Form.Item>
           <Form.Item
             name="server_url"
-            label="URL сервера"
+            label={t('server_url')}
             rules={[
-              { required: true, message: 'Введіть URL сервера' },
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { required: true, message: t('enter_server_url') },
+              { whitespace: true, message: t('no_whitespace') },
               {
                 pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+$/,
-                message: 'URL сервера має містити лише літери, цифри, дефіси та точки (наприклад, server.com)',
+                message: t('invalid_server_url_format'),
               },
             ]}
           >
-            <Input placeholder="Наприклад, server.com" />
+            <Input placeholder={t('server_url_placeholder')} />
           </Form.Item>
           <Form.Item
             name="ad_base_dn"
-            label="AD Base DN"
+            label={t('ad_base_dn')}
             rules={[
-              { required: true, message: 'Введіть AD Base DN' },
-              { whitespace: true, message: 'Поле не може містити лише пробіли' },
+              { required: true, message: t('enter_ad_base_dn') },
+              { whitespace: true, message: t('no_whitespace') },
             ]}
           >
-            <Input placeholder="Наприклад, DC=example,DC=com" />
+            <Input placeholder={t('ad_base_dn_placeholder')} />
           </Form.Item>
         </Form>
       </Modal>

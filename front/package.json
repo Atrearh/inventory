@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.80.6",
+    "@tanstack/react-table": "^8.21.3",
     "antd": "^5.26.0",
     "axios": "^1.9.0",
     "chart.js": "^4.5.0",
@@ -29,6 +30,7 @@
     "react-router-dom": "^6.27.0"
   },
   "devDependencies": {
+    "@types/chart.js": "^2.9.41",
     "@types/i18next-browser-languagedetector": "^2.0.2",
     "@types/lodash": "^4.17.20",
     "@types/node": "^24.0.1",
@@ -36,6 +38,7 @@
     "@types/react-dom": "^18.3.1",
     "@types/react-resizable": "^3.0.8",
     "@vitejs/plugin-react": "^4.3.3",
+    "@vitejs/plugin-react-swc": "^4.0.1",
     "typescript": "^5.2.2",
     "vite": "^6.3.5",
     "vite-plugin-run": "^0.6.1"

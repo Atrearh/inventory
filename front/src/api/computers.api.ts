@@ -1,45 +1,33 @@
+// front/src/api/computers.api.ts
+import { apiRequest, cleanAndSerializeParams } from '../utils/apiUtils';
 import { ComputersResponse, Computer, ComponentHistory } from '../types/schemas';
-import { apiInstance } from './api';
 import { Filters } from '../hooks/useComputerFilters';
-import { cleanAndSerializeParams } from '../utils/apiUtils';
 
-// Отримання списку комп’ютерів з бекенду
 export const getComputers = async (params: Filters) => {
-  const response = await apiInstance.get<ComputersResponse>('/computers', {
+  return apiRequest<ComputersResponse>('get', '/computers', undefined, {
     params: {
       ...params,
-      hostname: undefined, // Фільтрація на клієнтській стороні
-      os_name: undefined, // Фільтрація на клієнтській стороні
-      check_status: undefined, // Фільтрація на клієнтській стороні
-      sort_by: undefined, // Сортування на клієнтській стороні
-      sort_order: undefined, // Сортування на клієнтській стороні
+      hostname: undefined,
+      os_name: undefined,
+      check_status: undefined,
+      sort_by: undefined,
+      sort_order: undefined,
     },
     paramsSerializer: () => cleanAndSerializeParams(params).toString(),
-    withCredentials: true,
   });
-  return response.data;
 };
 
-// Отримання даних комп’ютера за ID
 export const getComputerById = async (computerId: number) => {
-  const response = await apiInstance.get<Computer>(`/computers/${computerId}`, { withCredentials: true });
-  return response.data;
+  return apiRequest<Computer>('get', `/computers/${computerId}`);
 };
 
-// Отримання історії компонентів комп’ютера
 export const getHistory = async (computerId: number): Promise<ComponentHistory[]> => {
-  const response = await apiInstance.get<ComponentHistory[]>(`/computers/${computerId}/history`, {
-    withCredentials: true,
-  });
-  return response.data;
+  return apiRequest('get', `/computers/${computerId}/history`);
 };
 
-// Експорт комп’ютерів у CSV
 export const exportComputersToCSV = async (params: Filters) => {
-  const response = await apiInstance.get('/computers/export/csv', {
+  return apiRequest('get', '/computers/export/csv', undefined, {
     paramsSerializer: () => cleanAndSerializeParams(params).toString(),
     responseType: 'blob',
-    withCredentials: true,
   });
-  return response.data;
 };

@@ -1,4 +1,4 @@
-import { apiInstance } from './api';
+import { apiRequest } from '../utils/apiUtils';
 
 export interface Task {
   id: string;
@@ -8,6 +8,5 @@ export interface Task {
 }
 
 export const getTasks = async (): Promise<Task[]> => {
-  const response = await apiInstance.get<Task[]>('/tasks', { withCredentials: true });
-  return response.data;
+  return apiRequest<Task[]>('get', '/tasks');
 };

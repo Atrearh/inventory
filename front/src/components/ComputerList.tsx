@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { notification, Skeleton, Table, Button } from 'antd';
-import { debounce } from 'lodash';
 import { useExportCSV } from '../hooks/useExportCSV';
 import { useComputers, useStatistics } from '../hooks/useApiQueries';
 import { Resizable } from 'react-resizable';
@@ -20,6 +19,7 @@ import 'react-resizable/css/styles.css';
 import { getDomains } from '../api/domain.api';
 import { ComputerListItem } from '../types/schemas';
 import { usePageTitle } from '../context/PageTitleContext';
+
 
 // Компонент для зміни розміру колонок
 const ResizableTitle = (props: any) => {

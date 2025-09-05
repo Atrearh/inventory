@@ -1,19 +1,15 @@
-import { Button, Form, Input, Table, Popconfirm, message, Modal, Space, Card } from 'antd';
-import { useMutation } from '@tanstack/react-query';
+import { Button, Form, Input, Table, Popconfirm, Modal, Space, Card } from 'antd';
+import { QueryKey } from '@tanstack/react-query';
 import { useMemo, useEffect } from 'react';
 import { startScan, register, updateUser, deleteUser } from '../api/api';
 import { scanDomains } from '../api/domain.api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useUsers } from '../hooks/useApiQueries';
-import { useModalForm } from '../hooks/useModalForm'; 
+import { useApiMutation } from '../hooks/useApiMutation'; // Імпортуємо хук
+import { useModalForm } from '../hooks/useModalForm';
 import DomainManagement from './DomainManagement';
 import { usePageTitle } from '../context/PageTitleContext';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-
-// Утилітна функція для уніфікованої обробки помилок
-const getErrorMessage = (error: Error | any, t: TFunction): string =>
-  error.response?.data?.detail || error.message || t('error');
 
 interface MutationResponse {
   status: string;
@@ -27,68 +23,58 @@ const AdminPanel: React.FC = () => {
   const [form] = Form.useForm();
   const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<UserRead>({ form });
   const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useUsers();
+  const usersQueryKey: QueryKey = ['users']; // Визначаємо queryKey для інвалідування
 
-  // Мутації
-  const { mutate: registerMutation, isPending: isRegisterLoading } = useMutation<UserRead, Error, UserCreate>({
+  // Мутації з використанням useApiMutation
+  const { mutate: registerMutation, isPending: isRegisterLoading } = useApiMutation<UserRead, UserCreate>({
     mutationFn: register,
-    onSuccess: () => {
-      message.success(t('register_success'));
-      refetchUsers();
-      handleCancel();
-    },
-    onError: (error: any) => message.error(`${t('register_error')}: ${getErrorMessage(error, t)}`),
+    successMessage: t('register_success'),
+    errorMessage: t('register_error'),
+    invalidateQueryKeys: [usersQueryKey],
+    onSuccessCallback: handleCancel,
   });
 
-  const { mutate: updateUserMutation, isPending: isUpdateLoading } = useMutation<
+  const { mutate: updateUserMutation, isPending: isUpdateLoading } = useApiMutation<
     UserRead,
-    Error,
     { id: number; data: Partial<UserUpdate> }
   >({
     mutationFn: ({ id, data }) => updateUser(id, data),
-    onSuccess: () => {
-      message.success(t('user_updated'));
-      refetchUsers();
-      handleCancel();
-    },
-    onError: (error: any) => message.error(`${t('update_error')}: ${getErrorMessage(error, t)}`),
+    successMessage: t('user_updated'),
+    errorMessage: t('update_error'),
+    invalidateQueryKeys: [usersQueryKey],
+    onSuccessCallback: handleCancel,
   });
 
-  const { mutate: deleteUserMutation } = useMutation<void, Error, number>({
+  const { mutate: deleteUserMutation } = useApiMutation<void, number>({
     mutationFn: deleteUser,
-    onSuccess: () => {
-      message.success(t('user_deleted'));
-      refetchUsers();
-    },
-    onError: (error: any) => message.error(`${t('delete_error')}: ${getErrorMessage(error, t)}`),
+    successMessage: t('user_deleted'),
+    errorMessage: t('delete_error'),
+    invalidateQueryKeys: [usersQueryKey],
   });
 
-  const { mutate: startScanMutation, isPending: isScanLoading } = useMutation<MutationResponse, Error, void>({
+  const { mutate: startScanMutation, isPending: isScanLoading } = useApiMutation<MutationResponse, void>({
     mutationFn: startScan,
-    onSuccess: (data) => message.success(t('scan_started', { task_id: data.task_id })),
-    onError: (error) => message.error(`${t('scan_error')}: ${getErrorMessage(error, t)}`),
+    successMessage: t('scan_started'), // task_id обробляється в mutationFn
+    errorMessage: t('scan_error'),
   });
 
-  const { mutate: scanAllDomainsMutation, isPending: isAllDomainsADScanLoading } = useMutation<MutationResponse, Error, void>({
-    mutationFn: () => scanDomains(),
-    onSuccess: (data) => message.success(t('scan_all_domains_started', { task_ids: data.task_ids?.join(', ') })),
-    onError: (error) => message.error(`${t('scan_all_domains_error')}: ${getErrorMessage(error, t)}`),
-  });
+const { mutate: scanAllDomainsMutation, isPending: isAllDomainsADScanLoading } = useApiMutation<MutationResponse, void>({
+  mutationFn: () => scanDomains(), // Викликаємо scanDomains без параметрів
+  successMessage: t('scan_all_domains_started findebug: true'), // Додаємо findbugs
+  errorMessage: t('scan_all_domains_error'),
+});
 
   // Обробка відправлення форми
   const onFinish = async (values: any) => {
-    try {
-      if (editingItem) {
-        updateUserMutation({ id: editingItem.id, data: values });
-      } else {
-        registerMutation(values);
-      }
-    } catch (error: any) {
-      message.error(getErrorMessage(error, t));
+    if (editingItem) {
+      updateUserMutation({ id: editingItem.id, data: values });
+    } else {
+      registerMutation(values);
     }
   };
 
   useEffect(() => {
-    setPageTitle(t('admin')); 
+    setPageTitle(t('admin'));
   }, [setPageTitle, t]);
 
   // Визначення стовпців таблиці

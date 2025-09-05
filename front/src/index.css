@@ -107,3 +107,19 @@ body::-webkit-scrollbar-thumb {
 body::-webkit-scrollbar-thumb:hover {
   background: var(--button-hover-bg);
 }
+
+.react-resizable-handle {
+  position: absolute;
+  right: -7px; /* Зміщено для центровки */
+  top: 0;
+  bottom: 0;
+  width: 14px; /* Збільшена ширина для легшого захоплення */
+  cursor: col-resize;
+  background: transparent;
+  z-index: 2; /* Вищий z-index для уникнення перекриття */
+  transition: background-color 0.2s ease;
+}
+
+.react-resizable-handle:hover {
+  background: rgba(24, 144, 255, 0.2); /* Легкий синій фон при наведенні */
+}

@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios';
+import { TFunction } from 'i18next';
 
 interface ApiErrorResponse {
   detail?: string;
@@ -6,23 +7,23 @@ interface ApiErrorResponse {
   errors?: any;
 }
 
-export function handleApiError(error: AxiosError<ApiErrorResponse> | any, defaultMessage?: string): Error {
+export function handleApiError(error: AxiosError<ApiErrorResponse> | any, t: TFunction, defaultMessage?: string): Error {
   if (error.code === 'ECONNREFUSED' || !error.response || error.response?.status === 503) {
-    return new Error('Сервер недоступний. Перевірте підключення до мережі.');
+    return new Error(t('server_unavailable', 'Сервер недоступний. Перевірте підключення до мережі.'));
   }
   if (error.response?.status === 404) {
-    return new Error('Ресурс не знайдено');
+    return new Error(t('resource_not_found', 'Ресурс не знайдено'));
   }
   if (error.response?.status === 401) {
-    return new Error('Ваша сесія закінчилася. Будь ласка, увійдіть знову.');
+    return new Error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
   }
   if (error.response?.status === 500) {
-    return new Error('Внутрішня помилка сервера');
+    return new Error(t('internal_server_error', 'Внутрішня помилка сервера'));
   }
   const message =
     error.response?.data?.detail ||
     error.response?.data?.message ||
     defaultMessage ||
-    'Невідома помилка';
+    t('unknown_error', 'Невідома помилка');
   return new Error(message);
 }

@@ -225,5 +225,8 @@
   "output": "Output",
   "close": "Close",
   "update_policies_error": "Error updating policies",
-  "restart_print_error": "Error restarting print"
+  "restart_print_error": "Error restarting print",
+  "server_unavailable": "Server unavailable. Please check your network connection.",
+  "resource_not_found": "Resource not found",
+  "internal_server_error": "Internal server error"
 }

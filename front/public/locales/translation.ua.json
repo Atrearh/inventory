@@ -71,7 +71,7 @@
   "enter_local_notes": "Введіть локальні примітки",
   "notes_saved": "Локальні примітки збережено",
   "error_saving_notes": "Помилка збереження приміток",
-  "session_expired": "Ваша сесія закінчилася. Будь ласка, увійдіть знову.",
+  "session_expired": "Ваша сесія закінчилася. Будь ласка, увійді disassociate знову.",
   "model": "Модель",
   "serial_number": "Серійний номер",
   "interface": "Інтерфейс",
@@ -228,5 +228,9 @@
   "output": "Вивід",
   "close": "Закрити",
   "update_policies_error": "Помилка оновлення політик",
-  "restart_print_error": "Помилка перезапуску друку"
+  "restart_print_error": "Помилка перезапуску друку",
+  "app_title": "Ім’я програми",
+  "server_unavailable": "Сервер недоступний. Перевірте підключення до мережі.",
+  "resource_not_found": "Ресурс не знайдено",
+  "internal_server_error": "Внутрішня помилка сервера"
 }

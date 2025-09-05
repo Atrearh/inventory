@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { notification, Skeleton, Table, Button } from 'antd';
 import { useExportCSV } from '../hooks/useExportCSV';
 import { useComputers, useStatistics } from '../hooks/useApiQueries';
@@ -11,7 +10,6 @@ import type { TableProps } from 'antd';
 import styles from './ComputerList.module.css';
 import { useComputerFilters } from '../hooks/useComputerFilters';
 import ComputerFiltersPanel from './ComputerFiltersPanel';
-import { handleApiError } from '../utils/apiErrorHandler';
 import { AxiosError } from 'axios';
 import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
@@ -19,7 +17,7 @@ import 'react-resizable/css/styles.css';
 import { getDomains } from '../api/domain.api';
 import { ComputerListItem } from '../types/schemas';
 import { usePageTitle } from '../context/PageTitleContext';
-
+import { usePersistentState } from '../hooks/usePersistentState';
 
 // Компонент для зміни розміру колонок
 const ResizableTitle = (props: any) => {
@@ -44,7 +42,7 @@ const ResizableTitle = (props: any) => {
       onResize={onResize}
       draggableOpts={{ enableUserSelectHack: false }}
     >
-      <th {...restProps} />
+      <th {...restProps} style={{ ...restProps.style, position: 'relative' }} />
     </Resizable>
   );
 };
@@ -55,7 +53,14 @@ const ComputerListComponent: React.FC = () => {
   const { timezone } = useTimezone();
   const { setPageTitle } = usePageTitle();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
-  const [columnWidths, setColumnWidths] = useState({
+  const [columnWidths, setColumnWidths] = usePersistentState<{
+    hostname: number;
+    domain_id: number;
+    ip_addresses: number;
+    os_name: number;
+    check_status: number;
+    last_full_scan: number;
+  }>('columnWidths', {
     hostname: 200,
     domain_id: 100,
     ip_addresses: 150,
@@ -132,6 +137,16 @@ const ComputerListComponent: React.FC = () => {
     }
   };
 
+  const getLastScanColor = (scanDate: string | null) => {
+    if (!scanDate) return '#000'; // Чорний за замовчуванням
+    const date = new Date(scanDate);
+    const now = new Date();
+    const diffDays = (now.getTime() - date.getTime()) / (1000 * 3600 * 24);
+    if (diffDays <= 7) return '#52c41a'; // Зелений для сканувань за останній тиждень
+    if (diffDays <= 14) return '#faad14'; // Помаранчевий для 1–2 тижнів
+    return '#ff4d4f'; // Червоний для старіших
+  };
+
   const columns = useMemo<TableProps<ComputerListItem>['columns']>(
     () => [
       {
@@ -171,7 +186,11 @@ const ComputerListComponent: React.FC = () => {
         sorter: true,
         width: columnWidths.last_full_scan,
         sortOrder: filters.sort_by === 'last_full_scan' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
-        render: (text: string | null) => (text ? formatDateInUserTimezone(text, timezone) : '-'),
+        render: (text: string | null) => (
+          <span style={{ color: getLastScanColor(text) }}>
+            {text ? formatDateInUserTimezone(text, timezone) : '-'}
+          </span>
+        ),
       },
       {
         title: t('check_status', 'Статус перевірки'),
@@ -196,12 +215,15 @@ const ComputerListComponent: React.FC = () => {
     [t, filters.sort_by, filters.sort_order, columnWidths, timezone]
   ) as NonNullable<TableProps<ComputerListItem>['columns']>;
 
-  const handleResize = useCallback((key: keyof typeof columnWidths) => (_: any, { size }: { size: { width: number } }) => {
-      setColumnWidths((prev) => ({
+  const handleResize = useCallback(
+    (key: keyof typeof columnWidths) => (_: any, { size }: { size: { width: number } }) => {
+      setColumnWidths((prev: typeof columnWidths) => ({
         ...prev,
         [key]: size.width,
       }));
-    }, []);
+    },
+    [setColumnWidths]
+  );
 
   const resizableColumns = columns.map((col) => ({
     ...col,
@@ -212,12 +234,8 @@ const ComputerListComponent: React.FC = () => {
   }));
 
   if (computersError || statsError) {
-    const error = handleApiError((computersError || statsError) as AxiosError, t('error', 'Помилка'));
     if ((computersError as AxiosError)?.response?.status === 401 || (statsError as AxiosError)?.response?.status === 401) {
-      notification.error({ message: t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.') });
       navigate('/login');
-    } else {
-      notification.error({ message: error.message });
     }
   }
 
@@ -225,10 +243,6 @@ const ComputerListComponent: React.FC = () => {
     <div className={styles.container}>
       {isComputersLoading || isStatsLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
-      ) : computersError || statsError ? (
-        <div className={styles.error}>
-          {t('error', 'Помилка')}: {(computersError || statsError)?.message}
-        </div>
       ) : (
         <>
           <h2 className={styles.title}>

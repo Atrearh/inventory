@@ -12,10 +12,8 @@ from typing import List, Optional, Dict, Any
 import logging
 import io
 import csv
-from ..settings import settings
 from .auth import get_current_user
 import re
-from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +36,7 @@ async def export_computers_to_csv(
     async def generate_csv():
         output = io.StringIO()
         writer = csv.writer(output, delimiter=';', lineterminator='\n', quoting=csv.QUOTE_ALL)
-        output.write('\ufeff')  # BOM для корректного отображения кириллицы в Excel
+        output.write('\ufeff')
         
         header = [ 
             'IP', 'Назва', 'RAM', 'MAC', 'Материнська плата', 'Имя ОС',

@@ -1,11 +1,12 @@
+# app/utils/validators.py
 import logging
 import re
 import ipaddress
 from typing import Annotated
 from pydantic import AfterValidator, PlainValidator
+from .security import validate_allowed_ips
 
 logger = logging.getLogger(__name__)
-
 
 def validate_non_empty_str(v: str) -> str:
     """Перевіряє, що рядок не є порожнім після видалення пробілів."""
@@ -53,9 +54,42 @@ def validate_domain_name_format(v: str) -> str:
         raise ValueError("Доменне ім'я має містити лише літери, цифри, дефіси та точки (наприклад, server.com)")
     return v
 
+def validate_database_url_format(v: str) -> str:
+    """Валідація database_url: має починатися з 'mysql+', 'postgresql+' або 'sqlite+'."""
+    if v and not v.startswith(('mysql+', 'postgresql+', 'sqlite+')):
+        raise ValueError("database_url повинен починатися з 'mysql+', 'postgresql+' або 'sqlite+'")
+    return v
 
+def validate_winrm_cert_validation_format(v: str) -> str:
+    """Валідація winrm_server_cert_validation: має бути 'validate' або 'ignore'."""
+    if v and v not in ["validate", "ignore"]:
+        raise ValueError("winrm_server_cert_validation має бути 'validate' або 'ignore'")
+    return v
 
+def validate_cors_origins_format(v: str) -> str:
+    """Валідація cors_allow_origins: має містити валідні origins."""
+    if v:
+        origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        if not origins:
+            raise ValueError("CORS origins не можуть бути порожніми")
+        for origin in origins:
+            if not origin.startswith(("http://", "https://")):
+                raise ValueError(f"Недопустимий origin: {origin}. Повинен починатися з http:// або https://")
+    return v
+
+def validate_secret_key_format(v: str) -> str:
+    """Валідація secret_key: має бути довжиною не менше 32 символів."""
+    if v and len(v) < 32:
+        raise ValueError("SECRET_KEY повинен бути довжиною не менше 32 символів для безпеки")
+    return v
+
+# Кастомні типи з валідацією
 HostnameStr = Annotated[NonEmptyStr, AfterValidator(validate_hostname_format)]
 MACAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_mac_address_format)]
 IPAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_ip_address_format)]
 DomainNameStr = Annotated[NonEmptyStr, AfterValidator(validate_domain_name_format)]
+DatabaseURLStr = Annotated[NonEmptyStr, AfterValidator(validate_database_url_format)]
+WinRMCertValidationStr = Annotated[NonEmptyStr, AfterValidator(validate_winrm_cert_validation_format)]
+CORSOriginsStr = Annotated[NonEmptyStr, AfterValidator(validate_cors_origins_format)]
+SecretKeyStr = Annotated[NonEmptyStr, AfterValidator(validate_secret_key_format)]
+AllowedIPsStr = Annotated[NonEmptyStr, AfterValidator(validate_allowed_ips)]

@@ -1,3 +1,4 @@
+# app/dependencies.py
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from .database import get_db_session
@@ -7,15 +8,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Глобальний екземпляр WinRMService
-winrm_service = None
-
-async def get_winrm_service(db: AsyncSession = Depends(get_db_session)):
+async def get_winrm_service(db: AsyncSession = Depends(get_db_session), encryption_service=Depends(get_encryption_service)):
     """Отримує ініціалізований екземпляр WinRMService."""
-    global winrm_service
-    if winrm_service is None:
-        encryption_service = get_encryption_service()
-        winrm_service = WinRMService(encryption_service, db)
-        await winrm_service.initialize()
-        logger.info("WinRMService ініціалізовано")
+    winrm_service = WinRMService(encryption_service, db)
+    await winrm_service.initialize()
+    logger.info("WinRMService ініціалізовано")
     return winrm_service

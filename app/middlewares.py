@@ -1,14 +1,14 @@
+# app/middlewares.py
 import uuid
 import logging
 from fastapi import Request, HTTPException, status
-from app.utils.security import is_ip_allowed # Імпортуємо нову утиліту
+from .utils.security import is_ip_allowed
 
 logger = logging.getLogger(__name__)
 
 async def add_correlation_id(request: Request, call_next):
     """Додає унікальний correlation_id для кожного запиту."""
     correlation_id = str(uuid.uuid4())
-    # Використовуємо logger, а не створюємо новий адаптер
     request.state.logger = logger
     request.state.correlation_id = correlation_id
     logger.debug(f"Установлено correlation_id {correlation_id} для запиту")
@@ -29,8 +29,12 @@ async def check_ip_allowed(request: Request, call_next):
     client_ip = request.client.host
     request_logger = getattr(request.state, 'logger', logger)
     request_logger.debug(f"Перевірка IP: {client_ip}")
-
-    # Використовуємо утиліту для перевірки
+    
+    # Якщо allowed_ip_networks порожній, дозволяємо всі IP
+    if not hasattr(request.app.state, 'allowed_ip_networks') or not request.app.state.allowed_ip_networks:
+        request_logger.warning(f"ALLOWED_IPS не ініціалізовано, дозволяємо доступ для IP: {client_ip}")
+        return await call_next(request)
+    
     if not is_ip_allowed(client_ip, request.app.state.allowed_ip_networks):
         request_logger.warning(f"Доступ заборонено для IP: {client_ip}")
         raise HTTPException(
@@ -38,3 +42,10 @@ async def check_ip_allowed(request: Request, call_next):
             detail="Доступ заборонено: IP не дозволено"
         )
     return await call_next(request)
+
+def register_middlewares(app):
+    """Реєструє всі middleware для додатка FastAPI."""
+    app.middleware("http")(add_correlation_id)
+    app.middleware("http")(log_requests)
+    app.middleware("http")(check_ip_allowed)
+    logger.info("Middleware успішно зареєстровано")

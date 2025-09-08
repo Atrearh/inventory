@@ -1,3 +1,4 @@
+# app/logging_config.py
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -15,8 +16,11 @@ def setup_logging(log_level: str = "DEBUG") -> logging.Logger:
     """
     valid_log_levels = {'NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
     log_level = log_level.upper()
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Виклик setup_logging з log_level={log_level}")
+    
     if log_level not in valid_log_levels:
-        logging.warning(f"Недопустимий рівень логування: {log_level}. Встановлено рівень за замовчуванням: DEBUG")
+        logger.warning(f"Недопустимий рівень логування: {log_level}. Встановлено рівень за замовчуванням: DEBUG")
         log_level = 'DEBUG'
 
     # Створюємо директорію для логів
@@ -46,12 +50,29 @@ def setup_logging(log_level: str = "DEBUG") -> logging.Logger:
     file_handler.setFormatter(log_formatter)
 
     # Налаштування основного логера
-    logger = logging.getLogger()
-    if logger.handlers:
-        logger.handlers.clear()
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-    logger.setLevel(getattr(logging, log_level))
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        root_logger.handlers.clear()
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(getattr(logging, log_level))
 
-    logger.debug("Логування налаштовано з рівнем %s", log_level)
-    return logger
+    logger.debug(f"Логування налаштовано з рівнем {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}")
+    return root_logger
+
+def update_logging_level(log_level: str):
+    """Оновлює рівень логування для всіх обробників."""
+    valid_log_levels = {'NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
+    log_level = log_level.upper()
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Виклик update_logging_level з log_level={log_level}")
+    
+    if log_level not in valid_log_levels:
+        logger.warning(f"Недопустимий рівень логування: {log_level}. Залишаємо поточний рівень.")
+        return
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, log_level))
+    for handler in root_logger.handlers: 
+        handler.setLevel(getattr(logging, log_level))
+    logger.info(f"Рівень логування оновлено: {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}")

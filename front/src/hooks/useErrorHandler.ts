@@ -1,8 +1,8 @@
-// src/hooks/useErrorHandler.ts
 import { useCallback } from 'react';
 import { notification } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { handleApiError } from '../utils/apiErrorHandler';
+import { AxiosError } from 'axios';
 
 interface ApiErrorResponse {
   detail?: string;
@@ -14,10 +14,10 @@ export const useErrorHandler = () => {
   const { t } = useTranslation();
 
   const handleError = useCallback(
-    (error: any, defaultMessage?: string) => {
-      const errorObj = handleApiError(error, defaultMessage);
+    (error: AxiosError<ApiErrorResponse> | any, defaultMessage?: string) => {
+      const errorObj = handleApiError(error, t, defaultMessage);
       notification.error({
-        message: t('error', 'Помилка'),
+        message: t('error'),
         description: errorObj.message,
       });
       return errorObj;

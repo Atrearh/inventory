@@ -40,7 +40,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "@vitejs/plugin-react-swc": "^4.0.1",
     "typescript": "^5.2.2",
-    "vite": "^6.3.5",
+    "vite": "^7.1.5",
     "vite-plugin-run": "^0.6.1"
   }
 }

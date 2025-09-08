@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { getComputerById, getHistory } from '../api/api';
-import { Skeleton, Typography, Tabs, Card, Table, Space } from 'antd';
+import { getComputerById, getHistory, executeScript } from '../api/api';
+import { Skeleton, Typography, Tabs, Card, Table, Space, Button, Modal, notification } from 'antd';
 import GeneralInfo from './GeneralInfo';
 import ActionPanel from './ActionPanel';
 import HardwareInfo from './HardwareInfo';
@@ -9,11 +9,12 @@ import styles from './ComputerDetail.module.css';
 import { differenceInDays } from 'date-fns';
 import { ComponentHistory, Software } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
-import { useTimezone } from '../context/TimezoneContext'; 
+import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
 import { useTranslation } from 'react-i18next';
 import { handleApiError } from '../utils/apiErrorHandler';
-
+import { useErrorHandler } from '../hooks/useErrorHandler';
+import { useState } from 'react';
 
 const { Title } = Typography;
 
@@ -23,6 +24,9 @@ const ComputerDetail: React.FC = () => {
   const computerIdNum = Number(computerId);
   const { isAuthenticated } = useAuth();
   const { timezone } = useTimezone();
+  const queryClient = useQueryClient();
+  const handleError = useErrorHandler();
+  const [isLoading, setIsLoading] = useState(false);
 
   const { data: computer, error: compError, isLoading: compLoading } = useQuery({
     queryKey: ['computer', computerIdNum],
@@ -36,6 +40,31 @@ const ComputerDetail: React.FC = () => {
     enabled: !isNaN(computerIdNum) && isAuthenticated,
   });
 
+  const handleUninstall = async (hostname: string, programName: string) => {
+    Modal.confirm({
+      title: t('confirm_uninstall', 'Видалити програму {programName}?'),
+      okButtonProps: { loading: isLoading },
+      onOk: async () => {
+        setIsLoading(true);
+        try {
+          const response = await executeScript(hostname, 'uninstall_program.ps1', { ProgramName: programName });
+          if (!response.Success) {
+            throw new Error(response.Errors?.join(", ") || response.error || 'Unknown error');
+          }
+          queryClient.invalidateQueries({ queryKey: ['computer', computerIdNum] });
+          notification.success({
+            message: t('success'),
+            description: t('program_uninstalled', { programName }),
+          });
+        } catch (error) {
+          handleError(error, t('failed_to_uninstall', { programName }));
+        } finally {
+          setIsLoading(false);
+        }
+      },
+    });
+  };
+
   if (isNaN(computerIdNum)) {
     return <div className={styles.error}>{t('invalid_computer_id')}</div>;
   }
@@ -45,7 +74,7 @@ const ComputerDetail: React.FC = () => {
   }
 
   if (compError) {
-    return <div className={styles.error}>{t('error')}: {handleApiError(compError).message}</div>;
+    return <div className={styles.error}>{t('error')}: {handleApiError(compError, t).message}</div>;
   }
 
   if (!computer) {
@@ -70,6 +99,19 @@ const ComputerDetail: React.FC = () => {
       key: 'InstallDate',
       render: (val: string) => formatDateInUserTimezone(val, timezone, 'dd.MM.yyyy'),
       sorter: (a: Software, b: Software) => new Date(a.InstallDate || 0).getTime() - new Date(b.InstallDate || 0).getTime(),
+    },
+    {
+      title: t('actions'),
+      key: 'actions',
+      render: (_: any, record: Software) => (
+        <Button
+          type="primary"
+          danger
+          onClick={() => handleUninstall(computer.hostname, record.DisplayName)}
+        >
+          {t('delete')}
+        </Button>
+      ),
     },
   ];
 
@@ -96,7 +138,7 @@ const ComputerDetail: React.FC = () => {
       label: t('overview'),
       children: (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <Card title={t('general_information')}>
+          <Card>
             <GeneralInfo computer={computer} lastCheckDate={lastCheckDate} lastCheckColor={lastCheckColor} />
           </Card>
           <Card title={t('actions')}>
@@ -150,7 +192,7 @@ const ComputerDetail: React.FC = () => {
       </Title>
       <Tabs defaultActiveKey="1" items={tabItems} />
     </div>
-  ); 
+  );
 };
 
 export default ComputerDetail;

@@ -1,43 +1,31 @@
-# Вимикаємо помилки
 $ErrorActionPreference = "SilentlyContinue"
+$result = @{ Success = $true; Errors = @() }
 
-# 1. Зупинити процеси OneDrive
-Write-Host "Stopping OneDrive..."
-Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
+try {
+    Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
+    $oneDrivePaths = @("C:\Windows\System32\OneDriveSetup.exe", "C:\Windows\SysWOW64\OneDriveSetup.exe")
+    foreach ($path in $oneDrivePaths) {
+        if (Test-Path $path) { Start-Process -FilePath $path -ArgumentList "/uninstall" -NoNewWindow -Wait }
+    }
 
-# 2. Видалити сам застосунок OneDrive (x64 та x86)
-Write-Host "Uninstalling OneDrive..."
-Start-Process -FilePath "C:\Windows\System32\OneDriveSetup.exe" -ArgumentList "/uninstall" -NoNewWindow -Wait
-Start-Process -FilePath "C:\Windows\SysWOW64\OneDriveSetup.exe" -ArgumentList "/uninstall" -NoNewWindow -Wait
+    Get-ChildItem 'C:\Users' -Directory | ForEach-Object {
+        $paths = @("$($_.FullName)\OneDrive", "$($_.FullName)\AppData\Local\Microsoft\OneDrive", "$($_.FullName)\AppData\Roaming\Microsoft\OneDrive")
+        foreach ($p in $paths) { if (Test-Path $p) { Remove-Item -LiteralPath $p -Force -Recurse } }
+    }
 
-# 3. Видалити залишки в профілях користувачів
-Write-Host "Removing OneDrive folders from user profiles..."
-Get-ChildItem 'C:\Users' -Directory | ForEach-Object {
-    $userProfile = $_.FullName
-    Remove-Item -LiteralPath "$userProfile\OneDrive" -Force -Recurse -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath "$userProfile\AppData\Local\Microsoft\OneDrive" -Force -Recurse -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath "$userProfile\AppData\Roaming\Microsoft\OneDrive" -Force -Recurse -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath "$userProfile\AppData\Local\OneDrive" -Force -Recurse -ErrorAction SilentlyContinue
+    @("C:\OneDriveTemp", "C:\ProgramData\Microsoft OneDrive") | ForEach-Object { if (Test-Path $_) { Remove-Item -Path $_ -Recurse -Force } }
+
+    $policyPath = "HKLM:\Software\Policies\Microsoft\Windows\OneDrive"
+    if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+    Set-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Value 1 -Force
+
+    @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Run", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run") | ForEach-Object {
+        if (Get-ItemProperty -Path $_ -Name "OneDrive" -ErrorAction SilentlyContinue) { Remove-ItemProperty -Path $_ -Name "OneDrive" }
+    }
+}
+catch {
+    $result.Success = $false
+    $result.Errors += $_.Exception.Message
 }
 
-# 4. Очистити загальні папки OneDrive
-Write-Host "Removing global OneDrive folders..."
-Remove-Item -Path "C:\OneDriveTemp" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "C:\ProgramData\Microsoft OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
-
-# 5. Видалити залишки в реєстрі (автозапуск)
-Write-Host "Cleaning OneDrive registry entries..."
-Remove-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -ErrorAction SilentlyContinue
-Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Value 1 -Force
-
-# 6. Очистити OneDrive із автозапуску (на всякий випадок)
-Write-Host "Disabling OneDrive autorun..."
-$runKeys = @(
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
-)
-foreach ($key in $runKeys) {
-    Remove-ItemProperty -Path $key -Name "OneDrive" -ErrorAction SilentlyContinue
-}
-
-Write-Host "`n✅ OneDrive has been removed and cleaned from all users."
+ConvertTo-Json -InputObject $result -Compress

@@ -4,22 +4,29 @@ import HttpBackend from 'i18next-http-backend';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
 i18n
-  .use(HttpBackend) 
-  .use(LanguageDetector) 
+  .use(HttpBackend)
+  .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    fallbackLng: 'ua', 
+    fallbackLng: 'ua',
     debug: import.meta.env.DEV,
     interpolation: {
-      escapeValue: false
+      escapeValue: false,
     },
     backend: {
-      loadPath: '/locales/translation.{{lng}}.json', 
+      loadPath: '/locales/translation.{{lng}}.json',
+      requestOptions: {
+        cache: 'default',
+      },
     },
     detection: {
-      order: ['querystring', 'localStorage', 'navigator'], 
-      caches: ['localStorage'] 
-    }
+      order: ['querystring', 'localStorage', 'navigator'],
+      caches: ['localStorage'],
+    },
+    cache: {
+      enabled: true,
+      expirationTime: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
   });
 
 export default i18n;

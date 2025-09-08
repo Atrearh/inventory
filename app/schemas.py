@@ -23,33 +23,43 @@ class TrackableComponent(BaseSchema):
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
 
-# --- Схеми компонентів комп'ютера ---
-
-class Role(TrackableComponent):
-    name: NonEmptyStr = Field(..., alias="Name")
-
+class ComponentSchema(BaseSchema):
     @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['Role']:
-        """Перетворює сирі дані ролей у список Pydantic-схем."""
-        if not isinstance(raw_data, (list, str)):
-            logger.warning(f"Некоректні дані ролей: {raw_data}", extra={"hostname": hostname})
-            return []
-        data_list = [raw_data] if isinstance(raw_data, str) else raw_data
-        seen_identifiers = set()
-        result = []
+    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['ComponentSchema']:
+        if not isinstance(raw_data, list):
+            raw_data = [raw_data] if raw_data else []
 
-        for item in data_list:
+        result = []
+        seen_identifiers = set()
+        
+        # Визначаємо поле, яке буде унікальним ідентифікатором
+        identifier_field = getattr(cls, '_identifier_field', 'name')
+
+        for item in raw_data:
+            if not isinstance(item, dict):
+                logger.warning(f"Некоректні дані для {cls.__name__}: {item}", extra={"hostname": hostname})
+                continue
+            
             try:
-                name = item.strip() if isinstance(item, str) else item.get("name", "").strip()
-                if not name or name in seen_identifiers:
+                identifier = item.get(identifier_field, "").strip()
+                if not identifier or identifier in seen_identifiers:
                     continue
-                seen_identifiers.add(name)
-                result.append(cls(name=name))
+                
+                seen_identifiers.add(identifier)
+                result.append(cls.model_validate(item))
             except Exception as e:
-                logger.warning(f"Помилка обробки ролі: {str(e)}", extra={"data": item, "hostname": hostname})
+                logger.warning(f"Помилка обробки {cls.__name__}: {str(e)}", extra={"data": item, "hostname": hostname})
+        
         return result
 
-class Software(TrackableComponent):
+# --- Схеми компонентів комп'ютера ---
+
+class Role(ComponentSchema, TrackableComponent):
+    _identifier_field = "name"
+    name: NonEmptyStr = Field(..., alias="Name")
+
+class Software(ComponentSchema, TrackableComponent):
+    _identifier_field = "name"
     name: str = Field(..., alias="DisplayName", min_length=1)
     version: Optional[str] = Field("Unknown", alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
@@ -67,33 +77,8 @@ class Software(TrackableComponent):
             logger.warning(f"Некоректний формат install_date: {v}, повертаємо None")
             return None
 
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['Software']:
-        """Перетворює сирі дані програмного забезпечення у список Pydantic-схем."""
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-        seen_identifiers = set()
-        result = []
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані ПЗ: {item}", extra={"hostname": hostname})
-                continue
-            try:
-                name = item.get("DisplayName", item.get("name", "")).strip()
-                if not name or name in seen_identifiers:
-                    continue
-                seen_identifiers.add(name)
-                result.append(cls(
-                    name=name,
-                    version=item.get("version", "Unknown"),
-                    install_date=item.get("install_date")
-                ))
-            except Exception as e:
-                logger.warning(f"Помилка обробки ПЗ: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class PhysicalDisk(TrackableComponent):
+class PhysicalDisk(ComponentSchema, TrackableComponent):
+    _identifier_field = "serial"
     id: Optional[int] = None
     computer_id: Optional[int] = None
     model: Optional[NonEmptyStr] = Field(None, alias="model", max_length=255)
@@ -103,9 +88,9 @@ class PhysicalDisk(TrackableComponent):
 
     @classmethod
     def from_raw_data(cls, raw_data: Any, hostname: str) -> List['PhysicalDisk']:
-        """Перетворює сирі дані фізичних дисків у список Pydantic-схем."""
         if not isinstance(raw_data, list):
             raw_data = [raw_data] if raw_data else []
+
         seen_identifiers = set()
         result = []
 
@@ -131,7 +116,8 @@ class PhysicalDisk(TrackableComponent):
                 logger.warning(f"Помилка обробки диска: {str(e)}", extra={"data": item, "hostname": hostname})
         return result
 
-class LogicalDisk(TrackableComponent):
+class LogicalDisk(ComponentSchema, TrackableComponent):
+    _identifier_field = "device_id"
     device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", max_length=255)
     volume_label: Optional[str] = Field(None, alias="volume_label", max_length=255)
     total_space: int = Field(ge=0, alias="total_space")
@@ -153,101 +139,24 @@ class LogicalDisk(TrackableComponent):
     def free_space_gb(self) -> Optional[float]:
         return self.free_space / (1024 ** 3) if self.free_space is not None else None
 
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['LogicalDisk']:
-        """Перетворює сирі дані логічних дисків у список Pydantic-схем."""
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-        seen_identifiers = set()
-        result = []
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані логічного диска: {item}", extra={"hostname": hostname})
-                continue
-            try:
-                device_id = item.get("device_id", "").strip()
-                if not device_id or device_id in seen_identifiers:
-                    continue
-                seen_identifiers.add(device_id)
-                result.append(cls(
-                    device_id=device_id,
-                    volume_label=item.get("volume_label"),
-                    total_space=item.get("total_space", 0),
-                    free_space=item.get("free_space"),
-                    parent_disk_serial=item.get("parent_disk_serial")
-                ))
-            except Exception as e:
-                logger.warning(f"Помилка обробки логічного диска: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class VideoCard(TrackableComponent):
+class VideoCard(ComponentSchema, TrackableComponent):
+    _identifier_field = "name"
     id: Optional[int] = None
     name: NonEmptyStr = Field(..., alias="name")
     driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
 
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['VideoCard']:
-        """Перетворює сирі дані відеокарт у список Pydantic-схем."""
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-        seen_identifiers = set()
-        result = []
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані відеокарти: {item}", extra={"hostname": hostname})
-                continue
-            try:
-                name = item.get("name", "").strip()
-                if not name or name in seen_identifiers:
-                    continue
-                seen_identifiers.add(name)
-                result.append(cls(
-                    name=name,
-                    driver_version=item.get("driver_version")
-                ))
-            except Exception as e:
-                logger.warning(f"Помилка обробки відеокарти: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class Processor(TrackableComponent):
+class Processor(ComponentSchema, TrackableComponent):
+    _identifier_field = "name"
     name: NonEmptyStr = Field(..., alias="name")
     number_of_cores: int = Field(..., alias="number_of_cores")
     number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
 
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['Processor']:
-        """Перетворює сирі дані процесорів у список Pydantic-схем."""
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-        seen_identifiers = set()
-        result = []
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані процесора: {item}", extra={"hostname": hostname})
-                continue
-            try:
-                name = item.get("name", "").strip()
-                if not name or name in seen_identifiers:
-                    continue
-                seen_identifiers.add(name)
-                result.append(cls(
-                    name=name,
-                    number_of_cores=item.get("number_of_cores", 0),
-                    number_of_logical_processors=item.get("number_of_logical_processors", 0)
-                ))
-            except Exception as e:
-                logger.warning(f"Помилка обробки процесора: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class IPAddress(TrackableComponent):
+class IPAddress(ComponentSchema, TrackableComponent):
+    _identifier_field = "address"
     address: IPAddressStr
 
     @classmethod
     def from_raw_data(cls, raw_data: Any, hostname: str) -> List['IPAddress']:
-        """Перетворює сирі дані IP-адрес у список Pydantic-схем."""
         if not isinstance(raw_data, (list, str)):
             logger.warning(f"Некоректні дані IP: {raw_data}", extra={"hostname": hostname})
             return []
@@ -266,12 +175,12 @@ class IPAddress(TrackableComponent):
                 logger.warning(f"Помилка обробки IP: {str(e)}", extra={"data": item, "hostname": hostname})
         return result
 
-class MACAddress(TrackableComponent):
+class MACAddress(ComponentSchema, TrackableComponent):
+    _identifier_field = "address"
     address: MACAddressStr
 
     @classmethod
     def from_raw_data(cls, raw_data: Any, hostname: str) -> List['MACAddress']:
-        """Перетворює сирі дані MAC-адрес у список Pydantic-схем."""
         if not isinstance(raw_data, (list, str)):
             logger.warning(f"Некоректні дані MAC: {raw_data}", extra={"hostname": hostname})
             return []
@@ -342,8 +251,6 @@ class ComputerList(ComputerBase):
     id: int
     last_updated: Optional[datetime] = None
     last_full_scan: Optional[datetime] = None
-
-
 
 class ComputerListItem(ComputerBase):
     id: int
@@ -544,10 +451,8 @@ class DomainUpdate(BaseSchema):
 class DomainRead(DomainBase):    
     password: Optional[str] = Field(None, exclude=True)
 
-
 class TaskRead(BaseModel):
     id: str
     name: str
     status: str
     created_at: str
-

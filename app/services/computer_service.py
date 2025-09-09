@@ -15,7 +15,7 @@ from ..decorators import log_function_call
 from ..services.encryption_service import get_encryption_service
 from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress
 from ..services.winrm_service import WinRMService
-from ..dependencies import get_winrm_service  
+
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,11 @@ class ComputerService:
     async def process_single_host_inner(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обробляє один хост, розбиваючи процес на логічні кроки."""
         try:
-            winrm_service = await get_winrm_service(self.db)
+            # Створюємо залежності вручну, а не через функцію-провайдер
+            encryption_service = get_encryption_service()
+            winrm_service = WinRMService(encryption_service, self.db)
+            await winrm_service.initialize() # Важливо викликати асинхронну ініціалізацію
+
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 

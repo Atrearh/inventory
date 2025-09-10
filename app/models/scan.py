@@ -5,7 +5,6 @@ from app.base import Base
 from .enums import ScanStatus
 from sqlalchemy import Enum
 
-from sqlalchemy.orm import relationship
 
 class ScanTask(Base):
     __tablename__ = "scan_tasks"

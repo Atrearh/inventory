@@ -1,9 +1,0 @@
-# --- Development Tools & Linters ---
-pydantic-to-typescript>=2.0.0
-black # Для форматування коду
-isort # Для сортування імпортів
-
-# --- Testing ---
-# pytest
-# pytest-asyncio
-# httpx # Для тестування API

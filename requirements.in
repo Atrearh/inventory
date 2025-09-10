@@ -1,0 +1,45 @@
+# --- Core Framework ---
+fastapi
+uvicorn[standard]   # стандартний набір: h11, httptools, websockets, uvloop, watchfiles
+
+# --- Database & ORM ---
+sqlalchemy>=2.0,<2.1   # обмеження під sqlmodel
+sqlmodel
+aiomysql               # async драйвер MySQL
+pymysql                # sync драйвер MySQL (де потрібно)
+
+# --- Authentication & Security ---
+fastapi-users
+fastapi-users-db-sqlalchemy
+argon2-cffi
+cryptography
+pyjwt[crypto]          # для JWT-токенів (fastapi-users його юзає)
+passlib[bcrypt]        # зручно для хешування паролів
+
+# --- Networking / Windows Integration ---
+pywinrm
+ldap3
+requests-ntlm
+ntlm-auth
+ping3                  # для ICMP ping (ти його вже юзав)
+
+# --- Pydantic & Settings ---
+pydantic
+pydantic-settings
+
+# --- Serialization & Performance ---
+orjson                 # швидкий JSON-серіалізатор
+ujson                  # альтернативний
+xmltodict              # парсинг XML у словники
+
+# --- Development Tools & Linters ---
+pydantic-to-typescript>=2.0.0
+black
+isort
+ruff                   # швидкий лінтер, заміна flake8/pylint
+alembic                # міграції для SQLAlchemy/SQLModel
+
+# --- Testing ---
+pytest
+pytest-asyncio
+httpx                  # для тестування FastAPI

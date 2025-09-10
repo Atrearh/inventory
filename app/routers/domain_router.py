@@ -1,3 +1,9 @@
+import logging
+import uuid
+from typing import List
+from pydantic import ValidationError
+from ldap3 import Server, Connection, ALL
+from ldap3.core.exceptions import LDAPException
 from fastapi import APIRouter, Depends, HTTPException, Request, Query 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,12 +16,6 @@ from ..services.ad_service import ADService
 from ..repositories.computer_repository import ComputerRepository
 from ..config import settings
 from .auth import fastapi_users
-import logging
-from typing import List
-from pydantic import ValidationError
-from ldap3 import Server, Connection, ALL
-from ldap3.core.exceptions import LDAPException
-import uuid
 
 logger = logging.getLogger(__name__)
 

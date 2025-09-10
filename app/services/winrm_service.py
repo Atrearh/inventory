@@ -1,13 +1,12 @@
+import logging
+import asyncio
 from winrm import Session
-from typing import Optional, Dict, Tuple
+from typing import  Dict, Tuple, AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession
+from contextlib import asynccontextmanager
 from ..config import settings
 from ..repositories.domain_repository import DomainRepository
 from ..services.encryption_service import EncryptionService
-from sqlalchemy.ext.asyncio import AsyncSession
-import logging
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-import asyncio
 
 logger = logging.getLogger(__name__)
 

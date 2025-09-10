@@ -2,7 +2,6 @@
 import logging
 import ipaddress
 from fastapi import FastAPI
-
 from .database import init_db, shutdown_db, get_db_session
 from .data_collector import script_cache
 from .services.encryption_service import get_encryption_service

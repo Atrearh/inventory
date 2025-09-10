@@ -1,16 +1,14 @@
+import enum
+import logging
+from typing import Optional, List
+from datetime import datetime, timedelta
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, ForeignKey, UniqueConstraint, Index, func, BigInteger
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-import enum
-from .base import Base
-from typing import Optional, List
-from datetime import datetime
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTable
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
-import logging
-from datetime import datetime, timedelta
+from .base import Base
 
 logger = logging.getLogger(__name__)
-
 
 class CheckStatus(enum.Enum):
     success = "success"

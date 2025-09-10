@@ -36,7 +36,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
     response = ErrorResponse(
         error=error_message,
-        detail=str(exc) if settings_manager.log_level == "DEBUG" else "",  # Використовуємо log_level із SettingsManager
+        detail=str(exc) if settings_manager.log_level == "DEBUG" else "Деталі помилки приховані в продакшені",  # Використовуємо log_level із SettingsManager
         correlation_id=correlation_id
     )
 

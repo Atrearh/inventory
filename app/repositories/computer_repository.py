@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from .. import models
-from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComputerCreate, ComputerList, ComputerListItem, Computer
+from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComputerCreate, ComputerList, ComputerListItem
 from ..decorators import log_function_call
 from typing import Union, Callable
 from sqlalchemy.orm import DeclarativeBase
@@ -568,13 +568,13 @@ class ComputerRepository:
             logger.error(f"Помилка отримання комп'ютера за hostname: {str(e)}", extra={"hostname": hostname})
             raise
 
-    async def get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[Computer]:
+    async def get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[models.Computer]:
         """Отримує комп'ютер за hostname та domain_id."""
         try:
             result = await db.execute(
-                select(Computer).filter(
-                    Computer.hostname.ilike(hostname.lower()),
-                    Computer.domain_id == domain_id
+                select(models.Computer).filter(
+                    models.Computer.hostname.ilike(hostname.lower()),
+                    models.Computer.domain_id == domain_id
                 )
             )
             return result.scalar_one_or_none()

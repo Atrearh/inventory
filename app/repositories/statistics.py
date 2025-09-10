@@ -44,7 +44,7 @@ class StatisticsRepository:
             os_names = [row.os_name for row in result.scalars().all() if row.os_name]
             # Додаємо серверні ОС із розподілу ОС
             os_dist = await self.get_os_distribution()
-            server_os_names = [os.category for os in os_dist.server_os]
+            server_os_names = [os["category"] for os in os_dist.server_os]
             all_os_names = sorted(set(os_names + server_os_names))
             logger.debug(f"Знайдено {len(all_os_names)} унікальних назв ОС")
             return all_os_names
@@ -140,18 +140,26 @@ class StatisticsRepository:
                         client_os_counts["Other Clients"] += count
                         logger.debug(f"Супоставлено як Other Clients: {category}")
 
-            client_os = [
-                schemas.OsDistribution(category=cat, count=count)
+            client_os_stats = [
+                {"category": cat, "count": count}
                 for cat, count in client_os_counts.items() if count > 0
             ]
-            server_os = [
-                schemas.ServerDistribution(category=cat, count=count)
+            server_os_stats = [
+                {"category": cat, "count": count}
                 for cat, count in server_os_counts.items() if count > 0
             ]
 
-            logger.debug(f"Клієнтські ОС: {client_os}")
-            logger.debug(f"Серверні ОС: {server_os}")
-            return schemas.OsStats(client_os=client_os, server_os=server_os)
+            # Обчислення загальної кількості комп’ютерів
+            total_count = sum(item["count"] for item in client_os_stats + server_os_stats)
+            logger.debug(f"Загальна кількість комп’ютерів: {total_count}")
+            logger.debug(f"Клієнтські ОС: {client_os_stats}")
+            logger.debug(f"Серверні ОС: {server_os_stats}")
+
+            return schemas.OsStats(
+                count=total_count,
+                client_os=client_os_stats,
+                server_os=server_os_stats
+            )
         except Exception as e:
             logger.error(f"Помилка при отриманні розподілу ОС: {str(e)}")
             raise
@@ -184,7 +192,7 @@ class StatisticsRepository:
                 schemas.DiskVolume(
                     id=computer_id,
                     hostname=hostname,
-                    disk_id=device_id or "Unknown",
+                    device_id=device_id or "Unknown",
                     volume_label=volume_label,
                     total_space_gb=round(total_space / (1024**3), 2) if total_space else 0.0,
                     free_space_gb=round(free_space / (1024**3), 2) if free_space else 0.0,
@@ -219,7 +227,7 @@ class StatisticsRepository:
         """Повертає статистику за вказаними метриками."""
         stats = schemas.DashboardStats(
             total_computers=None,
-            os_stats=schemas.OsStats(client_os=[], server_os=[]),
+            os_stats=schemas.OsStats(count=0, client_os=[], server_os=[]),
             disk_stats=schemas.DiskStats(low_disk_space=[]),
             scan_stats=schemas.ScanStats(last_scan_time=None, status_stats=[]),
             component_changes=[]
@@ -230,8 +238,7 @@ class StatisticsRepository:
 
         if "os_distribution" in metrics:
             os_stats = await self.get_os_distribution()
-            stats.os_stats.client_os = os_stats.client_os
-            stats.os_stats.server_os = os_stats.server_os
+            stats.os_stats = os_stats
 
         if "low_disk_space_with_volumes" in metrics:
             low_disk_space_query = await self.db.execute(
@@ -243,13 +250,14 @@ class StatisticsRepository:
                 schemas.DiskVolume(
                     id=row.id,
                     hostname=row.hostname,
-                    disk_id=row.device_id or "Unknown",
+                    device_id=row.device_id or "Unknown",  # Додано обробку None
                     volume_label=row.volume_label,
-                    total_space_gb=row.total_space / (1024 * 1024 * 1024),
-                    free_space_gb=row.free_space / (1024 * 1024 * 1024) if row.free_space else 0
+                    total_space_gb=round(row.total_space / (1024 * 1024 * 1024), 2) if row.total_space else 0.0,
+                    free_space_gb=round(row.free_space / (1024 * 1024 * 1024), 2) if row.free_space else 0.0
                 )
                 for row in low_disk_space_query.all()
             ]
+            logger.debug(f"Сформовано {len(stats.disk_stats.low_disk_space)} об’єктів DiskVolume для метрики low_disk_space_with_volumes")
 
         if "last_scan_time" in metrics:
             last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by(models.ScanTask.updated_at.desc()))

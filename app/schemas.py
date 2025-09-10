@@ -1,17 +1,24 @@
-import logging
-import ipaddress
+# app/schemas.py
 from datetime import datetime
-from typing import Optional, List, Union, Any
-from pydantic import BaseModel, field_validator, Field, ConfigDict, EmailStr, HttpUrl, computed_field
+from enum import Enum
+from typing import Optional, List, Union
+from pydantic import BaseModel, field_validator, Field, ConfigDict, EmailStr, HttpUrl
 from fastapi_users import schemas
-from app.utils.validators import NonEmptyStr, HostnameStr, MACAddressStr, IPAddressStr, DomainNameStr, validate_ip_address_format, validate_mac_address_format
+from app.utils.validators import NonEmptyStr, HostnameStr, MACAddressStr, IPAddressStr, DomainNameStr, CORSOriginsStr, AllowedIPsStr, LogLevelStr, WinRMCertValidationStr
 from app.models import CheckStatus, ScanStatus
-from hashlib import md5
+import logging
 
 logger = logging.getLogger(__name__)
 
-# --- Базові класи та Enums ---
+# --- Визначення Enum для ідентифікаторів компонентів ---
+class IdentifierField(Enum):
+    """Унікальні ідентифікатори для компонентів комп'ютера."""
+    NAME = "name"
+    SERIAL = "serial"
+    ADDRESS = "address"
+    DEVICE_ID = "device_id"
 
+# --- Базові класи ---
 class BaseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
@@ -23,50 +30,24 @@ class TrackableComponent(BaseSchema):
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
 
-class ComponentSchema(BaseSchema):
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['ComponentSchema']:
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-
-        result = []
-        seen_identifiers = set()
-        
-        # Визначаємо поле, яке буде унікальним ідентифікатором
-        identifier_field = getattr(cls, '_identifier_field', 'name')
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані для {cls.__name__}: {item}", extra={"hostname": hostname})
-                continue
-            
-            try:
-                identifier = item.get(identifier_field, "").strip()
-                if not identifier or identifier in seen_identifiers:
-                    continue
-                
-                seen_identifiers.add(identifier)
-                result.append(cls.model_validate(item))
-            except Exception as e:
-                logger.warning(f"Помилка обробки {cls.__name__}: {str(e)}", extra={"data": item, "hostname": hostname})
-        
-        return result
+class ComponentSchema(TrackableComponent):
+    _identifier_field: IdentifierField = IdentifierField.NAME
 
 # --- Схеми компонентів комп'ютера ---
-
-class Role(ComponentSchema, TrackableComponent):
-    _identifier_field = "name"
+class Role(ComponentSchema):
+    _identifier_field = IdentifierField.NAME
     name: NonEmptyStr = Field(..., alias="Name")
 
-class Software(ComponentSchema, TrackableComponent):
-    _identifier_field = "name"
-    name: str = Field(..., alias="DisplayName", min_length=1)
-    version: Optional[str] = Field("Unknown", alias="DisplayVersion")
+class Software(ComponentSchema):
+    _identifier_field = IdentifierField.NAME
+    name: NonEmptyStr = Field(..., alias="DisplayName")
+    version: Optional[str] = Field(None, alias="DisplayVersion")
     install_date: Optional[datetime] = Field(None, alias="InstallDate")
 
     @field_validator('install_date', mode='before')
     @classmethod
     def validate_install_date(cls, v):
+        """Конвертує ISO-рядок у datetime або повертає None."""
         if v is None or v == '':
             return None
         try:
@@ -74,11 +55,11 @@ class Software(ComponentSchema, TrackableComponent):
                 return datetime.fromisoformat(v.replace('Z', '+00:00'))
             return v
         except ValueError:
-            logger.warning(f"Некоректний формат install_date: {v}, повертаємо None")
+            logger.warning(f"Некоректний формат install_date: {v}")
             return None
-
-class PhysicalDisk(ComponentSchema, TrackableComponent):
-    _identifier_field = "serial"
+ 
+class PhysicalDisk(ComponentSchema):
+    _identifier_field = IdentifierField.SERIAL
     id: Optional[int] = None
     computer_id: Optional[int] = None
     model: Optional[NonEmptyStr] = Field(None, alias="model", max_length=255)
@@ -86,224 +67,108 @@ class PhysicalDisk(ComponentSchema, TrackableComponent):
     interface: Optional[NonEmptyStr] = Field(None, alias="interface", max_length=50)
     media_type: Optional[NonEmptyStr] = Field(None, alias="media_type", max_length=50)
 
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['PhysicalDisk']:
-        if not isinstance(raw_data, list):
-            raw_data = [raw_data] if raw_data else []
-
-        seen_identifiers = set()
-        result = []
-
-        for item in raw_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Некоректні дані диска: {item}", extra={"hostname": hostname})
-                continue
-            try:
-                serial = item.get("serial", "").strip()
-                if not serial:
-                    model = item.get("model", "")
-                    serial = md5(f"{model}_{item.get('size', '')}_{hostname}".encode()).hexdigest()[:100]
-                if serial in seen_identifiers:
-                    continue
-                seen_identifiers.add(serial)
-                result.append(cls(
-                    model=item.get("model"),
-                    serial=serial,
-                    interface=item.get("interface"),
-                    media_type=item.get("media_type")
-                ))
-            except Exception as e:
-                logger.warning(f"Помилка обробки диска: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class LogicalDisk(ComponentSchema, TrackableComponent):
-    _identifier_field = "device_id"
+class LogicalDisk(ComponentSchema):
+    _identifier_field = IdentifierField.DEVICE_ID
     device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", max_length=255)
-    volume_label: Optional[str] = Field(None, alias="volume_label", max_length=255)
+    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
     total_space: int = Field(ge=0, alias="total_space")
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
     parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)
 
-    @field_validator('volume_label')
-    @classmethod
-    def normalize_volume_label(cls, v):
-        return None if v == "" else v
+class Processor(ComponentSchema):
+    _identifier_field = IdentifierField.NAME
+    name: NonEmptyStr = Field(..., alias="Name")
+    cores: Optional[int] = Field(None, ge=1, alias="NumberOfCores")
+    threads: Optional[int] = Field(None, ge=1, alias="NumberOfThreads")
+    speed_ghz: Optional[float] = Field(None, ge=0.0, alias="MaxClockSpeed")
 
-    @computed_field(return_type=float)
-    @property
-    def total_space_gb(self) -> float:
-        return self.total_space / (1024 ** 3) if self.total_space else 0.0
+class VideoCard(ComponentSchema):
+    _identifier_field = IdentifierField.NAME
+    name: NonEmptyStr = Field(..., alias="Name")
+    vram: Optional[int] = Field(None, ge=0, alias="AdapterRAM")
 
-    @computed_field(return_type=Optional[float])
-    @property
-    def free_space_gb(self) -> Optional[float]:
-        return self.free_space / (1024 ** 3) if self.free_space is not None else None
+class IPAddress(ComponentSchema):
+    _identifier_field = IdentifierField.ADDRESS
+    address: IPAddressStr = Field(..., alias="address")
 
-class VideoCard(ComponentSchema, TrackableComponent):
-    _identifier_field = "name"
-    id: Optional[int] = None
-    name: NonEmptyStr = Field(..., alias="name")
-    driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
-
-class Processor(ComponentSchema, TrackableComponent):
-    _identifier_field = "name"
-    name: NonEmptyStr = Field(..., alias="name")
-    number_of_cores: int = Field(..., alias="number_of_cores")
-    number_of_logical_processors: int = Field(..., alias="number_of_logical_processors")
-
-class IPAddress(ComponentSchema, TrackableComponent):
-    _identifier_field = "address"
-    address: IPAddressStr
-
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['IPAddress']:
-        if not isinstance(raw_data, (list, str)):
-            logger.warning(f"Некоректні дані IP: {raw_data}", extra={"hostname": hostname})
-            return []
-        data_list = [raw_data] if isinstance(raw_data, str) else raw_data
-        seen_identifiers = set()
-        result = []
-
-        for item in data_list:
-            try:
-                address = item.strip() if isinstance(item, str) else item.get("address", "").strip()
-                if not address or not validate_ip_address_format(address) or address in seen_identifiers:
-                    continue
-                seen_identifiers.add(address)
-                result.append(cls(address=address))
-            except Exception as e:
-                logger.warning(f"Помилка обробки IP: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
-
-class MACAddress(ComponentSchema, TrackableComponent):
-    _identifier_field = "address"
-    address: MACAddressStr
-
-    @classmethod
-    def from_raw_data(cls, raw_data: Any, hostname: str) -> List['MACAddress']:
-        if not isinstance(raw_data, (list, str)):
-            logger.warning(f"Некоректні дані MAC: {raw_data}", extra={"hostname": hostname})
-            return []
-        data_list = [raw_data] if isinstance(raw_data, str) else raw_data
-        seen_identifiers = set()
-        result = []
-
-        for item in data_list:
-            try:
-                address = item.strip() if isinstance(item, str) else item.get("address", "").strip()
-                if not validate_mac_address_format(address) or address in seen_identifiers:
-                    continue
-                seen_identifiers.add(address)
-                result.append(cls(address=address))
-            except Exception as e:
-                logger.warning(f"Помилка обробки MAC: {str(e)}", extra={"data": item, "hostname": hostname})
-        return result
+class MACAddress(ComponentSchema):
+    _identifier_field = IdentifierField.ADDRESS
+    address: MACAddressStr = Field(..., alias="address")
 
 # --- Схеми комп'ютера ---
-
-class ComputerBase(BaseSchema):
-    hostname: HostnameStr 
+class ComputerCreate(BaseSchema):
+    hostname: HostnameStr
+    os_name: Optional[NonEmptyStr] = None
+    os_version: Optional[NonEmptyStr] = None
+    ram: Optional[int] = Field(None, ge=0)
+    motherboard: Optional[NonEmptyStr] = None
+    last_boot: Optional[datetime] = None
+    is_virtual: Optional[bool] = False
+    check_status: Optional[CheckStatus] = Field(None, examples=["reachable", "unreachable"])
     ip_addresses: List[IPAddress] = []
+    mac_addresses: List[MACAddress] = []
+    processors: List[Processor] = []
+    video_cards: List[VideoCard] = []
+    software: List[Software] = []
+    roles: List[Role] = []
     physical_disks: List[PhysicalDisk] = []
     logical_disks: List[LogicalDisk] = []
-    os_name: Optional[str] = None
-    os_version: Optional[str] = None
-    processors: Optional[List[Processor]] = None
-    ram: Optional[int] = None
-    mac_addresses: List[MACAddress] = []
+
+class ComputerListItem(BaseSchema):
+    id: int
+    hostname: HostnameStr
+    os_name: Optional[NonEmptyStr] = None
+    check_status: Optional[CheckStatus] = None
+    last_updated: Optional[datetime] = None
+    domain_id: Optional[int] = None
+    domain_name: Optional[NonEmptyStr] = None
+
+class ComputerList(BaseSchema):
+    id: int
+    hostname: HostnameStr
+    os_name: Optional[NonEmptyStr] = None
+    os_version: Optional[NonEmptyStr] = None
+    ram: Optional[int] = Field(None, ge=0)
     motherboard: Optional[str] = None
     last_boot: Optional[datetime] = None
-    is_virtual: Optional[bool] = None
+    is_virtual: Optional[bool] = False
     check_status: Optional[CheckStatus] = None
-    roles: List[Role] = []
-    software: List[Software] = []
-    video_cards: List[VideoCard] = []
-    last_logon: Optional[datetime] = None
-    object_guid: Optional[NonEmptyStr] = None
-    when_created: Optional[datetime] = None
-    when_changed: Optional[datetime] = None
-    enabled: Optional[bool] = None
-    ad_notes: Optional[NonEmptyStr] = None
-    local_notes: Optional[NonEmptyStr] = None
-    domain_id: Optional[int] = None
-
-    @field_validator('os_name')
-    @classmethod
-    def normalize_os_name(cls, v):
-        if not v or not v.strip():
-            return 'Unknown'
-        return v.replace('Майкрософт ', '').replace('Microsoft ', '')
-
-    @field_validator('ram')
-    @classmethod
-    def normalize_ram(cls, v):
-        if v is None:
-            return None
-        if not isinstance(v, (int, float)):
-            logger.warning(f"Некоректний тип RAM: {type(v)}, очікується int або float")
-            return None
-        if v > 4294967295:
-            logger.warning(f"Значення RAM ({v} МБ) перевищує допустимий діапазон, обрізається до 4294967295")
-            return 4294967295
-        return int(v)
-
-class ComputerList(ComputerBase):
-    id: int
     last_updated: Optional[datetime] = None
     last_full_scan: Optional[datetime] = None
-
-class ComputerListItem(ComputerBase):
-    id: int
-    last_updated: datetime
-    last_full_scan: Optional[datetime] = None
-
-class Computer(ComputerBase):
-    id: int
-    last_updated: datetime
-
-class ComputerCreate(ComputerBase):
-    pass
-
-class ComputerUpdateCheckStatus(BaseSchema):
-    hostname: HostnameStr 
-    check_status: CheckStatus
-
-# --- Схеми для API відповідей та статистики ---
-
-class ScanTask(BaseSchema):
-    id: NonEmptyStr
-    status: ScanStatus
-    created_at: datetime
-    updated_at: datetime
-    scanned_hosts: int
-    successful_hosts: int
-    error: Optional[str] = None
+    domain_id: Optional[int] = None
+    domain_name: Optional[NonEmptyStr] = None
+    ip_addresses: List[IPAddress] = []
+    mac_addresses: List[MACAddress] = []
+    processors: List[Processor] = []
+    video_cards: List[VideoCard] = []
+    software: List[Software] = []
+    roles: List[Role] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
 
 class ComputersResponse(BaseSchema):
     data: List[ComputerList]
     total: int
 
-class OsDistribution(BaseSchema):
-    category: str
-    count: int
-
-class ServerDistribution(BaseSchema):
-    category: str
-    count: int
-
+# --- Схеми статистики ---
 class StatusStats(BaseSchema):
     status: CheckStatus
+    count: int = Field(ge=0)
+    
+class OsCategoryStats(BaseSchema):
+    category: str
     count: int
 
 class OsStats(BaseSchema):
-    client_os: List[OsDistribution]
-    server_os: List[ServerDistribution]
+    client_os: List[OsCategoryStats] = []
+    server_os: List[OsCategoryStats] = []
+    os_name: Optional[NonEmptyStr] = None
+    count: int = Field(ge=0)
 
 class DiskVolume(BaseSchema):
-    id: int
-    hostname: HostnameStr 
-    disk_id: NonEmptyStr = Field(..., alias="disk_id", max_length=255)
-    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
+    hostname: HostnameStr
+    device_id: NonEmptyStr
+    volume_label: Optional[NonEmptyStr] = None
     total_space_gb: float = Field(ge=0.0)
     free_space_gb: float = Field(ge=0.0)
 
@@ -315,13 +180,13 @@ class ScanStats(BaseSchema):
     status_stats: List[StatusStats]
 
 class ComponentChangeStats(BaseSchema):
-    component_type: str
-    changes_count: int
+    component_type: NonEmptyStr
+    changes_count: int = Field(ge=0)
 
 class ScanResponse(BaseSchema):
     status: NonEmptyStr
     task_id: NonEmptyStr
-     
+
 class DashboardStats(BaseSchema):
     total_computers: Optional[int] = None
     os_stats: OsStats
@@ -331,100 +196,56 @@ class DashboardStats(BaseSchema):
 
 class ErrorResponse(BaseSchema):
     error: NonEmptyStr
-    detail: Optional[str] = None
-    correlation_id: Optional[str] = None
+    detail: Optional[NonEmptyStr] = None
+    correlation_id: Optional[NonEmptyStr] = None
+
+    
 
 # --- Схеми налаштувань та історії ---
-
 class AppSettingUpdate(BaseSchema):
-    ad_server_url: Optional[NonEmptyStr] = None
-    domain: Optional[NonEmptyStr] = None
+    ad_server_url: Optional[DomainNameStr] = None
+    domain: Optional[DomainNameStr] = None
     ad_username: Optional[NonEmptyStr] = None
     ad_password: Optional[NonEmptyStr] = None
-    api_url: Optional[HttpUrl] = None 
-    log_level: Optional[NonEmptyStr] = None
-    scan_max_workers: Optional[int] = None
-    polling_days_threshold: Optional[int] = None
-    winrm_operation_timeout: Optional[int] = None
-    winrm_read_timeout: Optional[int] = None
-    winrm_port: Optional[int] = None
-    winrm_server_cert_validation: Optional[NonEmptyStr] = None
-    ping_timeout: Optional[int] = None
+    api_url: Optional[HttpUrl] = None
+    log_level: Optional[LogLevelStr] = None
+    scan_max_workers: Optional[int] = Field(None, ge=1)
+    polling_days_threshold: Optional[int] = Field(None, ge=1)
+    winrm_operation_timeout: Optional[int] = Field(None, ge=1)
+    winrm_read_timeout: Optional[int] = Field(None, ge=1)
+    winrm_port: Optional[int] = Field(None, ge=1, le=65535)
+    winrm_server_cert_validation: Optional[WinRMCertValidationStr] = None
+    ping_timeout: Optional[int] = Field(None, ge=1)
     powershell_encoding: Optional[NonEmptyStr] = None
-    json_depth: Optional[int] = None
-    server_port: Optional[int] = None
-    cors_allow_origins: Optional[str] = None
-    allowed_ips: Optional[str] = None
+    json_depth: Optional[int] = Field(None, ge=1)
+    server_port: Optional[int] = Field(None, ge=1, le=65535)
+    cors_allow_origins: Optional[CORSOriginsStr] = None
+    allowed_ips: Optional[AllowedIPsStr] = None
     encryption_key: Optional[NonEmptyStr] = None
     timezone: Optional[NonEmptyStr] = None
 
-    @field_validator('log_level')
-    @classmethod
-    def validate_log_level(cls, v):
-        if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            raise ValueError("Log level должен быть одним из: DEBUG, INFO, WARNING, ERROR, CRITICAL")
-        return v
-
-    @field_validator('winrm_server_cert_validation')
-    @classmethod
-    def validate_cert_validation(cls, v):
-        if v and v not in ["validate", "ignore"]:
-            raise ValueError("winrm_server_cert_validation должен быть 'validate' или 'ignore'")
-        return v
-    
-    @field_validator('cors_allow_origins')
-    @classmethod
-    def validate_cors_origins(cls, v):
-        if v:
-            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
-            if not origins:
-                raise ValueError("CORS origins не могут быть пустыми")
-            for origin in origins:
-                if not origin.startswith(("http://", "https://")):
-                    raise ValueError(f"Недопустимый origin: {origin}. Должен начинаться с http:// или https://")
-        return v
-
-    @field_validator('allowed_ips')
-    @classmethod
-    def validate_allowed_ips(cls, v):
-        if v:
-            ips = [ip.strip() for ip in v.split(",") if ip.strip()]
-            if not ips:
-                raise ValueError("Allowed IPs не могут быть пустыми")
-            for ip in ips:
-                try:
-                    if '/' in ip:
-                        ipaddress.ip_network(ip, strict=False)
-                    else:
-                        ipaddress.ip_address(ip)
-                except ValueError:
-                    raise ValueError(f"Недопустимый IP или диапазон: {ip}")
-        return v
-
 class ComponentHistory(BaseSchema):
-    component_type: str
-    data: Union[PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software]
-    detected_on: Optional[str] = None
-    removed_on: Optional[str] = None
+    component_type: NonEmptyStr
+    data: Union[PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, Role]
+    detected_on: Optional[NonEmptyStr] = None
+    removed_on: Optional[NonEmptyStr] = None
 
 # --- Схеми користувачів ---
-
 class UserRead(schemas.BaseUser[int]):
-    username: str
-    role: Optional[str] = None
+    username: NonEmptyStr
+    role: Optional[NonEmptyStr] = None
 
 class UserCreate(schemas.BaseUserCreate):
-    username: str
+    username: NonEmptyStr
     email: EmailStr
-    password: str
-    role: Optional[str] = None
+    password: NonEmptyStr
+    role: Optional[NonEmptyStr] = None
 
 class UserUpdate(schemas.BaseUserUpdate):
-    username: Optional[str] = None
-    role: Optional[str] = None
+    username: Optional[NonEmptyStr] = None
+    role: Optional[NonEmptyStr] = None
 
 # --- Схеми доменів ---
-
 class DomainCore(BaseSchema):
     name: DomainNameStr
     username: NonEmptyStr
@@ -448,11 +269,24 @@ class DomainUpdate(BaseSchema):
     server_url: Optional[DomainNameStr] = None
     ad_base_dn: Optional[NonEmptyStr] = None
 
-class DomainRead(DomainBase):    
+class DomainRead(DomainBase):
     password: Optional[str] = Field(None, exclude=True)
 
-class TaskRead(BaseModel):
-    id: str
-    name: str
-    status: str
-    created_at: str
+class TaskRead(BaseSchema):
+    id: NonEmptyStr
+    name: NonEmptyStr
+    status: NonEmptyStr
+    created_at: NonEmptyStr
+
+class ComputerUpdateCheckStatus(BaseSchema):
+    hostname: HostnameStr
+    check_status: CheckStatus
+
+class ScanTask(BaseSchema):
+    id: NonEmptyStr
+    status: ScanStatus
+    created_at: datetime
+    updated_at: datetime
+    scanned_hosts: int
+    successful_hosts: int
+    error: Optional[str] = None

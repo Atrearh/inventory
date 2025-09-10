@@ -14,8 +14,6 @@ def validate_non_empty_str(v: str) -> str:
         raise ValueError("Рядок не може бути порожнім")
     return v.strip()
 
-NonEmptyStr = Annotated[str, PlainValidator(validate_non_empty_str)]
-
 def validate_mac_address_format(v: str) -> str:
     """Валідація MAC-адреси: має відповідати формату XX:XX:XX:XX:XX:XX."""
     if v and not re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', v):
@@ -60,6 +58,12 @@ def validate_database_url_format(v: str) -> str:
         raise ValueError("database_url повинен починатися з 'mysql+', 'postgresql+' або 'sqlite+'")
     return v
 
+def validate_log_level_format(v: str) -> str:
+    """Валідація log_level: має бути одним із 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'."""
+    if v and v not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+        raise ValueError("Log level повинен бути одним із: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    return v
+
 def validate_winrm_cert_validation_format(v: str) -> str:
     """Валідація winrm_server_cert_validation: має бути 'validate' або 'ignore'."""
     if v and v not in ["validate", "ignore"]:
@@ -84,11 +88,13 @@ def validate_secret_key_format(v: str) -> str:
     return v
 
 # Кастомні типи з валідацією
+NonEmptyStr = Annotated[str, PlainValidator(validate_non_empty_str)]
 HostnameStr = Annotated[NonEmptyStr, AfterValidator(validate_hostname_format)]
 MACAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_mac_address_format)]
 IPAddressStr = Annotated[NonEmptyStr, AfterValidator(validate_ip_address_format)]
 DomainNameStr = Annotated[NonEmptyStr, AfterValidator(validate_domain_name_format)]
 DatabaseURLStr = Annotated[NonEmptyStr, AfterValidator(validate_database_url_format)]
+LogLevelStr = Annotated[NonEmptyStr, AfterValidator(validate_log_level_format)]
 WinRMCertValidationStr = Annotated[NonEmptyStr, AfterValidator(validate_winrm_cert_validation_format)]
 CORSOriginsStr = Annotated[NonEmptyStr, AfterValidator(validate_cors_origins_format)]
 SecretKeyStr = Annotated[NonEmptyStr, AfterValidator(validate_secret_key_format)]

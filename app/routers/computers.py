@@ -7,13 +7,14 @@ from ..models import Computer, IPAddress, CheckStatus, MACAddress, PhysicalDisk,
 from ..database import get_db
 from ..services.computer_service import ComputerService
 from ..repositories.computer_repository import ComputerRepository
-from ..schemas import Computer as ComputerSchema, ComputerCreate, ComputerUpdateCheckStatus, ComponentHistory, ComputersResponse, ComputerList
+from ..schemas import  ComputerCreate, ComputerUpdateCheckStatus, ComponentHistory, ComputersResponse, ComputerList
 from typing import List, Optional, Dict, Any
 import logging
 import io
 import csv
 from .auth import get_current_user
 import re
+
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ async def export_computers_to_csv(
     }
     return StreamingResponse(generate_csv(), headers=headers)
 
-@router.post("/report", response_model=ComputerSchema, operation_id="create_computer_report", dependencies=[Depends(get_current_user)])
+@router.post("/report", response_model=ComputerList, operation_id="create_computer_report", dependencies=[Depends(get_current_user)])
 async def create_computer(
     comp_data: ComputerCreate,
     db: AsyncSession = Depends(get_db),
@@ -294,7 +295,7 @@ async def get_computers(
         logger.error("Помилка отримання списку комп’ютерів", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Помилка сервера: {str(e)}")
 
-@router.get("/computers/{computer_id}", response_model=ComputerSchema, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
+@router.get("/computers/{computer_id}", response_model=ComputerList, operation_id="get_computer_by_id", dependencies=[Depends(get_current_user)])
 async def get_computer_by_id(
     computer_id: int,
     db: AsyncSession = Depends(get_db),

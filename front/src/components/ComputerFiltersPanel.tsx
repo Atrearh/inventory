@@ -34,9 +34,9 @@ const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
     queryFn: getDomains,
   });
 
-  const osOptions = statsData?.os_stats.client_os.map((os) => ({
-    label: os.category,
-    value: os.category,
+  const osOptions = statsData?.os_stats?.client_os?.map((os) => ({
+      label: os.category,
+      value: os.category,
   })) || [];
 
   const domainOptions = domainsData?.map((domain) => ({

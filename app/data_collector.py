@@ -5,8 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import asyncio
 import requests
-from contextlib import asynccontextmanager
-from .settings import settings
+from .config import settings
 import os
 import logging
 from .services.winrm_service import WinRMService

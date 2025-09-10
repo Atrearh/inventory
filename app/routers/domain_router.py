@@ -8,7 +8,7 @@ from ..repositories.domain_repository import DomainRepository
 from ..services.encryption_service import EncryptionService, get_encryption_service
 from ..services.ad_service import ADService
 from ..repositories.computer_repository import ComputerRepository
-from ..settings import settings
+from ..config import settings
 from .auth import fastapi_users
 import logging
 from typing import List

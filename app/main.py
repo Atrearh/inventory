@@ -3,7 +3,7 @@ import uvicorn
 from fastapi import FastAPI
 from .app_initializer import AppInitializer
 from .utils.security import setup_cors
-from .settings import settings
+from .config import settings
 from .routers import auth, computers, scan, statistics, scripts, domain_router
 from .routers.settings import router as settings_router
 from .exceptions import global_exception_handler

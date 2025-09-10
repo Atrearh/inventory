@@ -1,12 +1,11 @@
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from .schemas import ErrorResponse
-from .settings import settings
-from .settings_manager import SettingsManager
+from .config import settings
 import logging
 
 logger = logging.getLogger(__name__)
-settings_manager = SettingsManager(settings)
+settings_manager = settings
 
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальний обробник винятків для додатка."""

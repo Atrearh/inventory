@@ -5,8 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-from ..settings import settings
+from ..config import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
 from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress, IdentifierField

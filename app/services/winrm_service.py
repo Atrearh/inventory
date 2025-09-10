@@ -1,6 +1,6 @@
 from winrm import Session
 from typing import Optional, Dict, Tuple
-from ..settings import settings
+from ..config import settings
 from ..repositories.domain_repository import DomainRepository
 from ..services.encryption_service import EncryptionService
 from sqlalchemy.ext.asyncio import AsyncSession

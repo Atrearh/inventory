@@ -2,7 +2,7 @@ from cryptography.fernet import Fernet, InvalidToken
 import logging
 from fastapi import HTTPException, status
 from typing import Optional
-from ..settings import settings 
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 

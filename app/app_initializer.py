@@ -2,13 +2,13 @@
 import logging
 import ipaddress
 from fastapi import FastAPI
-from .settings import settings
-from .settings_manager import SettingsManager
+
 from .database import init_db, shutdown_db, get_db_session
 from .data_collector import script_cache
 from .services.encryption_service import get_encryption_service
 from .dependencies import get_winrm_service
 from contextlib import asynccontextmanager
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class AppInitializer:
     
     def __init__(self, app: FastAPI):
         self.app = app
-        self.settings_manager = SettingsManager(settings)
+        self.settings_manager = settings
         # Синхронна ініціалізація IP-діапазонів
         self._initialize_ip_networks_sync()
 
@@ -25,7 +25,7 @@ class AppInitializer:
         """Синхронно ініціалізує дозволені IP-діапазони."""
         logger.info("Синхронна ініціалізація дозволених IP-діапазонів...")
         self.app.state.allowed_ip_networks = []
-        allowed_ips_list = self.settings_manager.settings.allowed_ips_list
+        allowed_ips_list = self.settings_manager.allowed_ips_list
         logger.debug(f"ALLOWED_IPS_LIST: {allowed_ips_list}")
         if not allowed_ips_list:
             logger.warning("ALLOWED_IPS не задано, дозволено всі IP-адреси")
@@ -70,7 +70,7 @@ class AppInitializer:
 
     async def shutdown(self):
         """Завершує роботу додатка."""
-        logger.info("Завершення роботи...")
+        logger.info("Завершення роботи...") 
         await shutdown_db()
 
     @asynccontextmanager

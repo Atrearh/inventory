@@ -2,7 +2,8 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import logging
 from typing import AsyncGenerator
-from .settings import settings
+from .config import settings
+from .base import Base
 
 logger = logging.getLogger(__name__)
 

@@ -2,35 +2,28 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas import AppSettingUpdate
-from ..settings import settings
-from ..settings_manager import SettingsManager
 from ..database import get_db
 from .auth import get_current_user
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["settings"])
-settings_manager = SettingsManager(settings)
+
 
 @router.get("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
-async def get_settings(db: AsyncSession = Depends(get_db), settings_mgr: SettingsManager = Depends(lambda: settings_manager)):
-    """Отримує налаштування з БД."""
-    logger.info("Отримання поточних налаштувань")
-    await settings_mgr.load_from_db(db)
-    return AppSettingUpdate(
-        log_level=settings_mgr.log_level,  # Використовуємо log_level із SettingsManager
-        scan_max_workers=settings.scan_max_workers,
-        polling_days_threshold=settings.polling_days_threshold,
-        ping_timeout=settings.ping_timeout,
-        timezone=settings.timezone
-    )
+async def get_settings():
+    """Повертає поточні налаштування додатку."""
+    logger.info("Отримання поточних налаштувань через API")
+    return settings
 
 @router.post("/settings", response_model=AppSettingUpdate, dependencies=[Depends(get_current_user)])
-async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db), settings_mgr: SettingsManager = Depends(lambda: settings_manager)):
-    """Оновлює налаштування в БД."""
+async def update_settings(update: AppSettingUpdate, db: AsyncSession = Depends(get_db)):
+    """Оновлює налаштування в БД та в поточному стані додатку."""
     updates = update.model_dump(exclude_unset=True)
-    logger.info(f"Оновлення налаштувань: {updates}")
+    logger.info(f"Оновлення налаштувань через API: {updates}")
     if not updates:
         raise HTTPException(status_code=400, detail="Не надано даних для оновлення")
-    await settings_mgr.save_to_db(db, updates)
-    logger.info(f"Налаштування успішно оновлено: {updates}")
-    return update
+    
+    await settings.save_settings(db, updates)
+    
+    return settings

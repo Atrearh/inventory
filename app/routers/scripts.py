@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db_session
-from ..settings import settings
+from ..config import settings
 from .auth import get_current_user
 from typing import List, Dict
 from ..data_collector import WinRMDataCollector, SCRIPTS_DIR, script_cache

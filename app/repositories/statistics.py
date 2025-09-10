@@ -181,16 +181,16 @@ class StatisticsRepository:
                 .filter(
                     models.LogicalDisk.total_space > 0,
                     models.LogicalDisk.free_space.isnot(None),
-                    (models.LogicalDisk.free_space.cast(Float) / models.LogicalDisk.total_space) < 0.1,
+                    (models.LogicalDisk.free_space.cast(Float) / models.LogicalDisk.total_space) < 0.1,  # Виправлено: cast до Float для уникнення помилок
                 )
             )
             result = await self.db.execute(stmt)
             disks_data = result.all()
-            logger.debug(f"Отримано {len(disks_data)} записів про логічні диски: {disks_data}")
+            logger.debug(f"Отримано {len(disks_data)} записів про логічні диски")
 
             disk_volumes = [
                 schemas.DiskVolume(
-                    id=computer_id,
+                    id=computer_id,  # Забезпечено: ID комп'ютера передається в схему
                     hostname=hostname,
                     device_id=device_id or "Unknown",
                     volume_label=volume_label,
@@ -204,6 +204,62 @@ class StatisticsRepository:
         except Exception as e:
             logger.error(f"Помилка при отриманні даних про диски: {str(e)}", exc_info=True)
             raise
+
+    async def get_statistics(self, metrics: List[str]) -> schemas.DashboardStats:
+        """Повертає статистику за вказаними метриками."""
+        stats = schemas.DashboardStats(
+            total_computers=None,
+            os_stats=schemas.OsStats(count=0, client_os=[], server_os=[]),
+            disk_stats=schemas.DiskStats(low_disk_space=[]),
+            scan_stats=schemas.ScanStats(last_scan_time=None, status_stats=[]),
+            component_changes=[]
+        )
+
+        if "total_computers" in metrics:
+            # Виправлено: Використовуємо get_total_computers для фільтрації активних комп'ютерів
+            stats.total_computers = await self.get_total_computers()
+
+        if "os_distribution" in metrics:
+            os_stats = await self.get_os_distribution()
+            stats.os_stats = os_stats
+
+        if "low_disk_space_with_volumes" in metrics:
+            # Оптимізовано: Використовуємо метод get_low_disk_space_with_volumes замість дубльованої логіки
+            low_disks = await self.get_low_disk_space_with_volumes()
+            stats.disk_stats.low_disk_space = low_disks
+            logger.debug(f"Сформовано {len(stats.disk_stats.low_disk_space)} об’єктів DiskVolume для метрики low_disk_space_with_volumes")
+
+        if "last_scan_time" in metrics:
+            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by(models.ScanTask.updated_at.desc()))
+            last_scan_time = last_scan.scalars().first()
+            stats.scan_stats.last_scan_time = last_scan_time
+
+        if "status_stats" in metrics:
+            # Оптимізовано: Використовуємо метод get_status_stats
+            stats.scan_stats.status_stats = await self.get_status_stats()
+
+        if "component_changes" in metrics:
+            component_types = [
+                ("software", models.Software),
+                ("physical_disk", models.PhysicalDisk),
+                ("logical_disk", models.LogicalDisk),
+                ("processor", models.Processor),
+                ("video_card", models.VideoCard),
+                ("ip_address", models.IPAddress),
+                ("mac_address", models.MACAddress)
+            ]
+            for component_type, model in component_types:
+                count_query = await self.db.execute(
+                    select(func.count()).select_from(model).filter(
+                        or_(model.detected_on.is_not(None), model.removed_on.is_not(None))  # Виправлено: is_not(None) замість != None
+                    )
+                )
+                count = count_query.scalar() or 0
+                stats.component_changes.append(
+                    schemas.ComponentChangeStats(component_type=component_type, changes_count=count)
+                )
+
+        return stats
 
     async def get_status_stats(self) -> List[schemas.StatusStats]:
         """Повертає статистику за статусами комп’ютерів."""
@@ -223,76 +279,4 @@ class StatisticsRepository:
             logger.error(f"Помилка при отриманні статистики статусів: {str(e)}")
             raise
 
-    async def get_statistics(self, metrics: List[str]) -> schemas.DashboardStats:
-        """Повертає статистику за вказаними метриками."""
-        stats = schemas.DashboardStats(
-            total_computers=None,
-            os_stats=schemas.OsStats(count=0, client_os=[], server_os=[]),
-            disk_stats=schemas.DiskStats(low_disk_space=[]),
-            scan_stats=schemas.ScanStats(last_scan_time=None, status_stats=[]),
-            component_changes=[]
-        )
-
-        if "total_computers" in metrics:
-            stats.total_computers = (await self.db.execute(select(func.count()).select_from(models.Computer))).scalar() or 0
-
-        if "os_distribution" in metrics:
-            os_stats = await self.get_os_distribution()
-            stats.os_stats = os_stats
-
-        if "low_disk_space_with_volumes" in metrics:
-            low_disk_space_query = await self.db.execute(
-                select(models.Computer.id, models.Computer.hostname, models.LogicalDisk.device_id, models.LogicalDisk.volume_label, models.LogicalDisk.total_space, models.LogicalDisk.free_space)
-                .join(models.Computer, models.Computer.id == models.LogicalDisk.computer_id)
-                .filter(models.LogicalDisk.free_space / models.LogicalDisk.total_space < 0.1)
-            )
-            stats.disk_stats.low_disk_space = [
-                schemas.DiskVolume(
-                    id=row.id,
-                    hostname=row.hostname,
-                    device_id=row.device_id or "Unknown",  # Додано обробку None
-                    volume_label=row.volume_label,
-                    total_space_gb=round(row.total_space / (1024 * 1024 * 1024), 2) if row.total_space else 0.0,
-                    free_space_gb=round(row.free_space / (1024 * 1024 * 1024), 2) if row.free_space else 0.0
-                )
-                for row in low_disk_space_query.all()
-            ]
-            logger.debug(f"Сформовано {len(stats.disk_stats.low_disk_space)} об’єктів DiskVolume для метрики low_disk_space_with_volumes")
-
-        if "last_scan_time" in metrics:
-            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by(models.ScanTask.updated_at.desc()))
-            last_scan_time = last_scan.scalars().first()
-            stats.scan_stats.last_scan_time = last_scan_time
-
-        if "status_stats" in metrics:
-            status_query = await self.db.execute(
-                select(models.Computer.check_status, func.count().label("count"))
-                .group_by(models.Computer.check_status)
-            )
-            stats.scan_stats.status_stats = [
-                schemas.StatusStats(status=row.check_status or "Unknown", count=row.count)
-                for row in status_query.all() if row.count > 0
-            ]
-
-        if "component_changes" in metrics:
-            component_types = [
-                ("software", models.Software),
-                ("physical_disk", models.PhysicalDisk),
-                ("logical_disk", models.LogicalDisk),
-                ("processor", models.Processor),
-                ("video_card", models.VideoCard),
-                ("ip_address", models.IPAddress),
-                ("mac_address", models.MACAddress)
-            ]
-            for component_type, model in component_types:
-                count_query = await self.db.execute(
-                    select(func.count()).select_from(model).filter(
-                        or_(model.detected_on != None, model.removed_on != None)
-                    )
-                )
-                count = count_query.scalar() or 0
-                stats.component_changes.append(
-                    schemas.ComponentChangeStats(component_type=component_type, changes_count=count)
-                )
-
-        return stats
+    

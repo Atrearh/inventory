@@ -95,9 +95,9 @@ class MACAddress(ComponentSchema):
     _identifier_field = IdentifierField.ADDRESS
     address: MACAddressStr = Field(..., alias="address")
 
-# --- Схеми комп'ютера ---
-class ComputerCreate(BaseSchema):
-    hostname: HostnameStr
+# --- Базова схема для комп'ютерів ---
+class ComputerBase(BaseSchema):
+    hostname: HostnameStr = Field(..., max_length=255)
     os_name: Optional[NonEmptyStr] = None
     os_version: Optional[NonEmptyStr] = None
     ram: Optional[int] = Field(None, ge=0)
@@ -114,40 +114,27 @@ class ComputerCreate(BaseSchema):
     physical_disks: List[PhysicalDisk] = []
     logical_disks: List[LogicalDisk] = []
 
+class ComputerCreate(ComputerBase):
+    pass 
+
 class ComputerListItem(BaseSchema):
     id: int
-    hostname: HostnameStr
+    hostname: HostnameStr = Field(..., max_length=255)
     os_name: Optional[NonEmptyStr] = None
     check_status: Optional[CheckStatus] = None
     last_updated: Optional[datetime] = None
     domain_id: Optional[int] = None
     domain_name: Optional[NonEmptyStr] = None
 
-class ComputerList(BaseSchema):
+class ComputerList(ComputerBase):
     id: int
-    hostname: HostnameStr
-    os_name: Optional[NonEmptyStr] = None
-    os_version: Optional[NonEmptyStr] = None
-    ram: Optional[int] = Field(None, ge=0)
-    motherboard: Optional[str] = None
-    last_boot: Optional[datetime] = None
-    is_virtual: Optional[bool] = False
-    check_status: Optional[CheckStatus] = None
     last_updated: Optional[datetime] = None
     last_full_scan: Optional[datetime] = None
     domain_id: Optional[int] = None
     domain_name: Optional[NonEmptyStr] = None
-    ip_addresses: List[IPAddress] = []
-    mac_addresses: List[MACAddress] = []
-    processors: List[Processor] = []
-    video_cards: List[VideoCard] = []
-    software: List[Software] = []
-    roles: List[Role] = []
-    physical_disks: List[PhysicalDisk] = []
-    logical_disks: List[LogicalDisk] = []
 
 class ComputersResponse(BaseSchema):
-    data: List[ComputerList]
+    data: List[ComputerListItem]  
     total: int
 
 # --- Схеми статистики ---
@@ -166,6 +153,7 @@ class OsStats(BaseSchema):
     count: int = Field(ge=0)
 
 class DiskVolume(BaseSchema):
+    id: int
     hostname: HostnameStr
     device_id: NonEmptyStr
     volume_label: Optional[NonEmptyStr] = None

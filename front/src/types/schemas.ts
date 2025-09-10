@@ -100,6 +100,24 @@ export interface ComponentSchema {
   detected_on?: string | null;
   removed_on?: string | null;
 }
+export interface ComputerBase {
+  hostname: string;
+  os_name?: string | null;
+  os_version?: string | null;
+  ram?: number | null;
+  motherboard?: string | null;
+  last_boot?: string | null;
+  is_virtual?: boolean | null;
+  check_status?: CheckStatus | null;
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  processors?: Processor[];
+  video_cards?: VideoCard[];
+  software?: Software[];
+  roles?: Role[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
+}
 export interface ComputerCreate {
   hostname: string;
   os_name?: string | null;
@@ -119,7 +137,6 @@ export interface ComputerCreate {
   logical_disks?: LogicalDisk[];
 }
 export interface ComputerList {
-  id: number;
   hostname: string;
   os_name?: string | null;
   os_version?: string | null;
@@ -128,10 +145,6 @@ export interface ComputerList {
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  last_updated?: string | null;
-  last_full_scan?: string | null;
-  domain_id?: number | null;
-  domain_name?: string | null;
   ip_addresses?: IPAddress[];
   mac_addresses?: MACAddress[];
   processors?: Processor[];
@@ -140,6 +153,11 @@ export interface ComputerList {
   roles?: Role[];
   physical_disks?: PhysicalDisk[];
   logical_disks?: LogicalDisk[];
+  id: number;
+  last_updated?: string | null;
+  last_full_scan?: string | null;
+  domain_id?: number | null;
+  domain_name?: string | null;
 }
 export interface ComputerListItem {
   id: number;
@@ -155,7 +173,7 @@ export interface ComputerUpdateCheckStatus {
   check_status: CheckStatus;
 }
 export interface ComputersResponse {
-  data: ComputerList[];
+  data: ComputerListItem[];
   total: number;
 }
 export interface DashboardStats {
@@ -179,6 +197,7 @@ export interface DiskStats {
   low_disk_space: DiskVolume[];
 }
 export interface DiskVolume {
+  id: number;
   hostname: string;
   device_id: string;
   volume_label?: string | null;

@@ -8,13 +8,12 @@ from sqlalchemy import select
 from ..config import settings
 from ..repositories.computer_repository import ComputerRepository
 from .. import models
-from ..schemas import ComputerCreate, Role, Software, PhysicalDisk, LogicalDisk, VideoCard, Processor, IPAddress, MACAddress, IdentifierField
 from ..data_collector import WinRMDataCollector
 from ..database import async_session_factory
 from ..decorators import log_function_call
 from ..services.encryption_service import get_encryption_service
 from ..services.winrm_service import WinRMService
-from ..mappers.component_mapper import map_to_components, map_to_physical_disks, map_to_ip_addresses, map_to_mac_addresses
+from ..mappers.component_mapper import map_to_components
 
 logger = logging.getLogger(__name__)
 
@@ -56,70 +55,52 @@ class ComputerService:
         collector = WinRMDataCollector(hostname=host, db=self.computer_repo.db, encryption_service=encryption_service)
         return await collector.collect_pc_info(mode=mode, last_updated=last_updated, winrm_service=winrm_service)
 
+
     @log_function_call
-    async def _prepare_and_validate_data(self, raw_data: Dict[str, Any], hostname: str) -> ComputerCreate:
-        """Підготовка та валідація даних для збереження.
-
-        Args:
-            raw_data: Сирі дані, отримані від WinRMDataCollector.
-            hostname: Ім'я хоста для контексту.
-
-        Returns:
-            ComputerCreate: Валідована Pydantic-схема комп'ютера.
-
-        Raises:
-            ValueError: Якщо дані некоректні або не можуть бути валідовані.
+    async def _prepare_and_save_data(self, raw_data: Dict[str, Any], hostname: str, mode: str):
         """
-        logger.debug(f"Підготовка даних для хоста {hostname}", extra={"hostname": hostname})
+        Готує та зберігає дані, отримані з хоста, напряму працюючи з SQLModel.
+        """
+        logger.debug(f"Підготовка та збереження даних для хоста {hostname}", extra={"hostname": hostname})
         try:
-            # Використання мапперів для обробки компонентів
-            ip_addresses = map_to_ip_addresses(raw_data.get("ip_addresses", []), hostname)
-            mac_addresses = map_to_mac_addresses(raw_data.get("mac_addresses", []), hostname)
-            processors = map_to_components(Processor, raw_data.get("processors", []), hostname, IdentifierField.NAME)
-            video_cards = map_to_components(VideoCard, raw_data.get("video_cards", []), hostname, IdentifierField.NAME)
-            software = map_to_components(Software, raw_data.get("software", []), hostname, IdentifierField.NAME)
-            roles = map_to_components(Role, raw_data.get("roles", []), hostname, IdentifierField.NAME)
+            # Отримуємо або створюємо основний об'єкт Computer
+            computer_data = {
+                "os_name": raw_data.get("os_name", "Unknown"),
+                "os_version": raw_data.get("os_version"),
+                "ram": raw_data.get("ram"),
+                "motherboard": raw_data.get("motherboard"),
+                "last_boot": raw_data.get("last_boot"),
+                "check_status": raw_data.get("check_status", "failed"),
+            }
+            # Цей виклик тепер повертає комп'ютер з усіма завантаженими зв'язками
+            db_computer = await self.computer_repo.get_or_create_computer(computer_data, hostname)
+            
+            # Встановлюємо дати сканування
+            db_computer.last_updated = datetime.utcnow()
+            if mode == "Full":
+                db_computer.last_full_scan = datetime.utcnow()
 
+            # Мапимо та оновлюємо пов'язані сутності
             disks_data = raw_data.get("disks", {})
-            physical_disks = map_to_physical_disks(disks_data.get("physical_disks", []), hostname)
-            logical_disks = map_to_components(LogicalDisk, disks_data.get("logical_disks", []), hostname, IdentifierField.DEVICE_ID)
+            
+            # Ця частина тепер буде працювати без помилки, бо `db_computer` має завантажені зв'язки
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.IPAddress, raw_data.get("ip_addresses", []), hostname), models.IPAddress, "address", "ip_addresses")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.MACAddress, raw_data.get("mac_addresses", []), hostname), models.MACAddress, "address", "mac_addresses")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.Processor, raw_data.get("processors", []), hostname), models.Processor, "name", "processors")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.VideoCard, raw_data.get("video_cards", []), hostname), models.VideoCard, "name", "video_cards")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.PhysicalDisk, disks_data.get("physical_disks", []), hostname), models.PhysicalDisk, "serial", "physical_disks")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.LogicalDisk, disks_data.get("logical_disks", []), hostname), models.LogicalDisk, "device_id", "logical_disks", custom_logic=self.computer_repo._create_logical_disk)
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.Software, raw_data.get("software", []), hostname), models.Software, ("name", "version"), "software")
+            await self.computer_repo.update_related_entities(db_computer, map_to_components(models.Role, raw_data.get("roles", []), hostname), models.Role, "name", "roles")
+            
+            await self.db.commit()
+            logger.debug(f"Дані для {hostname} успішно збережено", extra={"hostname": hostname})
 
-            # Створення Pydantic-схеми комп'ютера
-            computer_schema = ComputerCreate(
-                hostname=hostname,
-                os_name=raw_data.get("os_name", "Unknown"),
-                os_version=raw_data.get("os_version"),
-                ram=raw_data.get("ram"),
-                motherboard=raw_data.get("motherboard"),
-                last_boot=raw_data.get("last_boot"),
-                is_virtual=raw_data.get("is_virtual", False),
-                check_status=raw_data.get("check_status", "failed"),
-                ip_addresses=ip_addresses,
-                mac_addresses=mac_addresses,
-                processors=processors,
-                video_cards=video_cards,
-                software=software,
-                roles=roles,
-                physical_disks=physical_disks,
-                logical_disks=logical_disks
-            )
-            logger.debug(f"Дані для {hostname} успішно валідовано", extra={"hostname": hostname})
-            return computer_schema
         except Exception as e:
-            logger.error(f"Помилка валідації даних для {hostname}: {str(e)}", extra={"hostname": hostname})
+            logger.error(f"Помилка валідації або збереження даних для {hostname}: {str(e)}", extra={"hostname": hostname})
+            await self.db.rollback()
             raise
 
-    @log_function_call
-    async def _save_computer_data(self, computer_schema: ComputerCreate):
-        """Зберігає дані комп'ютера в базі даних."""
-        try:
-            await self.computer_repo.async_upsert_computer(computer_schema, hostname=computer_schema.hostname)
-            await self.computer_repo.db.commit()
-        except Exception as e:
-            logger.error(f"Помилка збереження даних для {computer_schema.hostname}: {str(e)}",
-                        extra={"hostname": computer_schema.hostname}) # [cite: 547-548]
-            await self.computer_repo.db.rollback() # [cite: 548]
-            raise
 
     @log_function_call
     async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
@@ -129,29 +110,28 @@ class ComputerService:
             last_updated = db_computer.last_updated if db_computer else None
 
             async with async_session_factory() as session:
-                # --- Start of fix ---
                 encryption_service = get_encryption_service()
                 winrm_service = WinRMService(encryption_service=encryption_service, db=session)
-                await winrm_service.initialize() # Initialize to load credentials
-                # --- End of fix ---
+                await winrm_service.initialize()
                 
                 raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
+                
+                if not raw_data or raw_data.get("check_status") in ["failed", "unreachable"]:
+                    logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")})
+                    await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status", "failed"))
+                    await self.computer_repo.db.commit()
+                    return False
 
-            if not raw_data or raw_data.get("check_status") == "failed":
-                logger_adapter.warning(f"Збір даних з хоста {host} не вдався.", extra={"details": raw_data.get("errors")}) 
-                await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status"))
-                await self.computer_repo.db.commit()
-                return False
-
-            computer_schema = await self._prepare_and_validate_data(raw_data, host)
-            await self._save_computer_data(computer_schema)
-            logger_adapter.info(f"Хост {host} успішно оброблено.") 
-            return True
+                # Викликаємо оновлену функцію для підготовки та збереження
+                await self._prepare_and_save_data(raw_data, host, mode)
+                
+                logger_adapter.info(f"Хост {host} успішно оброблено.")
+                return True
         except Exception as e:
             logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
-            await self.computer_repo.db.rollback() 
+            await self.computer_repo.db.rollback()
             await self.computer_repo.async_update_computer_check_status(host, "failed")
-            await self.computer_repo.db.commit() 
+            await self.computer_repo.db.commit()
             return False
 
     @log_function_call

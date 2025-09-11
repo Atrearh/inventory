@@ -1,10 +1,13 @@
-from sqlalchemy import  Integer, String, Text
-from sqlalchemy.orm import  Mapped, mapped_column
+from sqlmodel import SQLModel, Field
+from typing import Optional
 
-from app.base import Base
-
-class AppSetting(Base):
+class AppSetting(SQLModel, table=True):
+    """
+    Модель для збереження налаштувань додатку
+    SQLModel автоматично створює SQLAlchemy таблицю з Pydantic валідацією
+    """
     __tablename__ = "app_settings"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    value: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(max_length=50, unique=True, index=True)
+    value: str = Field()

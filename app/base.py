@@ -1,3 +1,5 @@
-from sqlalchemy.ext.declarative import declarative_base
+from sqlmodel import SQLModel
 
-Base = declarative_base()
+# SQLModel вже має вбудований Base клас
+# Тому просто експортуємо SQLModel як Base для сумісності
+Base = SQLModel

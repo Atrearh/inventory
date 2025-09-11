@@ -95,18 +95,36 @@ class ComputerRepository:
             raise
 
     async def get_or_create_computer(self, computer_data: dict, hostname: str) -> models.Computer:
-        """Отримує або створює комп'ютер у базі даних за hostname."""
+        """
+        Отримує або створює комп'ютер у базі даних за hostname,
+        одразу завантажуючи всі пов'язані сутності.
+        """
         try:
-            result = await self.db.execute(
-                select(models.Computer).where(models.Computer.hostname == hostname)
+            # Змінено: Додано selectinload для всіх зв'язків
+            query = (
+                select(models.Computer)
+                .where(models.Computer.hostname == hostname)
+                .options(
+                    selectinload(models.Computer.ip_addresses),
+                    selectinload(models.Computer.mac_addresses),
+                    selectinload(models.Computer.processors),
+                    selectinload(models.Computer.video_cards),
+                    selectinload(models.Computer.physical_disks),
+                    selectinload(models.Computer.logical_disks),
+                    selectinload(models.Computer.software),
+                    selectinload(models.Computer.roles),
+                )
             )
-            db_computer = result.scalars().first()
+            result = await self.db.execute(query)
+            db_computer = result.unique().scalars().first()
+            
             if db_computer:
                 for key, value in computer_data.items():
                     setattr(db_computer, key, value)
             else:
                 db_computer = models.Computer(**computer_data)
                 self.db.add(db_computer)
+                
             logger.debug("Комп’ютер отримано або створено", extra={"hostname": hostname})
             return db_computer
         except SQLAlchemyError as e:

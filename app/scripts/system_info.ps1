@@ -13,8 +13,7 @@ try {
     $roles = @()
     if (Get-Command -Name Get-WindowsFeature -ErrorAction SilentlyContinue) {
         try {
-            $roles = Get-WindowsFeature | Where-Object { $_.Installed } | Select-Object -ExpandProperty Name | ForEach-Object { Clean-String $_ }
-        } catch {
+            $roles = Get-WindowsFeature | Where-Object { $_.Installed } | ForEach-Object { [PSCustomObject]@{ Name = Clean-String $_.Name } }        } catch {
             Write-Warning "Не удалось получить роли сервера: $($_.Exception.Message)"
             $roles = @()
         }

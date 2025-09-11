@@ -1,18 +1,20 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlmodel import SQLModel
+from sqlalchemy.orm import sessionmaker
 import logging
 from typing import AsyncGenerator
 from .config import settings
-from .base import Base
 
 logger = logging.getLogger(__name__)
 
-# Инициализация engine и async_session_factory при загрузке модуля
+# Ініціалізація engine при завантаженні модуля
 SQLALCHEMY_DATABASE_URL = settings.database_url
 if not SQLALCHEMY_DATABASE_URL:
     logger.error("DATABASE_URL не найден в настройках")
     raise ValueError("DATABASE_URL не найден в настройках")
 
-logger.debug(f"Инициализация базы данных с ")
+
+# Створюємо асинхронний engine
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_size=20,
@@ -20,11 +22,11 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_timeout=10,
     pool_recycle=3600,
-    #echo=True
+    # echo=True  # Для дебагу SQL запитів
 )
 
-
-async_session_factory = async_sessionmaker(
+# Створюємо фабрику сесій з SQLModel AsyncSession
+async_session_factory = sessionmaker(
     engine,
     class_=AsyncSession,
     autoflush=False,
@@ -33,40 +35,36 @@ async_session_factory = async_sessionmaker(
 )
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Предоставляет асинхронную сессию базы данных для FastAPI Depends."""
-    session = async_session_factory()
-
-    try:
-        yield session
-        await session.commit()
-    except Exception as e:
-        logger.error(f"Ошибка в сессии {id(session)}, откат: {str(e)}", exc_info=True)
-        await session.rollback()
-        raise
-    finally:
-        await session.close()
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Помилка в сесії {id(session)}, відкат: {str(e)}", exc_info=True)
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 def get_db_session() -> AsyncSession:
-    """Возвращает сессию базы данных как асинхронный контекстный менеджер для lifespan."""
-    return async_session_factory() 
+    return async_session_factory()
 
 async def init_db():
-    """Инициализация базы данных и создание таблиц."""
     try:
         async with engine.begin() as conn:
-            logger.debug("Создание таблиц базы данных")
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("База данных успешно инициализирована")
+            logger.debug("Створення таблиць бази даних")
+            # SQLModel.metadata містить всі зареєстровані моделі
+            await conn.run_sync(SQLModel.metadata.create_all)
+        logger.info("База даних успішно ініціалізована")
     except Exception as e:
-        logger.error(f"Ошибка инициализации базы данных: {str(e)}", exc_info=True)
+        logger.error(f"Помилка ініціалізації бази даних: {str(e)}", exc_info=True)
         raise
 
 async def shutdown_db():
-    """Закрытие пула соединений базы данных."""
     try:
-        logger.debug("Закрытие пула соединений базы данных")
+        logger.debug("Закриття пулу з'єднань бази даних")
         await engine.dispose()
-        logger.info("Соединение с базой данных закрыто")
+        logger.info("З'єднання з базою даних закрито")
     except Exception as e:
-        logger.error(f"Ошибка при закрытии пула соединений: {str(e)}", exc_info=True)
+        logger.error(f"Помилка при закритті пулу з'єднань: {str(e)}", exc_info=True)
         raise

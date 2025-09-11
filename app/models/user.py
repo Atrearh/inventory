@@ -1,39 +1,51 @@
-from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTable
+from typing import Optional
 from datetime import datetime, timedelta
-from sqlalchemy import ForeignKey, Boolean, Index , Column, DateTime
+from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Index, func
+from pydantic import field_validator
+import re
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
-from ..base import Base
-from sqlalchemy import Column, Integer, String, Boolean
-from sqlalchemy.orm import  Mapped, mapped_column
-from sqlalchemy import func
-from datetime import datetime, timedelta
-from sqlalchemy.orm import relationship
+from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTable
+from app.utils.validators import NonEmptyStr
 
-class User(SQLAlchemyBaseUserTable[int], Base):
+class User(SQLModel, SQLAlchemyBaseUserTable[int], table=True):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    username = Column(String(50), nullable=False)
-    email = Column(String(255), nullable=False, unique=True)
-    hashed_password = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    is_verified = Column(Boolean, default=False)
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: NonEmptyStr = Field(max_length=50, nullable=False)
+    email: NonEmptyStr = Field(max_length=255, nullable=False, unique=True)
+    hashed_password: NonEmptyStr = Field(max_length=255, nullable=False)
+    is_active: bool = Field(default=True)
+    is_superuser: bool = Field(default=False)
+    is_verified: bool = Field(default=False)
+    
+    refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value):
+            raise ValueError("email must be a valid email address (e.g., user@example.com)")
+        return value
 
-class RefreshToken(Base, SQLAlchemyBaseAccessTokenTable):
+class RefreshToken(SQLModel, SQLAlchemyBaseAccessTokenTable[int], table=True):
     __tablename__ = "refresh_tokens"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    issued_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    user: Mapped["User"] = relationship("User", backref="refresh_tokens")
+    
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    user_id: int = Field(foreign_key="users.id", nullable=False)
+    token: NonEmptyStr = Field(max_length=255, nullable=False, unique=True)
+    issued_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"server_default": func.now()})
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(seconds=604800), nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column_kwargs={"server_default": func.now()})
+    revoked: bool = Field(default=False, nullable=False)
+    
+    user: "User" = Relationship(back_populates="refresh_tokens")
+    
     __table_args__ = (
         Index('idx_user_token', 'user_id', 'token', unique=True),
         Index('idx_token_expires', 'token', 'expires_at'),
     )
-
+    
     def __init__(self, **kwargs):
         # Встановлюємо значення за замовчуванням для expires_at, якщо не передано
         if "expires_at" not in kwargs or kwargs["expires_at"] is None:

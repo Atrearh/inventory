@@ -2,10 +2,11 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 function Clean($v) {
-    if (-not $v) { return "" }
-    return ($v -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\.$|^\s+|\s+$', ''
+    if (-not $v) { return $null }
+    $cleaned = ($v -replace '[\x00-\x1F\x7F]', '').Trim() -replace '\.$|^\s+|\s+$', ''
+    if ($cleaned -eq "") { return $null }
+    return $cleaned
 }
-
 $physical_disks = Get-PhysicalDisk
 $logical_disks = Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.Size -gt 0 }
 $partitions = Get-Partition | Where-Object { $_.DriveLetter }

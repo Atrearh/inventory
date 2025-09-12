@@ -11,6 +11,7 @@ const ComputerList = lazy(() => import('./components/ComputerList'));
 const ComputerDetail = lazy(() => import('./components/ComputerDetail'));
 const Settings = lazy(() => import('./components/Settings'));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const TaskManager = lazy(() => import('./components/TaskManager'));
 
 const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
   const { t } = useTranslation();
@@ -41,6 +42,7 @@ const App: React.FC = () => {
                   <Route path="/computer/:computerId" element={<ProtectedRoute><ComputerDetail /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                  <Route path="/tasks" element={<ProtectedRoute><TaskManager /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Layout>

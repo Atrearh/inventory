@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
-import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined, BarsOutlined } from '@ant-design/icons';
 import { ThemeContext } from '../context/ThemeContext';
 
 
@@ -82,6 +82,11 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               key: '/settings',
               icon: <SettingOutlined />,
               label: <Link to="/settings">{t('settings')}</Link>,
+            },
+            {
+              key: '/tasks',
+              icon: <BarsOutlined />,
+              label: <Link to="/tasks">{t('tasks')}</Link>,
             },
           ]}
           style={{ paddingTop: '56px' }}

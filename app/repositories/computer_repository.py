@@ -1,26 +1,23 @@
 from typing import List, Optional, Tuple, Dict, Any, Type, TypeVar, AsyncGenerator, Callable
 from datetime import datetime
-from sqlalchemy import select, func, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select, func, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from .. import models
-from ..schemas import PhysicalDisk, LogicalDisk, Processor, VideoCard, IPAddress, MACAddress, Software, ComputerCreate, ComputerList, ComputerListItem
+from ..schemas import ComputerCreate, ComputerList, ComputerListItem
 from ..decorators import log_function_call
-from typing import Union, Callable
-from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", bound=SQLModel)
 
 class ComputerRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
     def _get_base_computer_query(self):
-        """Повертає базовий запит з усіма пов'язаними сутностями."""
         return select(models.Computer).options(
             selectinload(models.Computer.ip_addresses),
             selectinload(models.Computer.mac_addresses),
@@ -33,7 +30,6 @@ class ComputerRepository:
 
     @log_function_call
     async def get_computer_by_guid(self, db: AsyncSession, object_guid: str) -> Optional[models.Computer]:
-        """Отримує комп'ютер за object_guid."""
         try:
             query = self._get_base_computer_query().filter(models.Computer.object_guid == object_guid)
             result = await db.execute(query)
@@ -45,10 +41,9 @@ class ComputerRepository:
             raise
 
     async def async_update_computer_by_guid(self, db: AsyncSession, object_guid: str, data: Dict[str, Any]) -> None:
-        """Оновлює комп'ютер за object_guid."""
         try:
             await db.execute(
-                update(models.Computer)
+                models.Computer.__table__.update()
                 .where(models.Computer.object_guid == object_guid)
                 .values(**data)
             )
@@ -59,7 +54,6 @@ class ComputerRepository:
             raise
 
     async def async_create_computer(self, db: AsyncSession, data: Dict[str, Any]) -> models.Computer:
-        """Створює новий комп'ютер."""
         try:
             computer = models.Computer(**data)
             db.add(computer)
@@ -72,7 +66,6 @@ class ComputerRepository:
             raise
 
     async def get_all_computers_with_guid(self, db: AsyncSession, domain_id: Optional[int] = None) -> List[models.Computer]:
-        """Отримує всі комп'ютери з ненульовим object_guid, з можливістю фільтрації за domain_id."""
         try:
             query = select(models.Computer).options(
                 joinedload(models.Computer.ip_addresses),
@@ -95,12 +88,7 @@ class ComputerRepository:
             raise
 
     async def get_or_create_computer(self, computer_data: dict, hostname: str) -> models.Computer:
-        """
-        Отримує або створює комп'ютер у базі даних за hostname,
-        одразу завантажуючи всі пов'язані сутності.
-        """
         try:
-            # Змінено: Додано selectinload для всіх зв'язків
             query = (
                 select(models.Computer)
                 .where(models.Computer.hostname == hostname)
@@ -132,7 +120,6 @@ class ComputerRepository:
             raise
 
     async def async_upsert_computer(self, computer: ComputerCreate, hostname: str, mode: str = "Full") -> int:
-        """Створює або оновлює комп'ютер у базі даних, зберігаючи існуючі значення полів AD."""
         try:
             computer_data = computer.model_dump(
                 include={
@@ -143,7 +130,6 @@ class ComputerRepository:
             )
             logger.debug(f"Дані для оновлення: {computer_data}", extra={"hostname": hostname})
             
-            # Виключаємо поля AD, якщо вони None, щоб не перезаписувати існуючі значення
             protected_fields = ["when_created", "when_changed", "enabled", "ad_notes"]
             computer_data = {k: v for k, v in computer_data.items() if k not in protected_fields or v is not None}
             
@@ -168,7 +154,6 @@ class ComputerRepository:
             raise
 
     async def _computer_to_pydantic(self, computers: List[models.Computer]) -> List[ComputerListItem]:
-        """Перетворює список об'єктів комп'ютера в Pydantic-схему."""
         try:
             return [ComputerListItem.model_validate(comp, from_attributes=True) for comp in computers]
         except Exception as e:
@@ -182,9 +167,6 @@ class ComputerRepository:
         check_status: Optional[str] = None,
         server_filter: Optional[str] = None,
     ):
-        """
-        Створює 'легкий' SQLAlchemy-запит, завантажуючи лише необхідні для таблиці поля.
-        """
         query = select(models.Computer).options(
             selectinload(models.Computer.ip_addresses),
         )
@@ -214,9 +196,6 @@ class ComputerRepository:
         check_status: Optional[str] = None,
         server_filter: Optional[str] = None,
     ) -> Tuple[List[ComputerList], int]:
-        """
-        Отримання списку комп'ютерів з фільтрацією та пагінацією ('легкий' запит).
-        """
         query = self._build_computer_query_light(
             hostname=hostname, os_name=os_name, check_status=check_status, server_filter=server_filter
         )
@@ -239,19 +218,16 @@ class ComputerRepository:
 
     @log_function_call
     async def get_computer_details_by_id(self, computer_id: int) -> Optional[models.Computer]:
-        """Отримує повну інформацію про комп'ютер за ID з використанням selectinload."""
         try:
             query = self._get_base_computer_query().filter(models.Computer.id == computer_id)
             result = await self.db.execute(query)
             computer = result.unique().scalars().first()
             
             if computer:
-                # Примусово завантажуємо всі пов’язані дані
                 await self.db.refresh(computer, [
                     "ip_addresses", "mac_addresses", "processors", "video_cards",
                     "physical_disks", "logical_disks", "software", "roles"
                 ])
-                # Переконуємося, що logical_disks для physical_disks завантажені
                 for disk in computer.physical_disks:
                     await self.db.refresh(disk, ["logical_disks"])
             
@@ -262,7 +238,6 @@ class ComputerRepository:
             raise
 
     async def async_update_computer_check_status(self, hostname: str, check_status: str) -> Optional[models.Computer]:
-        """Оновлює статус перевірки комп'ютера."""
         try:
             result = await self.db.execute(
                 select(models.Computer).filter(models.Computer.hostname == hostname)
@@ -284,17 +259,16 @@ class ComputerRepository:
             raise
 
     async def get_component_history(self, computer_id: int) -> List[Dict[str, Any]]:
-        """Отримує історію компонентів комп'ютера."""
         try:
             history = []
-            for component_type, model, schema in [
-                ("physical_disk", models.PhysicalDisk, PhysicalDisk),
-                ("logical_disk", models.LogicalDisk, LogicalDisk),
-                ("processor", models.Processor, Processor),
-                ("video_card", models.VideoCard, VideoCard),
-                ("ip_address", models.IPAddress, IPAddress),
-                ("mac_address", models.MACAddress, MACAddress),
-                ("software", models.Software, Software)
+            for component_type, model in [
+                ("physical_disk", models.PhysicalDisk),
+                ("logical_disk", models.LogicalDisk),
+                ("processor", models.Processor),
+                ("video_card", models.VideoCard),
+                ("ip_address", models.IPAddress),
+                ("mac_address", models.MACAddress),
+                ("software", models.Software)
             ]:
                 result = await self.db.execute(
                     select(model).where(model.computer_id == computer_id)
@@ -302,7 +276,7 @@ class ComputerRepository:
                 for item in result.scalars().all():
                     history.append({
                         "component_type": component_type,
-                        "data": schema.model_validate(item, from_attributes=True).model_dump(),
+                        "data": item.dict(),
                         "detected_on": item.detected_on.isoformat() if item.detected_on else None,
                         "removed_on": item.removed_on.isoformat() if item.removed_on else None
                     })
@@ -314,7 +288,6 @@ class ComputerRepository:
             raise
 
     async def _get_physical_disk_id(self, computer_id: int, serial: Optional[str]) -> Optional[int]:
-        """Отримує ID фізичного диска за його серійним номером."""
         if not serial:
             return None
         try:
@@ -330,15 +303,13 @@ class ComputerRepository:
             logger.error(f"Помилка отримання physical_disk_id для serial {serial}: {str(e)}", extra={"computer_id": computer_id})
             return None
 
-    async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: LogicalDisk) -> models.LogicalDisk:
-        """Створює логічний диск із прив’язкою до фізичного диску."""
-        entity_data = pydantic_model.model_dump(exclude={"total_space_gb", "free_space_gb"})  # Виключаємо обчислювані поля
+    async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: models.LogicalDisk) -> models.LogicalDisk:
+        entity_data = pydantic_model.dict(exclude={"total_space_gb", "free_space_gb"})
         entity_data.pop('parent_disk_serial', None)
         entity_data.pop('computer_id', None)
         entity_data.pop('detected_on', None)
         entity_data.pop('removed_on', None)
         
-        # Логування для діагностики
         logger.debug(f"Дані для створення LogicalDisk: {entity_data}", extra={"computer_id": db_computer.id})
         
         new_logical_disk = models.LogicalDisk(
@@ -347,7 +318,6 @@ class ComputerRepository:
             detected_on=datetime.utcnow(),
             removed_on=None
         )
-        # Додаткові перевірки для physical_disk_id
         if pydantic_model.parent_disk_serial:
             result = await self.db.execute(
                 select(models.PhysicalDisk)
@@ -364,28 +334,24 @@ class ComputerRepository:
         self,
         db_computer: models.Computer,
         new_entities: List[T],
-        model_class: Type[DeclarativeBase],
-        unique_field: Union[str, Tuple[str, ...]],
+        model_class: Type[SQLModel],
+        unique_field: str | Tuple[str, ...],
         collection_name: str,
         update_fields: Optional[List[str]] = None,
         custom_logic: Optional[Callable[[models.Computer, T], Any]] = None,
     ) -> None:
-        """Оновлює пов’язані сутності для вказаного комп’ютера."""
         try:
-            # Перевіряємо, чи сутності попередньо завантажено
             current_entities = getattr(db_computer, collection_name)
             if current_entities is None:
                 logger.warning(f"Пов’язані сутності {collection_name} не завантажено для комп’ютера з ID {db_computer.id}")
                 current_entities = []
 
-            # Формуємо словник поточних сутностей
             current_entities_map = {}
             if isinstance(unique_field, str):
                 current_entities_map = {getattr(entity, unique_field): entity for entity in current_entities if getattr(entity, unique_field) is not None}
             else:
                 current_entities_map = {tuple(getattr(entity, field) for field in unique_field): entity for entity in current_entities if all(getattr(entity, field) is not None for field in unique_field)}
 
-            # Формуємо словник нових сутностей
             new_entities_map = {}
             new_keys = []
             for entity in new_entities:
@@ -395,7 +361,6 @@ class ComputerRepository:
 
             current_keys = list(current_entities_map.keys())
 
-            # Позначаємо видалені сутності
             for key in current_keys:
                 if key not in new_keys:
                     entity_to_remove = current_entities_map[key]
@@ -403,20 +368,17 @@ class ComputerRepository:
                         entity_to_remove.removed_on = datetime.utcnow()
                         logger.debug(f"Позначено як видалене: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
 
-            # Додати нові або оновити існуючі
             for key in new_keys:
                 pydantic_model = new_entities_map[key]
                 if key not in current_keys:
                     if custom_logic:
                         new_db_entity = await custom_logic(db_computer, pydantic_model)
                     else:
-                        # Перевіряємо, чи існує запис у базі даних
-                        entity_data = pydantic_model.model_dump()
+                        entity_data = pydantic_model.dict()
                         entity_data.pop('computer_id', None)
                         entity_data.pop('detected_on', None)
                         entity_data.pop('removed_on', None)
 
-                        # Для моделі Software перевіряємо унікальний ключ
                         if model_class.__name__ == "Software":
                             query = select(model_class).filter(
                                 model_class.computer_id == db_computer.id,
@@ -432,7 +394,7 @@ class ComputerRepository:
                                 for field in update_fields or entity_data.keys():
                                     if hasattr(pydantic_model, field):
                                         setattr(existing_entity, field, getattr(pydantic_model, field))
-                                continue  # Пропускаємо створення нового запису
+                                continue
 
                         new_db_entity = model_class(
                             **entity_data,
@@ -447,8 +409,8 @@ class ComputerRepository:
                     if existing_entity.removed_on is not None:
                         existing_entity.removed_on = None
                         logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
-                    # Оновити лише вказані поля
-                    fields_to_update = update_fields or pydantic_model.model_dump().keys()
+                    fields_to_update = update_fields or pydantic_model.dict().keys()
+                    fields_to_update = [f for f in fields_to_update if f != 'id']
                     for field in fields_to_update:
                         if hasattr(pydantic_model, field):
                             setattr(existing_entity, field, getattr(pydantic_model, field))
@@ -461,7 +423,6 @@ class ComputerRepository:
             raise
 
     async def update_computer_entities(self, db_computer: models.Computer, computer: ComputerCreate) -> None:
-        """Оновлює всі пов'язані сутності комп'ютера."""
         try:
             if computer.ip_addresses is not None:
                 await self.update_related_entities(
@@ -509,7 +470,7 @@ class ComputerRepository:
         except SQLAlchemyError as e:
             logger.error(f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}")
             await self.db.rollback()
-            raise 
+            raise
 
     async def stream_computers(
         self,
@@ -518,7 +479,6 @@ class ComputerRepository:
         check_status: Optional[str],
         server_filter: Optional[str]
     ) -> AsyncGenerator[ComputerList, None]:
-        """Потокова передача комп'ютерів з фільтрацією."""
         try:
             query = self._build_computer_query_light(hostname, os_name, check_status, server_filter)
             result = await self.db.stream(query)
@@ -530,7 +490,6 @@ class ComputerRepository:
             raise
 
     async def update_scan_task_status(self, task_id: str, status: str, scanned_hosts: int, successful_hosts: int, error: Optional[str]):
-        """Оновлює статус задачі сканування."""
         try:
             result = await self.db.execute(
                 select(models.ScanTask).filter(models.ScanTask.id == task_id)
@@ -549,10 +508,9 @@ class ComputerRepository:
             raise
 
     async def clean_old_deleted_software(self) -> int:
-        """Очищає старі записи про ПО з removed_on."""
         try:
             result = await self.db.execute(
-                update(models.Software.__table__)
+                models.Software.__table__.update()
                 .where(models.Software.removed_on.isnot(None))
                 .values(removed_on=datetime.utcnow())
             )
@@ -564,7 +522,6 @@ class ComputerRepository:
             raise
 
     async def get_all_hosts(self) -> List[str]:
-        """Отримує список усіх хостів із бази даних."""
         try:
             result = await self.db.execute(select(models.Computer.hostname))
             return [row[0] for row in result.fetchall()]
@@ -573,7 +530,6 @@ class ComputerRepository:
             raise
 
     async def get_computer_by_hostname(self, db: AsyncSession, hostname: str) -> Optional[models.Computer]:
-        """Отримує комп'ютер за hostname з усіма пов’язаними сутностями."""
         try:
             query = self._get_base_computer_query().options(
                 selectinload(models.Computer.domain)
@@ -587,7 +543,6 @@ class ComputerRepository:
             raise
 
     async def get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[models.Computer]:
-        """Отримує комп'ютер за hostname та domain_id."""
         try:
             result = await db.execute(
                 select(models.Computer).filter(
@@ -601,7 +556,6 @@ class ComputerRepository:
             raise
 
     async def get_all_computers_by_domain_id(self, db: AsyncSession, domain_id: int) -> List[models.Computer]:
-        """Отримує всі комп'ютери для вказаного domain_id."""
         try:
             query = select(models.Computer).filter(models.Computer.domain_id == domain_id)
             result = await db.execute(query)

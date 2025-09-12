@@ -7,6 +7,7 @@ from fastapi_users import schemas
 from app.utils.validators import NonEmptyStr, HostnameStr, MACAddressStr, IPAddressStr, DomainNameStr, CORSOriginsStr, AllowedIPsStr, LogLevelStr, WinRMCertValidationStr
 from app.models import CheckStatus, ScanStatus
 import logging
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -278,3 +279,21 @@ class ScanTask(BaseSchema):
     scanned_hosts: int
     successful_hosts: int
     error: Optional[str] = None
+
+class ScanTask(BaseModel):
+    id: UUID
+    status: ScanStatus
+    scanned_hosts: int
+    successful_hosts: int
+    error: Optional[NonEmptyStr]
+    created_at: datetime
+    updated_at: datetime
+    progress: float = 0.0  # Computed-поле: відсоток успішних хостів
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        data = super().model_validate(obj, **kwargs)
+        data.progress = (data.successful_hosts / max(data.scanned_hosts, 1)) * 100
+        return data

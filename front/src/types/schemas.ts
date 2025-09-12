@@ -264,11 +264,12 @@ export interface ScanResponse {
 export interface ScanTask {
   id: string;
   status: ScanStatus;
-  created_at: string;
-  updated_at: string;
   scanned_hosts: number;
   successful_hosts: number;
-  error?: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  progress?: number;
 }
 export interface TaskRead {
   id: string;

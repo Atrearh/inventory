@@ -271,6 +271,12 @@ export interface ScanTask {
   updated_at: string;
   progress?: number;
 }
+export interface SessionRead {
+  id: number;
+  issued_at: string;
+  expires_at: string;
+  is_current?: boolean;
+}
 export interface TaskRead {
   id: string;
   name: string;

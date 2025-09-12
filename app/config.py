@@ -30,8 +30,8 @@ class AppSettings(BaseSettings):
     """
     # --- Поля налаштувань з .env (статичні) ---
     database_url: Optional[DatabaseURLStr] = None
-    secret_key: Optional[SecretKeyStr] = None
-    encryption_key: Optional[NonEmptyStr] = None # Може бути з .env або згенерований
+    secret_key: SecretKeyStr
+    encryption_key: NonEmptyStr
 
     # --- Поля налаштувань, які можуть бути динамічними (з БД) ---
     api_url: Optional[NonEmptyStr] = None
@@ -127,29 +127,6 @@ class AppSettings(BaseSettings):
             await db.rollback()
             logger.error(f"Помилка збереження налаштувань: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Помилка збереження налаштувань")
-
-    async def _initialize_encryption_key(self, db: AsyncSession):
-        """
-        Перевіряє наявність ключа шифрування. Якщо його немає ні в .env,
-        ні в БД, генерує новий і зберігає в БД.
-        """
-        if self.encryption_key:
-            logger.info("Ключ шифрування завантажено з .env файлу.")
-            return
-
-        result = await db.execute(select(AppSetting).filter_by(key="encryption_key"))
-        db_key = result.scalar_one_or_none()
-
-        if db_key:
-            self.encryption_key = db_key.value
-            logger.info("Ключ шифрування завантажено з бази даних.")
-        else:
-            logger.warning("Ключ шифрування не знайдено. Генерується новий ключ.")
-            new_key = Fernet.generate_key().decode()
-            db.add(AppSetting(key="encryption_key", value=new_key))
-            await db.commit()
-            self.encryption_key = new_key
-            logger.info("Новий ключ шифрування згенеровано та збережено в базу даних.")
 
 
 # Створюємо єдиний екземпляр налаштувань для всього додатку

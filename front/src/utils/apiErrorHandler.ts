@@ -1,7 +1,7 @@
 // front/src/utils/apiErrorHandler.ts
 
 import { AxiosError } from 'axios';
-import { TFunction } from 'i18next';
+import i18n from '../components/i18n';
 
 interface ApiErrorResponse {
   detail?: string;  // Повідомлення від нашого FastAPI бекенда
@@ -10,42 +10,25 @@ interface ApiErrorResponse {
   errors?: any;
 }
 
-export function handleApiError(error: AxiosError<ApiErrorResponse> | any, t: TFunction, defaultMessage?: string): Error {
-  // 1. Помилки мережі або недоступності сервера
-  if (error.code === 'ECONNREFUSED' || !error.response || error.response?.status === 503) {
-    return new Error(t('server_unavailable', 'Сервер недоступний. Перевірте підключення до мережі.'));
-  }
+export function handleApiError(error: AxiosError<ApiErrorResponse> | any, defaultMessage?: string): Error {
+    const t = i18n.t; // Отримуємо функцію t з i18n
 
-  // 2. Пріоритетне повідомлення з бекенда (з нашого global_exception_handler)
-  const backendError = error.response?.data?.error;
-  const backendDetail = error.response?.data?.detail;
-
-  // Використовуємо поле 'error' з нашої схеми ErrorResponse, бо воно більш user-friendly
-  if (backendError && typeof backendError === 'string') {
-    return new Error(backendError);
-  }
-
-  // 3. Обробка стандартних HTTP-статусів
-  if (error.response?.status === 404) {
-    return new Error(t('resource_not_found', 'Ресурс не знайдено'));
-  }
-  if (error.response?.status === 401) {
-    return new Error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
-  }
-  if (error.response?.status === 500) {
-    // Якщо є деталі в режимі DEBUG, показуємо їх
-    if (backendDetail && typeof backendDetail === 'string') {
-        return new Error(`${t('internal_server_error', 'Внутрішня помилка сервера')}: ${backendDetail}`);
+    if (error.code === 'ECONNREFUSED' || !error.response || error.response?.status === 503) {
+        return new Error(t('server_unavailable', 'Сервер недоступний. Перевірте підключення до мережі.'));
     }
-    return new Error(t('internal_server_error', 'Внутрішня помилка сервера'));
-  }
-
-  // 4. Запасний варіант
-  const message =
-    backendDetail ||
-    defaultMessage ||
-    error.message ||
-    t('unknown_error', 'Невідома помилка');
-
-  return new Error(message);
+    if (error.response?.status === 404) {
+        return new Error(t('resource_not_found', 'Ресурс не знайдено'));
+    }
+    if (error.response?.status === 401) {
+        return new Error(t('session_expired', 'Ваша сесія закінчилася. Будь ласка, увійдіть знову.'));
+    }
+    if (error.response?.status === 500) {
+        return new Error(t('internal_server_error', 'Внутрішня помилка сервера'));
+    }
+    const message =
+        error.response?.data?.detail ||
+        error.response?.data?.message ||
+        defaultMessage ||
+        t('unknown_error', 'Невідома помилка');
+    return new Error(message);
 }

@@ -270,6 +270,7 @@ export interface ScanTask {
   created_at: string;
   updated_at: string;
   progress?: number;
+  name?: string | null;
 }
 export interface SessionRead {
   id: number;

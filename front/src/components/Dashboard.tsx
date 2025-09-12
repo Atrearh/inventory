@@ -1,16 +1,13 @@
-import { useStatistics, useComputers } from '../hooks/useApiQueries';
+import { useStatistics } from '../hooks/useApiQueries';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useMemo, useEffect } from 'react';
-import { Modal, Table, notification, Empty, Button } from 'antd';
+import { useEffect } from 'react';
+import { notification, Empty, Button } from 'antd';
 import CombinedStats from './CombinedStats';
 import LowDiskSpace from './LowDiskSpace';
 import SubnetStats from './SubnetStats';
 import DashboardMenu from './DashboardMenu';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { AxiosError } from 'axios';
-import { ComputerList, ComputerListItem } from '../types/schemas';
-import { useComputerFilters, isServerOs } from '../hooks/useComputerFilters';
-import { ITEMS_PER_PAGE } from '../config';
 import { startHostScan } from '../api/api';
 import { useScanEvents } from '../hooks/useScanEvents';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +15,6 @@ import { usePageTitle } from '../context/PageTitleContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-// Компонент для відображення дашборду зі статистикою
 const Dashboard: React.FC = () => {
   const { setPageTitle } = usePageTitle();
   const location = useLocation();
@@ -28,33 +24,10 @@ const Dashboard: React.FC = () => {
   const activeTab = params.get('tab') || 'summary';
   const events = useScanEvents();
 
-    useEffect(() => {
-    setPageTitle(t('statistics')); 
+  useEffect(() => {
+    setPageTitle(t('statistics', 'Статистика'));
   }, [setPageTitle, t]);
 
-  // Використання хука useComputerFilters для уніфікованих фільтрів
-  const { filters, handleFilterChange, handleTableChange } = useComputerFilters([]);
-
-  // Оновлення фільтрів при кліку на ОС
-  const handleOsClick = (os: string) => {
-    handleFilterChange('os_name', os === 'Unknown' || os === 'Other Servers' ? undefined : os);
-    handleFilterChange('server_filter', os === 'Other Servers' ? 'server' : undefined);
-    handleFilterChange('ip_range', undefined);
-    handleFilterChange('page', '1');
-    handleFilterChange('limit', String(ITEMS_PER_PAGE));
-  };
-
-  // Оновлення фільтрів при кліку на підмережу
-  const handleSubnetClick = (subnet: string) => {
-    const ipRange = subnet === 'Невідомо' ? 'none' : subnet;
-    handleFilterChange('ip_range', ipRange);
-    handleFilterChange('os_name', undefined);
-    handleFilterChange('server_filter', undefined);
-    handleFilterChange('page', '1');
-    handleFilterChange('limit', String(ITEMS_PER_PAGE));
-  };
-
-  // Запит для отримання статистики
   const { data, error: statsError, isLoading } = useStatistics([
     'total_computers',
     'os_distribution',
@@ -63,118 +36,71 @@ const Dashboard: React.FC = () => {
     'status_stats',
   ]);
 
-  // Запит для отримання списку комп’ютерів
-  const { data: computersData, isLoading: isComputersLoading, error: computersError } = useComputers({
-    ...filters,
-    hostname: undefined,
-    show_disabled: false,
-    sort_by: 'hostname',
-    sort_order: 'asc',
-    server_filter: filters.os_name && isServerOs(filters.os_name) ? 'server' : filters.server_filter,
-  });
-
-  // Трансформація computersData.data до типу ComputerListItem[]
-  const transformedComputers: ComputerListItem[] = useMemo(() => {
-    return (computersData?.data || []).map((item) => ({
-      ...item,
-      last_updated: item.last_updated ?? '',
-    }));
-  }, [computersData]);
-
-  // Обробка помилок
-  useEffect(() => {
-    if (statsError) {
-      console.error('Помилка статистики:', statsError);
-      const errorMessage = statsError instanceof AxiosError && statsError.response?.data
-        ? JSON.stringify(statsError.response.data.detail || statsError.message)
-        : statsError.message;
-      notification.error({
-        message: t('error_loading_stats'),
-        description: `Не вдалося завантажити статистику: ${errorMessage}`,
-      });
+  const handleOsClick = (os: string) => {
+    const newParams = new URLSearchParams();
+    if (os !== 'Unknown' && os !== 'Other Servers') {
+      newParams.set('os_name', os);
+    } else if (os === 'Other Servers') {
+      newParams.set('server_filter', 'server');
     }
-    if (computersError) {
-      console.error('Помилка комп’ютерів:', computersError);
-      const errorMessage = computersError instanceof AxiosError && computersError.response?.data
-        ? JSON.stringify(computersError.response.data.detail || computersError.message)
-        : computersError.message;
-      notification.error({
-        message: t('error_loading_computers'),
-        description: `Не вдалося завантажити дані комп’ютерів: ${errorMessage}`,
-      });
-    }
-  }, [statsError, computersError, t]);
+    newParams.set('page', '1');
+    newParams.set('limit', '10');
+    navigate(`/computers?${newParams.toString()}`);
+  };
 
-  // Оновлення відфільтрованих комп’ютерів
-  useEffect(() => {
-    if (computersData?.data && (filters.os_name || filters.ip_range)) {
-    }
-  }, [computersData, filters.os_name, filters.ip_range]);
+  const handleSubnetClick = (subnet: string) => {
+    const newParams = new URLSearchParams();
+    newParams.set('ip_range', subnet === 'Невідомо' ? 'none' : subnet);
+    newParams.set('page', '1');
+    newParams.set('limit', '10');
+    navigate(`/computers?${newParams.toString()}`);
+  };
 
-  // Функція для запуску першого сканування
   const handleStartScan = async () => {
     try {
       const response = await startHostScan('');
       notification.success({
-        message: t('scan_started'),
+        message: t('scan_started', 'Сканування розпочато'),
         description: `Task ID: ${response.task_id}`,
       });
     } catch (error) {
       notification.error({
-        message: t('scan_error'),
+        message: t('scan_error', 'Помилка сканування'),
         description: (error as Error).message,
       });
     }
   };
 
-  // Компонент для порожнього стану
+  useEffect(() => {
+    if (statsError) {
+      const errorMessage = statsError instanceof AxiosError && statsError.response?.data
+        ? JSON.stringify(statsError.response.data.detail || statsError.message)
+        : statsError.message;
+      notification.error({
+        message: t('error_loading_stats', 'Помилка завантаження статистики'),
+        description: errorMessage,
+      });
+    }
+  }, [statsError, t]);
+
   const renderEmptyState = () => (
     <Empty
-      description={t('no_data')}
+      description={t('no_data', 'Немає даних')}
       image={Empty.PRESENTED_IMAGE_SIMPLE}
     >
       <Button type="primary" onClick={handleStartScan}>
-        {t('start_scan')}
+        {t('start_scan', 'Розпочати сканування')}
       </Button>
     </Empty>
   );
 
-  if (isLoading) return <div>{t('loading')}</div>;
-  if (statsError) return <div style={{ color: 'red' }}>{t('error_loading_stats')}: {statsError.message}</div>;
+  if (isLoading) return <div>{t('loading', 'Завантаження...')}</div>;
+  if (statsError) return <div style={{ color: 'red' }}>{t('error_loading_stats', 'Помилка завантаження статистики')}: {statsError.message}</div>;
   if (!data || data.total_computers === 0) return renderEmptyState();
 
-  // Зміна вкладки
   const handleTabChange = (tab: string) => {
     navigate(`?tab=${tab}`, { replace: true });
   };
-
-  // Колонки для таблиці комп’ютерів у модальному вікні
-  const computerColumns = [
-    { title: 'Ім’я хоста', dataIndex: 'hostname', key: 'hostname' },
-    {
-      title: 'IP-адреса',
-      dataIndex: 'ip_addresses',
-      key: 'ip',
-      render: (ip_addresses: ComputerList['ip_addresses']) => ip_addresses?.map((ip) => ip.address).join(', ') || '-',
-    },
-    { title: 'ОС', dataIndex: 'os_version', key: 'os_version' },
-    {
-      title: 'Статус',
-      dataIndex: 'check_status',
-      key: 'check_status',
-      render: (status: string) => {
-        const statusTranslations: Record<string, string> = {
-          success: 'Успішно',
-          partially_successful: 'Частково успішно',
-          failed: 'Невдало',
-          unreachable: 'Недоступно',
-          disabled: 'Відключено',
-          is_deleted: 'Видалено',
-        };
-        return statusTranslations[status] || status || '-';
-      },
-    },
-  ];
 
   return (
     <div style={{ padding: 2 }}>
@@ -189,7 +115,7 @@ const Dashboard: React.FC = () => {
           lowDiskSpaceCount={data.disk_stats?.low_disk_space?.length || 0}
           onOsClick={handleOsClick}
           onStatusClick={(status: string) =>
-            navigate(`/computers?check_status=${encodeURIComponent(status)}`)
+            navigate(`/computers?check_status=${encodeURIComponent(status)}&page=1&limit=10`)
           }
         />
       )}
@@ -205,43 +131,6 @@ const Dashboard: React.FC = () => {
           emptyComponent={renderEmptyState()}
         />
       )}
-
-      <Modal
-        title={filters.os_name || filters.ip_range || 'Не вибрано'}
-        open={!!(filters.os_name || filters.ip_range)}
-        onCancel={() => {
-          handleFilterChange('os_name', undefined);
-          handleFilterChange('ip_range', undefined);
-          handleFilterChange('server_filter', undefined);
-        }}
-        footer={null}
-        width={600}
-      >
-        {isComputersLoading ? (
-          <div>{t('loading')}</div>
-        ) : computersError ? (
-          <div style={{ color: 'red' }}>{t('error_loading_computers')}: {computersError.message}</div>
-        ) : (
-          <Table
-            columns={computerColumns}
-            dataSource={transformedComputers}
-            rowKey="id"
-            size="small"
-            pagination={{
-              current: filters.page,
-              pageSize: filters.limit,
-              total: computersData?.total || 0,
-              onChange: (page, pageSize) =>
-                handleTableChange(
-                  { current: page, pageSize },
-                  {},
-                  {}
-                ),
-            }}
-            locale={{ emptyText: renderEmptyState() }}
-          />
-        )}
-      </Modal>
     </div>
   );
 };

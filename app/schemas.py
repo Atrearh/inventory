@@ -289,6 +289,7 @@ class ScanTask(BaseModel):
     created_at: datetime
     updated_at: datetime
     progress: float = 0.0  # Computed-поле: відсоток успішних хостів
+    name: Optional[NonEmptyStr] = None
 
     model_config = {"from_attributes": True}
 

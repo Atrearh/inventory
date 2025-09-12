@@ -10,6 +10,7 @@ import { getTasks } from '../api/tasks.api';
 import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
 import { LogoutOutlined, DownOutlined } from '@ant-design/icons';
 import styles from './HeaderWidget.module.css';
+import { ScanTask } from '../types/schemas';
 
 interface Task {
   id: string;
@@ -34,11 +35,13 @@ const HeaderWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const { data: tasks = [], isLoading: isTasksLoading } = useQuery<Task[], Error>({
-    queryKey: ['tasks'],
-    queryFn: getTasks,
-    refetchInterval: 15000,
-    enabled: !!user,
+  const { data: tasks = [], isLoading: isTasksLoading } = useQuery({
+      queryKey: ['tasks'],
+      queryFn: () => getTasks(),
+      refetchInterval: 15000,
+      enabled: !!user,
+      // Опція select трансформує дані: беремо лише перший елемент ([ScanTask[]]) з кортежу
+      select: (data: [ScanTask[], number]) => data[0],
   });
 
   const handleLogout = useCallback(() => {

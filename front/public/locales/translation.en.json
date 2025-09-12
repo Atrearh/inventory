@@ -243,5 +243,23 @@
 "all_other_sessions_revoked": "All other sessions successfully revoked",
 "session_revoke_error": "Failed to revoke session",
 "security": "Security",
-"general_settings": "General Settings"
-}
+"general_settings": "General Settings",
+"all_statuses" : "all_statuses", 
+  "all_os": "All Operating Systems",
+  "domain": "Domain",
+  "app_title": "Application Title",
+  "task_management": "Task Management",
+  "progress": "Progress",
+  "created_at": "Created At",
+  "updated_at": "Updated At",
+  "retry_task": "Retry Task",
+  "delete_task": "Delete Task",
+  "confirm_delete_task": "Are you sure you want to delete this task?",
+  "task_deleted": "Task successfully deleted",
+  "task_delete_error": "Task deletion error",
+  "task_restarted": "Task restarted",
+  "task_restart_error": "Task restart error",
+  "status_completed": "Completed",
+  "status_running": "Running",
+  "status_pending": "Pending"
+} 

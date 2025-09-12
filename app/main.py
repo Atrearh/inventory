@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from .app_initializer import AppInitializer
 from .utils.security import setup_cors
 from .config import settings
-from .routers import auth, computers, scan, statistics, scripts, domain_router, tasks
+from .routers import auth, computers, scan, statistics, scripts, domain_router, tasks, sessions
 from .routers.settings import router as settings_router
 from .exceptions import global_exception_handler
 from .middlewares import register_middlewares
@@ -34,6 +34,7 @@ app.include_router(statistics.router, prefix="/api")
 app.include_router(scripts.router)
 app.include_router(domain_router.router)
 app.include_router(tasks.router)
+app.include_router(sessions.router)
 
 # Ініціалізація додатка
 initializer = AppInitializer(app)

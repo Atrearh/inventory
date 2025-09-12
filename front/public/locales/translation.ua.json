@@ -232,5 +232,20 @@
   "app_title": "Ім’я програми",
   "server_unavailable": "Сервер недоступний. Перевірте підключення до мережі.",
   "resource_not_found": "Ресурс не знайдено",
-  "internal_server_error": "Внутрішня помилка сервера"
+  "internal_server_error": "Внутрішня помилка сервера",
+  "session_management": "Управління сесіями",
+  "session_management_description": "Тут ви можете переглянути всі ваші активні сесії та відкликати ті, які ви не впізнаєте.",
+  "login_date": "Дата входу",
+  "session_expires": "Сесія закінчується",
+  "current_session": "Поточна сесія",
+  "active": "Активна",
+  "revoke": "Відкликати",
+  "confirm_revoke_session": "Ви впевнені, що хочете завершити цю сесію?",
+  "revoke_all_other_sessions": "Відкликати всі інші сесії",
+  "confirm_revoke_all_other_sessions": "Ви впевнені? Це завершить усі сесії на інших пристроях.",
+  "session_revoked": "Сесію успішно відкликано",
+  "all_other_sessions_revoked": "Усі інші сесії успішно відкликано",
+  "session_revoke_error": "Не вдалося відкликати сесію",
+  "security": "Безпека",
+  "general_settings": "Загальні налаштування"
 }

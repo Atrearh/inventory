@@ -228,5 +228,20 @@
   "restart_print_error": "Error restarting print",
   "server_unavailable": "Server unavailable. Please check your network connection.",
   "resource_not_found": "Resource not found",
-  "internal_server_error": "Internal server error"
+  "internal_server_error": "Internal server error",
+  "session_management": "Session Management",
+"session_management_description": "Here you can view all your active sessions and revoke those you do not recognize.",
+"login_date": "Login Date",
+"session_expires": "Session Expires",
+"current_session": "Current Session",
+"active": "Active",
+"revoke": "Revoke",
+"confirm_revoke_session": "Are you sure you want to end this session?",
+"revoke_all_other_sessions": "Revoke All Other Sessions",
+"confirm_revoke_all_other_sessions": "Are you sure? This will end all sessions on other devices.",
+"session_revoked": "Session successfully revoked",
+"all_other_sessions_revoked": "All other sessions successfully revoked",
+"session_revoke_error": "Failed to revoke session",
+"security": "Security",
+"general_settings": "General Settings"
 }

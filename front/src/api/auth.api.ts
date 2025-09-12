@@ -7,6 +7,13 @@ interface LoginCredentials {
   password: string;
 }
 
+export interface SessionData {
+  id: number;
+  issued_at: string;
+  expires_at: string;
+  is_current: boolean;
+}
+
 export const login = async (credentials: LoginCredentials): Promise<UserRead> => {
   return apiRequest('post', '/auth/jwt/login', new URLSearchParams({
     username: credentials.email,
@@ -34,4 +41,16 @@ export const updateUser = async (id: number, userData: Partial<UserUpdate>): Pro
 
 export const deleteUser = async (id: number): Promise<void> => {
   return apiRequest('delete', `/users/${id}`);
+};
+
+export const getSessions = async (): Promise<SessionData[]> => {
+  return apiRequest('get', '/sessions');
+};
+
+export const revokeSession = async (tokenId: number): Promise<void> => {
+  return apiRequest('delete', `/sessions/${tokenId}`);
+};
+
+export const revokeAllOtherSessions = async (): Promise<void> => {
+  return apiRequest('post', '/sessions/revoke-all-others');
 };

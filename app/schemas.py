@@ -297,3 +297,9 @@ class ScanTask(BaseModel):
         data = super().model_validate(obj, **kwargs)
         data.progress = (data.successful_hosts / max(data.scanned_hosts, 1)) * 100
         return data
+    
+class SessionRead(BaseSchema):
+    id: int
+    issued_at: datetime
+    expires_at: datetime
+    is_current: bool = False

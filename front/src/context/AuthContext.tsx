@@ -1,8 +1,7 @@
+// AuthProvider.tsx
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { UserRead } from '../types/schemas';
-import { useNavigate } from 'react-router-dom';
-import { getMe, login, logout } from '../api/auth.api';
-
+import { getMe, login as apiLogin, logout as apiLogout } from '../api/auth.api';
 
 interface AuthContextType {
   user: UserRead | null;
@@ -35,19 +34,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAuth = useCallback(async () => {
     try {
-      // Використовуємо спеціальний ендпоінт /users/me для перевірки сесії
-      const currentUser = await getMe(); 
+      const currentUser = await getMe();
       setUser(currentUser);
-      setIsAuthenticated(!!currentUser);
-    } catch (error: any) {
+      setIsAuthenticated(true);
+    } catch {
       setUser(null);
       setIsAuthenticated(false);
-      // Не виводимо помилку в консоль, якщо це просто 401, це очікувана поведінка
-      if (error.message.includes('401')) {
-        console.log('User is not authenticated.');
-      } else {
-        console.error('An error occurred during auth check:', error);
-      }
     } finally {
       setIsLoading(false);
     }
@@ -57,26 +49,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkAuth();
   }, [checkAuth]);
 
-  // Змінюємо назву, щоб уникнути конфлікту імен
   const handleLogin = async (email: string, password: string) => {
     await apiLogin({ email, password });
-    // Після успішного входу, знову перевіряємо статус
     await checkAuth();
   };
 
   const handleLogout = useCallback(async () => {
-    await apiLogout();
-    setUser(null);
-    setIsAuthenticated(false);
+    try {
+      await apiLogout();
+    } finally {
+      setUser(null);
+      setIsAuthenticated(false);
+
+      // Додатково очищаємо локальні дані, щоб уникнути фантомної сесії
+      localStorage.clear();
+      sessionStorage.clear();
+    }
   }, []);
-  
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated,
         isLoading,
-        login: handleLogin, // Передаємо handleLogin
+        login: handleLogin,
         logout: handleLogout,
       }}
     >

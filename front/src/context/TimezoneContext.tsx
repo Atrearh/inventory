@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
+import  { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { apiInstance } from '../api/api';
 
 interface TimezoneContextType {
@@ -15,20 +15,24 @@ export const TimezoneProvider = ({ children }: { children: ReactNode }) => {
   );
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchTimezone = async () => {
-      try {
-        const response = await apiInstance.get('/settings');
-        if (response.data.timezone) {
-          setTimezoneState(response.data.timezone);
+    useEffect(() => {
+      const fetchTimezone = async () => {
+        try {
+          const response = await apiInstance.get('/settings');
+          if (response.data?.timezone) {
+            setTimezoneState(response.data.timezone);
+          }
+        } catch (error: any) {
+          if (error.response?.status === 401) {
+            console.warn('Not authenticated, fallback to local timezone');
+          } else {
+            console.error('Failed to fetch timezone setting, using local timezone', error);
+          }
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to fetch timezone setting, using local timezone', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchTimezone();
+      };
+      fetchTimezone();
   }, []);
 
   const setTimezone = (tz: string) => {

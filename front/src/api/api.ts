@@ -20,21 +20,15 @@ export const apiInstance = axios.create({
   withCredentials: true,
 });
 
-// Інтерцептор для обробки відповідей
 apiInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiErrorResponse>) => {
-    // Якщо помилка 401, не намагайтеся повторити запит.
-    // Просто завершіть сесію на клієнті.
     if (error.response?.status === 401) {
-      // Викликаємо оновлену функцію logout, яка просто
-      // очистить cookie і перенаправить на /login
-      await logout(); 
-      // Викидаємо помилку, щоб ланцюжок promise перервався
-      throw new Error('Сесія закінчилася, будь ласка, увійдіть знову');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+      return;
     }
-
-    // Всі інші помилки обробляються як раніше
     throw handleApiError(error);
   }
 );

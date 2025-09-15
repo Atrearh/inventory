@@ -5,7 +5,7 @@ import { startScan, register, updateUser, deleteUser } from '../api/api';
 import { scanDomains } from '../api/domain.api';
 import { UserRead, UserCreate, UserUpdate } from '../types/schemas';
 import { useUsers } from '../hooks/useApiQueries';
-import { useApiMutation } from '../hooks/useApiMutation'; // Імпортуємо хук
+import { useApiMutation } from '../hooks/useApiMutation'; 
 import { useModalForm } from '../hooks/useModalForm';
 import DomainManagement from './DomainManagement';
 import { usePageTitle } from '../context/PageTitleContext';
@@ -23,7 +23,7 @@ const AdminPanel: React.FC = () => {
   const [form] = Form.useForm();
   const { isModalOpen, editingItem, openCreateModal, openEditModal, handleCancel } = useModalForm<UserRead>({ form });
   const { data: users, refetch: refetchUsers, isLoading: isUsersLoading } = useUsers();
-  const usersQueryKey: QueryKey = ['users']; // Визначаємо queryKey для інвалідування
+  const usersQueryKey: QueryKey = ['users'];
 
   // Мутації з використанням useApiMutation
   const { mutate: registerMutation, isPending: isRegisterLoading } = useApiMutation<UserRead, UserCreate>({

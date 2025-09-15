@@ -1,11 +1,6 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import axios, { AxiosError } from 'axios';
 import { handleApiError } from '../utils/apiErrorHandler';
-import { logout } from './auth.api';
 
-// Тип для кастомної конфігурації запиту
-interface CustomAxiosRequestConfig extends AxiosRequestConfig {
-  _retry?: boolean;
-}
 
 // Інтерфейс для структури помилки API
 interface ApiErrorResponse {

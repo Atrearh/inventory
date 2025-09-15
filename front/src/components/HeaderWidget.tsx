@@ -12,12 +12,7 @@ import { LogoutOutlined, DownOutlined } from '@ant-design/icons';
 import styles from './HeaderWidget.module.css';
 import { ScanTask } from '../types/schemas';
 
-interface Task {
-  id: string;
-  name: string;
-  status: string;
-  created_at: string;
-}
+
 
 const HeaderWidget: React.FC = () => {
   const { t } = useTranslation();
@@ -40,7 +35,6 @@ const HeaderWidget: React.FC = () => {
       queryFn: () => getTasks(),
       refetchInterval: 15000,
       enabled: !!user,
-      // Опція select трансформує дані: беремо лише перший елемент ([ScanTask[]]) з кортежу
       select: (data: [ScanTask[], number]) => data[0],
   });
 

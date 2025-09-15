@@ -1,7 +1,6 @@
 # app/main.py
 import uvicorn
 from fastapi import FastAPI
-
 from .app_initializer import AppInitializer
 from .config import settings
 from .exceptions import global_exception_handler

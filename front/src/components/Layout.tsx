@@ -1,8 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { Layout, Menu, Button, Typography, theme } from 'antd';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation} from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import HeaderWidget from './HeaderWidget';
 import { MenuFoldOutlined, MenuUnfoldOutlined, DashboardOutlined, DesktopOutlined, SettingOutlined, UserOutlined, BarsOutlined } from '@ant-design/icons';
@@ -14,22 +13,10 @@ const { Sider, Content, Header } = Layout;
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { t } = useTranslation();
-  const { logout } = useAuth();
   const { pageTitle } = usePageTitle();
-  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const { token } = theme.useToken();
   const { dark } = useContext(ThemeContext);
-
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (error: any) {
-      console.error('Помилка виходу:', error.message);
-    }
-  };
 
   return (
     <Layout style={{ minHeight: '100vh', marginLeft: collapsed ? 80 : 200,  background: token.colorBgLayout }}>

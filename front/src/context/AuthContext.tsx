@@ -1,6 +1,8 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
-import { login, logout, getUsers } from '../api/auth.api';
 import { UserRead } from '../types/schemas';
+import { useNavigate } from 'react-router-dom';
+import { getMe, login, logout } from '../api/auth.api';
+
 
 interface AuthContextType {
   user: UserRead | null;
@@ -33,15 +35,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAuth = useCallback(async () => {
     try {
-      const users = await getUsers();
-      const currentUser = users[0] || null;
+      // Використовуємо спеціальний ендпоінт /users/me для перевірки сесії
+      const currentUser = await getMe(); 
       setUser(currentUser);
       setIsAuthenticated(!!currentUser);
     } catch (error: any) {
       setUser(null);
       setIsAuthenticated(false);
-      if (error.message === 'Сервер недоступний. Перевірте підключення до мережі.') {
-        console.warn('Server is unavailable');
+      // Не виводимо помилку в консоль, якщо це просто 401, це очікувана поведінка
+      if (error.message.includes('401')) {
+        console.log('User is not authenticated.');
+      } else {
+        console.error('An error occurred during auth check:', error);
       }
     } finally {
       setIsLoading(false);
@@ -52,24 +57,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkAuth();
   }, [checkAuth]);
 
+  // Змінюємо назву, щоб уникнути конфлікту імен
   const handleLogin = async (email: string, password: string) => {
-    await login({ email, password });
+    await apiLogin({ email, password });
+    // Після успішного входу, знову перевіряємо статус
     await checkAuth();
   };
 
   const handleLogout = useCallback(async () => {
-    await logout();
+    await apiLogout();
     setUser(null);
     setIsAuthenticated(false);
   }, []);
-
+  
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated,
         isLoading,
-        login: handleLogin,
+        login: handleLogin, // Передаємо handleLogin
         logout: handleLogout,
       }}
     >

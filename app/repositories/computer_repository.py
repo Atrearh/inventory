@@ -1,17 +1,30 @@
-from typing import List, Optional, Tuple, Dict, Any, Type, TypeVar, AsyncGenerator, Callable
-from datetime import datetime
-from sqlmodel import select, func, SQLModel
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy.exc import SQLAlchemyError
 import logging
+from datetime import datetime
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+)
+
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload, selectinload
+from sqlmodel import SQLModel, func, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from .. import models
-from ..schemas import ComputerCreate, ComputerList, ComputerListItem
 from ..decorators import log_function_call
+from ..schemas import ComputerCreate, ComputerList, ComputerListItem
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=SQLModel)
+
 
 class ComputerRepository:
     def __init__(self, db: AsyncSession):
@@ -23,71 +36,112 @@ class ComputerRepository:
             selectinload(models.Computer.mac_addresses),
             selectinload(models.Computer.processors),
             selectinload(models.Computer.video_cards),
-            selectinload(models.Computer.physical_disks).selectinload(models.PhysicalDisk.logical_disks),
+            selectinload(models.Computer.physical_disks).selectinload(
+                models.PhysicalDisk.logical_disks
+            ),
             selectinload(models.Computer.software),
-            selectinload(models.Computer.roles)
+            selectinload(models.Computer.roles),
         )
 
     @log_function_call
-    async def get_computer_by_guid(self, db: AsyncSession, object_guid: str) -> Optional[models.Computer]:
+    async def get_computer_by_guid(
+        self, db: AsyncSession, object_guid: str
+    ) -> Optional[models.Computer]:
         try:
-            query = self._get_base_computer_query().filter(models.Computer.object_guid == object_guid)
+            query = self._get_base_computer_query().filter(
+                models.Computer.object_guid == object_guid
+            )
             result = await db.execute(query)
             computer = result.unique().scalars().first()
-            logger.debug("Комп'ютер отримано за object_guid" if computer else "Комп'ютер не знайдено", extra={"object_guid": object_guid})
+            logger.debug(
+                (
+                    "Комп'ютер отримано за object_guid"
+                    if computer
+                    else "Комп'ютер не знайдено"
+                ),
+                extra={"object_guid": object_guid},
+            )
             return computer
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання комп'ютера за object_guid: {str(e)}", extra={"object_guid": object_guid})
+            logger.error(
+                f"Помилка отримання комп'ютера за object_guid: {str(e)}",
+                extra={"object_guid": object_guid},
+            )
             raise
 
-    async def async_update_computer_by_guid(self, db: AsyncSession, object_guid: str, data: Dict[str, Any]) -> None:
+    async def async_update_computer_by_guid(
+        self, db: AsyncSession, object_guid: str, data: Dict[str, Any]
+    ) -> None:
         try:
             await db.execute(
                 models.Computer.__table__.update()
                 .where(models.Computer.object_guid == object_guid)
                 .values(**data)
             )
-            logger.debug("Комп'ютер оновлено за object_guid", extra={"object_guid": object_guid})
+            logger.debug(
+                "Комп'ютер оновлено за object_guid", extra={"object_guid": object_guid}
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення комп'ютера за object_guid: {str(e)}", extra={"object_guid": object_guid})
+            logger.error(
+                f"Помилка оновлення комп'ютера за object_guid: {str(e)}",
+                extra={"object_guid": object_guid},
+            )
             await db.rollback()
             raise
 
-    async def async_create_computer(self, db: AsyncSession, data: Dict[str, Any]) -> models.Computer:
+    async def async_create_computer(
+        self, db: AsyncSession, data: Dict[str, Any]
+    ) -> models.Computer:
         try:
             computer = models.Computer(**data)
             db.add(computer)
             await db.flush()
-            logger.debug(f"Комп'ютер створено з ID {computer.id}", extra={"hostname": data.get("hostname")})
+            logger.debug(
+                f"Комп'ютер створено з ID {computer.id}",
+                extra={"hostname": data.get("hostname")},
+            )
             return computer
         except SQLAlchemyError as e:
-            logger.error(f"Помилка створення комп'ютера: {str(e)}", extra={"hostname": data.get("hostname")})
+            logger.error(
+                f"Помилка створення комп'ютера: {str(e)}",
+                extra={"hostname": data.get("hostname")},
+            )
             await db.rollback()
             raise
 
-    async def get_all_computers_with_guid(self, db: AsyncSession, domain_id: Optional[int] = None) -> List[models.Computer]:
+    async def get_all_computers_with_guid(
+        self, db: AsyncSession, domain_id: Optional[int] = None
+    ) -> List[models.Computer]:
         try:
-            query = select(models.Computer).options(
-                joinedload(models.Computer.ip_addresses),
-                joinedload(models.Computer.mac_addresses),
-                joinedload(models.Computer.processors),
-                joinedload(models.Computer.physical_disks),
-                joinedload(models.Computer.logical_disks),
-                joinedload(models.Computer.video_cards),
-                joinedload(models.Computer.software),
-                joinedload(models.Computer.roles)
-            ).filter(models.Computer.object_guid.isnot(None))
+            query = (
+                select(models.Computer)
+                .options(
+                    joinedload(models.Computer.ip_addresses),
+                    joinedload(models.Computer.mac_addresses),
+                    joinedload(models.Computer.processors),
+                    joinedload(models.Computer.physical_disks),
+                    joinedload(models.Computer.logical_disks),
+                    joinedload(models.Computer.video_cards),
+                    joinedload(models.Computer.software),
+                    joinedload(models.Computer.roles),
+                )
+                .filter(models.Computer.object_guid.isnot(None))
+            )
             if domain_id is not None:
                 query = query.filter(models.Computer.domain_id == domain_id)
             result = await db.execute(query)
             computers = result.unique().scalars().all()
-            logger.debug(f"Знайдено {len(computers)} комп'ютерів для domain_id={domain_id}")
+            logger.debug(
+                f"Знайдено {len(computers)} комп'ютерів для domain_id={domain_id}"
+            )
             return computers
         except SQLAlchemyError as e:
             logger.error(f"Помилка отримання комп'ютерів: {str(e)}", exc_info=True)
             raise
 
-    async def get_or_create_computer(self, computer_data: dict, hostname: str) -> models.Computer:
+    async def get_or_create_computer(
+        self, computer_data: dict, hostname: str
+    ) -> models.Computer:
         try:
             query = (
                 select(models.Computer)
@@ -105,57 +159,96 @@ class ComputerRepository:
             )
             result = await self.db.execute(query)
             db_computer = result.unique().scalars().first()
-            
+
             if db_computer:
                 for key, value in computer_data.items():
                     setattr(db_computer, key, value)
             else:
                 db_computer = models.Computer(**computer_data)
                 self.db.add(db_computer)
-                
-            logger.debug("Комп’ютер отримано або створено", extra={"hostname": hostname})
+
+            logger.debug(
+                "Комп’ютер отримано або створено", extra={"hostname": hostname}
+            )
             return db_computer
         except SQLAlchemyError as e:
-            logger.error(f"Помилка при отриманні/створенні комп’ютера: {str(e)}", extra={"hostname": hostname})
+            logger.error(
+                f"Помилка при отриманні/створенні комп’ютера: {str(e)}",
+                extra={"hostname": hostname},
+            )
             raise
 
-    async def async_upsert_computer(self, computer: ComputerCreate, hostname: str, mode: str = "Full") -> int:
+    async def async_upsert_computer(
+        self, computer: ComputerCreate, hostname: str, mode: str = "Full"
+    ) -> int:
         try:
             computer_data = computer.model_dump(
                 include={
-                    "hostname", "os_name", "os_version", "ram",
-                    "motherboard", "last_boot", "check_status",
-                    "object_guid", "when_created", "when_changed", "enabled", "ad_notes", "local_notes"
+                    "hostname",
+                    "os_name",
+                    "os_version",
+                    "ram",
+                    "motherboard",
+                    "last_boot",
+                    "check_status",
+                    "object_guid",
+                    "when_created",
+                    "when_changed",
+                    "enabled",
+                    "ad_notes",
+                    "local_notes",
                 }
             )
-            logger.debug(f"Дані для оновлення: {computer_data}", extra={"hostname": hostname})
-            
+            logger.debug(
+                f"Дані для оновлення: {computer_data}", extra={"hostname": hostname}
+            )
+
             protected_fields = ["when_created", "when_changed", "enabled", "ad_notes"]
-            computer_data = {k: v for k, v in computer_data.items() if k not in protected_fields or v is not None}
-            
+            computer_data = {
+                k: v
+                for k, v in computer_data.items()
+                if k not in protected_fields or v is not None
+            }
+
             if not computer_data.get("when_created"):
-                logger.debug("Відсутній when_created у даних сканування, пропускаємо оновлення", extra={"hostname": hostname})
+                logger.debug(
+                    "Відсутній when_created у даних сканування, пропускаємо оновлення",
+                    extra={"hostname": hostname},
+                )
             if not computer_data.get("ad_notes"):
-                logger.debug("Відсутній ad_notes у даних сканування, пропускаємо оновлення", extra={"hostname": hostname})
-            
+                logger.debug(
+                    "Відсутній ad_notes у даних сканування, пропускаємо оновлення",
+                    extra={"hostname": hostname},
+                )
+
             computer_data["last_updated"] = datetime.utcnow()
             if mode == "Full":
                 computer_data["last_full_scan"] = datetime.utcnow()
-            
+
             db_computer = await self.get_or_create_computer(computer_data, hostname)
             await self.db.flush()
             await self.db.commit()
-            logger.debug(f"Комп’ютер збережено з ID {db_computer.id}", extra={"hostname": hostname})
+            logger.debug(
+                f"Комп’ютер збережено з ID {db_computer.id}",
+                extra={"hostname": hostname},
+            )
 
             return db_computer.id
         except SQLAlchemyError as e:
-            logger.error(f"Помилка збереження комп’ютера: {str(e)}", extra={"hostname": hostname})
+            logger.error(
+                f"Помилка збереження комп’ютера: {str(e)}", extra={"hostname": hostname}
+            )
             await self.db.rollback()
             raise
 
-    async def _computer_to_pydantic(self, computers: List[models.Computer]) -> List[ComputerListItem]:
+    async def _computer_to_pydantic(
+        self, computers: List[models.Computer]
+    ) -> List[ComputerListItem]:
         try:
-            return [ComputerListItem.model_validate(comp, from_attributes=True) for comp in computers]
+            return [
+                ComputerListItem.model_validate(comp, from_attributes=True)
+                for comp in computers
+            ]
         except Exception as e:
             logger.error(f"Помилка перетворення в Pydantic-схему: {str(e)}")
             raise
@@ -197,7 +290,10 @@ class ComputerRepository:
         server_filter: Optional[str] = None,
     ) -> Tuple[List[ComputerList], int]:
         query = self._build_computer_query_light(
-            hostname=hostname, os_name=os_name, check_status=check_status, server_filter=server_filter
+            hostname=hostname,
+            os_name=os_name,
+            check_status=check_status,
+            server_filter=server_filter,
         )
 
         count_query = select(func.count()).select_from(query.subquery())
@@ -217,27 +313,48 @@ class ComputerRepository:
         return pydantic_computers, total
 
     @log_function_call
-    async def get_computer_details_by_id(self, computer_id: int) -> Optional[models.Computer]:
+    async def get_computer_details_by_id(
+        self, computer_id: int
+    ) -> Optional[models.Computer]:
         try:
-            query = self._get_base_computer_query().filter(models.Computer.id == computer_id)
+            query = self._get_base_computer_query().filter(
+                models.Computer.id == computer_id
+            )
             result = await self.db.execute(query)
             computer = result.unique().scalars().first()
-            
+
             if computer:
-                await self.db.refresh(computer, [
-                    "ip_addresses", "mac_addresses", "processors", "video_cards",
-                    "physical_disks", "logical_disks", "software", "roles"
-                ])
+                await self.db.refresh(
+                    computer,
+                    [
+                        "ip_addresses",
+                        "mac_addresses",
+                        "processors",
+                        "video_cards",
+                        "physical_disks",
+                        "logical_disks",
+                        "software",
+                        "roles",
+                    ],
+                )
                 for disk in computer.physical_disks:
                     await self.db.refresh(disk, ["logical_disks"])
-            
-            logger.debug(f"Комп'ютер отримано за ID: {'знайдено' if computer else 'не знайдено'}", extra={"computer_id": computer_id})
+
+            logger.debug(
+                f"Комп'ютер отримано за ID: {'знайдено' if computer else 'не знайдено'}",
+                extra={"computer_id": computer_id},
+            )
             return computer
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання комп'ютера за ID: {str(e)}", extra={"computer_id": computer_id})
+            logger.error(
+                f"Помилка отримання комп'ютера за ID: {str(e)}",
+                extra={"computer_id": computer_id},
+            )
             raise
 
-    async def async_update_computer_check_status(self, hostname: str, check_status: str) -> Optional[models.Computer]:
+    async def async_update_computer_check_status(
+        self, hostname: str, check_status: str
+    ) -> Optional[models.Computer]:
         try:
             result = await self.db.execute(
                 select(models.Computer).filter(models.Computer.hostname == hostname)
@@ -249,13 +366,20 @@ class ComputerRepository:
             new_check_status = models.CheckStatus(check_status)
             if db_computer.check_status != new_check_status:
                 db_computer.check_status = new_check_status
-                logger.debug(f"Статус оновлено до {check_status}", extra={"hostname": hostname})
+                logger.debug(
+                    f"Статус оновлено до {check_status}", extra={"hostname": hostname}
+                )
             return db_computer
         except ValueError:
-            logger.error(f"Недопустиме значення check_status: {check_status}", extra={"hostname": hostname})
+            logger.error(
+                f"Недопустиме значення check_status: {check_status}",
+                extra={"hostname": hostname},
+            )
             raise
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення статусу: {str(e)}", extra={"hostname": hostname})
+            logger.error(
+                f"Помилка оновлення статусу: {str(e)}", extra={"hostname": hostname}
+            )
             raise
 
     async def get_component_history(self, computer_id: int) -> List[Dict[str, Any]]:
@@ -268,26 +392,42 @@ class ComputerRepository:
                 ("video_card", models.VideoCard),
                 ("ip_address", models.IPAddress),
                 ("mac_address", models.MACAddress),
-                ("software", models.Software)
+                ("software", models.Software),
             ]:
                 result = await self.db.execute(
                     select(model).where(model.computer_id == computer_id)
                 )
                 for item in result.scalars().all():
-                    history.append({
-                        "component_type": component_type,
-                        "data": item.dict(),
-                        "detected_on": item.detected_on.isoformat() if item.detected_on else None,
-                        "removed_on": item.removed_on.isoformat() if item.removed_on else None
-                    })
+                    history.append(
+                        {
+                            "component_type": component_type,
+                            "data": item.dict(),
+                            "detected_on": (
+                                item.detected_on.isoformat()
+                                if item.detected_on
+                                else None
+                            ),
+                            "removed_on": (
+                                item.removed_on.isoformat() if item.removed_on else None
+                            ),
+                        }
+                    )
             history.sort(key=lambda x: x["detected_on"] or "")
-            logger.debug(f"Отримано історію компонентів: {len(history)} записів", extra={"computer_id": computer_id})
+            logger.debug(
+                f"Отримано історію компонентів: {len(history)} записів",
+                extra={"computer_id": computer_id},
+            )
             return history
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання історії компонентів: {str(e)}", extra={"computer_id": computer_id})
+            logger.error(
+                f"Помилка отримання історії компонентів: {str(e)}",
+                extra={"computer_id": computer_id},
+            )
             raise
 
-    async def _get_physical_disk_id(self, computer_id: int, serial: Optional[str]) -> Optional[int]:
+    async def _get_physical_disk_id(
+        self, computer_id: int, serial: Optional[str]
+    ) -> Optional[int]:
         if not serial:
             return None
         try:
@@ -295,28 +435,36 @@ class ComputerRepository:
                 select(models.PhysicalDisk.id).where(
                     models.PhysicalDisk.computer_id == computer_id,
                     models.PhysicalDisk.serial == serial,
-                    models.PhysicalDisk.removed_on.is_(None)
+                    models.PhysicalDisk.removed_on.is_(None),
                 )
             )
             return result.scalars().first()
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання physical_disk_id для serial {serial}: {str(e)}", extra={"computer_id": computer_id})
+            logger.error(
+                f"Помилка отримання physical_disk_id для serial {serial}: {str(e)}",
+                extra={"computer_id": computer_id},
+            )
             return None
 
-    async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: models.LogicalDisk) -> models.LogicalDisk:
+    async def _create_logical_disk(
+        self, db_computer: models.Computer, pydantic_model: models.LogicalDisk
+    ) -> models.LogicalDisk:
         entity_data = pydantic_model.dict(exclude={"total_space_gb", "free_space_gb"})
-        entity_data.pop('parent_disk_serial', None)
-        entity_data.pop('computer_id', None)
-        entity_data.pop('detected_on', None)
-        entity_data.pop('removed_on', None)
-        
-        logger.debug(f"Дані для створення LogicalDisk: {entity_data}", extra={"computer_id": db_computer.id})
-        
+        entity_data.pop("parent_disk_serial", None)
+        entity_data.pop("computer_id", None)
+        entity_data.pop("detected_on", None)
+        entity_data.pop("removed_on", None)
+
+        logger.debug(
+            f"Дані для створення LogicalDisk: {entity_data}",
+            extra={"computer_id": db_computer.id},
+        )
+
         new_logical_disk = models.LogicalDisk(
             **entity_data,
             computer_id=db_computer.id,
             detected_on=datetime.utcnow(),
-            removed_on=None
+            removed_on=None,
         )
         if pydantic_model.parent_disk_serial:
             result = await self.db.execute(
@@ -343,19 +491,33 @@ class ComputerRepository:
         try:
             current_entities = getattr(db_computer, collection_name)
             if current_entities is None:
-                logger.warning(f"Пов’язані сутності {collection_name} не завантажено для комп’ютера з ID {db_computer.id}")
+                logger.warning(
+                    f"Пов’язані сутності {collection_name} не завантажено для комп’ютера з ID {db_computer.id}"
+                )
                 current_entities = []
 
             current_entities_map = {}
             if isinstance(unique_field, str):
-                current_entities_map = {getattr(entity, unique_field): entity for entity in current_entities if getattr(entity, unique_field) is not None}
+                current_entities_map = {
+                    getattr(entity, unique_field): entity
+                    for entity in current_entities
+                    if getattr(entity, unique_field) is not None
+                }
             else:
-                current_entities_map = {tuple(getattr(entity, field) for field in unique_field): entity for entity in current_entities if all(getattr(entity, field) is not None for field in unique_field)}
+                current_entities_map = {
+                    tuple(getattr(entity, field) for field in unique_field): entity
+                    for entity in current_entities
+                    if all(getattr(entity, field) is not None for field in unique_field)
+                }
 
             new_entities_map = {}
             new_keys = []
             for entity in new_entities:
-                key = getattr(entity, unique_field) if isinstance(unique_field, str) else tuple(getattr(entity, field) for field in unique_field)
+                key = (
+                    getattr(entity, unique_field)
+                    if isinstance(unique_field, str)
+                    else tuple(getattr(entity, field) for field in unique_field)
+                )
                 new_entities_map[key] = entity
                 new_keys.append(key)
 
@@ -366,7 +528,10 @@ class ComputerRepository:
                     entity_to_remove = current_entities_map[key]
                     if entity_to_remove.removed_on is None:
                         entity_to_remove.removed_on = datetime.utcnow()
-                        logger.debug(f"Позначено як видалене: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
+                        logger.debug(
+                            f"Позначено як видалене: {model_class.__name__} з {unique_field}={key}",
+                            extra={"computer_id": db_computer.id},
+                        )
 
             for key in new_keys:
                 pydantic_model = new_entities_map[key]
@@ -375,100 +540,168 @@ class ComputerRepository:
                         new_db_entity = await custom_logic(db_computer, pydantic_model)
                     else:
                         entity_data = pydantic_model.dict()
-                        entity_data.pop('computer_id', None)
-                        entity_data.pop('detected_on', None)
-                        entity_data.pop('removed_on', None)
+                        entity_data.pop("computer_id", None)
+                        entity_data.pop("detected_on", None)
+                        entity_data.pop("removed_on", None)
 
                         if model_class.__name__ == "Software":
                             query = select(model_class).filter(
                                 model_class.computer_id == db_computer.id,
                                 model_class.name == key[0],
-                                model_class.version == key[1]
+                                model_class.version == key[1],
                             )
                             result = await self.db.execute(query)
                             existing_entity = result.scalars().first()
                             if existing_entity:
                                 if existing_entity.removed_on is not None:
                                     existing_entity.removed_on = None
-                                    logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
+                                    logger.debug(
+                                        f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}",
+                                        extra={"computer_id": db_computer.id},
+                                    )
                                 for field in update_fields or entity_data.keys():
                                     if hasattr(pydantic_model, field):
-                                        setattr(existing_entity, field, getattr(pydantic_model, field))
+                                        setattr(
+                                            existing_entity,
+                                            field,
+                                            getattr(pydantic_model, field),
+                                        )
                                 continue
 
                         new_db_entity = model_class(
                             **entity_data,
                             computer_id=db_computer.id,
                             detected_on=datetime.utcnow(),
-                            removed_on=None
+                            removed_on=None,
                         )
                     getattr(db_computer, collection_name).append(new_db_entity)
-                    logger.debug(f"Додано нову сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
+                    logger.debug(
+                        f"Додано нову сутність: {model_class.__name__} з {unique_field}={key}",
+                        extra={"computer_id": db_computer.id},
+                    )
                 else:
                     existing_entity = current_entities_map[key]
                     if existing_entity.removed_on is not None:
                         existing_entity.removed_on = None
-                        logger.debug(f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}", extra={"computer_id": db_computer.id})
+                        logger.debug(
+                            f"Відновлено сутність: {model_class.__name__} з {unique_field}={key}",
+                            extra={"computer_id": db_computer.id},
+                        )
                     fields_to_update = update_fields or pydantic_model.dict().keys()
-                    fields_to_update = [f for f in fields_to_update if f != 'id']
+                    fields_to_update = [f for f in fields_to_update if f != "id"]
                     for field in fields_to_update:
                         if hasattr(pydantic_model, field):
-                            setattr(existing_entity, field, getattr(pydantic_model, field))
+                            setattr(
+                                existing_entity, field, getattr(pydantic_model, field)
+                            )
 
             await self.db.flush()
-            logger.debug(f"Оновлено {collection_name}", extra={"computer_id": db_computer.id})
+            logger.debug(
+                f"Оновлено {collection_name}", extra={"computer_id": db_computer.id}
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення {collection_name}: {str(e)}", extra={"computer_id": db_computer.id})
+            logger.error(
+                f"Помилка оновлення {collection_name}: {str(e)}",
+                extra={"computer_id": db_computer.id},
+            )
             await self.db.rollback()
             raise
 
-    async def update_computer_entities(self, db_computer: models.Computer, computer: ComputerCreate) -> None:
+    async def update_computer_entities(
+        self, db_computer: models.Computer, computer: ComputerCreate
+    ) -> None:
         try:
             if computer.ip_addresses is not None:
                 await self.update_related_entities(
-                    db_computer, computer.ip_addresses, models.IPAddress, "address", "ip_addresses",
-                    update_fields=["address"]
+                    db_computer,
+                    computer.ip_addresses,
+                    models.IPAddress,
+                    "address",
+                    "ip_addresses",
+                    update_fields=["address"],
                 )
             if computer.mac_addresses is not None:
                 await self.update_related_entities(
-                    db_computer, computer.mac_addresses, models.MACAddress, "address", "mac_addresses",
-                    update_fields=["address"]
+                    db_computer,
+                    computer.mac_addresses,
+                    models.MACAddress,
+                    "address",
+                    "mac_addresses",
+                    update_fields=["address"],
                 )
             if computer.processors is not None:
                 await self.update_related_entities(
-                    db_computer, computer.processors, models.Processor, "name", "processors",
-                    update_fields=["name", "number_of_cores", "number_of_logical_processors"]
+                    db_computer,
+                    computer.processors,
+                    models.Processor,
+                    "name",
+                    "processors",
+                    update_fields=[
+                        "name",
+                        "number_of_cores",
+                        "number_of_logical_processors",
+                    ],
                 )
             if computer.video_cards is not None:
                 await self.update_related_entities(
-                    db_computer, computer.video_cards, models.VideoCard, "name", "video_cards",
-                    update_fields=["name", "driver_version"]
+                    db_computer,
+                    computer.video_cards,
+                    models.VideoCard,
+                    "name",
+                    "video_cards",
+                    update_fields=["name", "driver_version"],
                 )
             if computer.physical_disks is not None:
                 await self.update_related_entities(
-                    db_computer, computer.physical_disks, models.PhysicalDisk, "serial", "physical_disks",
-                    update_fields=["model", "serial", "interface", "media_type"]
+                    db_computer,
+                    computer.physical_disks,
+                    models.PhysicalDisk,
+                    "serial",
+                    "physical_disks",
+                    update_fields=["model", "serial", "interface", "media_type"],
                 )
             if computer.logical_disks is not None:
                 await self.update_related_entities(
-                    db_computer, computer.logical_disks, models.LogicalDisk, "device_id", "logical_disks",
-                    update_fields=["device_id", "volume_label", "total_space", "free_space"],
-                    custom_logic=self._create_logical_disk
+                    db_computer,
+                    computer.logical_disks,
+                    models.LogicalDisk,
+                    "device_id",
+                    "logical_disks",
+                    update_fields=[
+                        "device_id",
+                        "volume_label",
+                        "total_space",
+                        "free_space",
+                    ],
+                    custom_logic=self._create_logical_disk,
                 )
             if computer.software is not None:
                 await self.update_related_entities(
-                    db_computer, computer.software, models.Software, ("name", "version"), "software",
-                    update_fields=["name", "version", "install_date"]
+                    db_computer,
+                    computer.software,
+                    models.Software,
+                    ("name", "version"),
+                    "software",
+                    update_fields=["name", "version", "install_date"],
                 )
             if computer.roles is not None:
                 await self.update_related_entities(
-                    db_computer, computer.roles, models.Role, "name", "roles",
-                    update_fields=["name"]
+                    db_computer,
+                    computer.roles,
+                    models.Role,
+                    "name",
+                    "roles",
+                    update_fields=["name"],
                 )
             await self.db.commit()
-            logger.debug(f"Транзакцію для пов’язаних сутностей зафіксовано", extra={"computer_id": db_computer.id})
+            logger.debug(
+                f"Транзакцію для пов’язаних сутностей зафіксовано",
+                extra={"computer_id": db_computer.id},
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}")
+            logger.error(
+                f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}"
+            )
             await self.db.rollback()
             raise
 
@@ -477,10 +710,12 @@ class ComputerRepository:
         hostname: Optional[str],
         os_name: Optional[str],
         check_status: Optional[str],
-        server_filter: Optional[str]
+        server_filter: Optional[str],
     ) -> AsyncGenerator[ComputerList, None]:
         try:
-            query = self._build_computer_query_light(hostname, os_name, check_status, server_filter)
+            query = self._build_computer_query_light(
+                hostname, os_name, check_status, server_filter
+            )
             result = await self.db.stream(query)
             async for row in result:
                 computer_obj = row[0]
@@ -489,7 +724,14 @@ class ComputerRepository:
             logger.error(f"Помилка потокового отримання комп’ютерів: {str(e)}")
             raise
 
-    async def update_scan_task_status(self, task_id: str, status: str, scanned_hosts: int, successful_hosts: int, error: Optional[str]):
+    async def update_scan_task_status(
+        self,
+        task_id: str,
+        status: str,
+        scanned_hosts: int,
+        successful_hosts: int,
+        error: Optional[str],
+    ):
         try:
             result = await self.db.execute(
                 select(models.ScanTask).filter(models.ScanTask.id == task_id)
@@ -500,11 +742,18 @@ class ComputerRepository:
                 scan_task.scanned_hosts = scanned_hosts
                 scan_task.successful_hosts = successful_hosts
                 scan_task.error = error
-                logger.debug(f"Статус задачі оновлено: {status}", extra={"task_id": task_id})
+                logger.debug(
+                    f"Статус задачі оновлено: {status}", extra={"task_id": task_id}
+                )
             else:
-                logger.warning("Задача сканування не знайдена", extra={"task_id": task_id})
+                logger.warning(
+                    "Задача сканування не знайдена", extra={"task_id": task_id}
+                )
         except Exception as e:
-            logger.error(f"Помилка оновлення статусу задачі: {str(e)}", extra={"task_id": task_id})
+            logger.error(
+                f"Помилка оновлення статусу задачі: {str(e)}",
+                extra={"task_id": task_id},
+            )
             raise
 
     async def clean_old_deleted_software(self) -> int:
@@ -529,39 +778,62 @@ class ComputerRepository:
             logger.error(f"Помилка отримання хостів: {str(e)}")
             raise
 
-    async def get_computer_by_hostname(self, db: AsyncSession, hostname: str) -> Optional[models.Computer]:
+    async def get_computer_by_hostname(
+        self, db: AsyncSession, hostname: str
+    ) -> Optional[models.Computer]:
         try:
-            query = self._get_base_computer_query().options(
-                selectinload(models.Computer.domain)
-            ).filter(models.Computer.hostname == hostname)
+            query = (
+                self._get_base_computer_query()
+                .options(selectinload(models.Computer.domain))
+                .filter(models.Computer.hostname == hostname)
+            )
             result = await db.execute(query)
             computer = result.scalars().first()
-            logger.debug(f"Комп'ютер отримано за hostname: {'знайдено' if computer else 'не знайдено'}", extra={"hostname": hostname})
+            logger.debug(
+                f"Комп'ютер отримано за hostname: {'знайдено' if computer else 'не знайдено'}",
+                extra={"hostname": hostname},
+            )
             return computer
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання комп'ютера за hostname: {str(e)}", extra={"hostname": hostname})
+            logger.error(
+                f"Помилка отримання комп'ютера за hostname: {str(e)}",
+                extra={"hostname": hostname},
+            )
             raise
 
-    async def get_computer_by_hostname_and_domain(self, db: AsyncSession, hostname: str, domain_id: int) -> Optional[models.Computer]:
+    async def get_computer_by_hostname_and_domain(
+        self, db: AsyncSession, hostname: str, domain_id: int
+    ) -> Optional[models.Computer]:
         try:
             result = await db.execute(
                 select(models.Computer).filter(
                     models.Computer.hostname.ilike(hostname.lower()),
-                    models.Computer.domain_id == domain_id
+                    models.Computer.domain_id == domain_id,
                 )
             )
             return result.scalar_one_or_none()
         except Exception as e:
-            logger.error(f"Помилка пошуку комп'ютера за hostname={hostname} і domain_id={domain_id}: {str(e)}", exc_info=True)
+            logger.error(
+                f"Помилка пошуку комп'ютера за hostname={hostname} і domain_id={domain_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
-    async def get_all_computers_by_domain_id(self, db: AsyncSession, domain_id: int) -> List[models.Computer]:
+    async def get_all_computers_by_domain_id(
+        self, db: AsyncSession, domain_id: int
+    ) -> List[models.Computer]:
         try:
-            query = select(models.Computer).filter(models.Computer.domain_id == domain_id)
+            query = select(models.Computer).filter(
+                models.Computer.domain_id == domain_id
+            )
             result = await db.execute(query)
             computers = result.unique().scalars().all()
-            logger.debug(f"Знайдено {len(computers)} комп'ютерів для domain_id={domain_id}")
+            logger.debug(
+                f"Знайдено {len(computers)} комп'ютерів для domain_id={domain_id}"
+            )
             return computers
         except SQLAlchemyError as e:
-            logger.error(f"Помилка отримання комп'ютерів за domain_id: {str(e)}", exc_info=True)
+            logger.error(
+                f"Помилка отримання комп'ютерів за domain_id: {str(e)}", exc_info=True
+            )
             raise

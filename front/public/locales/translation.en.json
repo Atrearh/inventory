@@ -118,7 +118,6 @@
   "delete_error": "Deletion error",
   "start_inventory": "Start Inventory",
   "scan_all_domains": "Scan All Domains",
-  "scan_all_domains_started": "Scan of all domains started, task_ids: {{task_ids}}",
   "scan_all_domains_error": "Error scanning all domains",
   "username": "Username",
   "role": "Role",
@@ -261,5 +260,6 @@
   "task_restart_error": "Task restart error",
   "status_completed": "Completed",
   "status_running": "Running",
-  "status_pending": "Pending"
+  "status_pending": "Pending",
+  "scan_all_domains_started": "Scan of all domains started, task_ids: {{task_ids}}"
 } 

@@ -1,23 +1,23 @@
 # app/config.py
 import logging
 from pathlib import Path
-from typing import Optional, List
-from cryptography.fernet import Fernet
+from typing import List, Optional
 from fastapi import HTTPException
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from .logging_config import setup_logging, update_logging_level
-from .models import AppSetting
+from app.models import AppSetting
 from .utils.validators import (
+    AllowedIPsStr,
+    CORSOriginsStr,
     DatabaseURLStr,
     LogLevelStr,
-    WinRMCertValidationStr,
-    CORSOriginsStr,
-    AllowedIPsStr,
-    SecretKeyStr,
     NonEmptyStr,
+    SecretKeyStr,
+    WinRMCertValidationStr,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class AppSettings(BaseSettings):
     Єдиний клас для керування всіма налаштуваннями додатку.
     Поєднує статичну конфігурацію з .env та динамічну з бази даних.
     """
+
     # --- Поля налаштувань з .env (статичні) ---
     database_url: Optional[DatabaseURLStr] = None
     secret_key: SecretKeyStr
@@ -59,7 +60,11 @@ class AppSettings(BaseSettings):
     @property
     def cors_allow_origins_list(self) -> List[str]:
         """Перетворює cors_allow_origins у список для CORS middleware."""
-        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.cors_allow_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def allowed_ips_list(self) -> List[str]:
@@ -72,15 +77,17 @@ class AppSettings(BaseSettings):
         Значення з .env мають пріоритет для базових налаштувань.
         """
         logger.info("Завантаження динамічних налаштувань з бази даних...")
-        
+
         # 1. Ініціалізація ключа шифрування (критично важливий крок)
         await self._initialize_encryption_key(db)
-        
+
         # 2. Завантаження всіх налаштувань з БД
         try:
             result = await db.execute(select(AppSetting))
-            db_settings = {setting.key: setting.value for setting in result.scalars().all()}
-            
+            db_settings = {
+                setting.key: setting.value for setting in result.scalars().all()
+            }
+
             for key, value in db_settings.items():
                 if hasattr(self, key):
                     try:
@@ -91,7 +98,9 @@ class AppSettings(BaseSettings):
                         else:
                             setattr(self, key, value)
                     except (ValueError, TypeError) as e:
-                        logger.warning(f"Не вдалося конвертувати налаштування '{key}' зі значенням '{value}': {e}")
+                        logger.warning(
+                            f"Не вдалося конвертувати налаштування '{key}' зі значенням '{value}': {e}"
+                        )
 
             # 3. Оновлення рівня логування
             update_logging_level(self.log_level)
@@ -109,12 +118,12 @@ class AppSettings(BaseSettings):
                 if value is not None and hasattr(self, key):
                     result = await db.execute(select(AppSetting).filter_by(key=key))
                     existing_setting = result.scalar_one_or_none()
-                    
+
                     if existing_setting:
                         existing_setting.value = str(value)
                     else:
                         db.add(AppSetting(key=key, value=str(value)))
-                    
+
                     # Оновлюємо значення в поточному об'єкті
                     setattr(self, key, value)
 
@@ -126,7 +135,9 @@ class AppSettings(BaseSettings):
         except Exception as e:
             await db.rollback()
             logger.error(f"Помилка збереження налаштувань: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Помилка збереження налаштувань")
+            raise HTTPException(
+                status_code=500, detail="Помилка збереження налаштувань"
+            )
 
 
 # Створюємо єдиний екземпляр налаштувань для всього додатку

@@ -14,6 +14,10 @@ export interface SessionData {
   is_current: boolean;
 }
 
+export const getMe = async (): Promise<UserRead> => {
+  return apiRequest('get', '/users/me');
+};
+
 export const login = async (credentials: LoginCredentials): Promise<UserRead> => {
   return apiRequest('post', '/auth/jwt/login', new URLSearchParams({
     username: credentials.email,
@@ -24,7 +28,8 @@ export const login = async (credentials: LoginCredentials): Promise<UserRead> =>
 };
 
 export const logout = async (): Promise<void> => {
-  return apiRequest('post', '/auth/jwt/logout');
+  document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  window.location.href = '/login';
 };
 
 export const getUsers = async (): Promise<UserRead[]> => {

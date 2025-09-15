@@ -1,13 +1,15 @@
 import logging
 import re
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, Float
-from sqlalchemy.sql.expression import case, or_, and_
 from typing import List, Optional
+
+from sqlalchemy import Float, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import and_, case, or_
 
 from .. import models, schemas
 
 logger = logging.getLogger(__name__)
+
 
 class StatisticsRepository:
     def __init__(self, db: AsyncSession):
@@ -20,8 +22,8 @@ class StatisticsRepository:
             result = await self.db.execute(
                 select(func.count(models.Computer.id)).filter(
                     and_(
-                        models.Computer.check_status != 'disabled',
-                        models.Computer.check_status != 'is_deleted'
+                        models.Computer.check_status != "disabled",
+                        models.Computer.check_status != "is_deleted",
                     )
                 )
             )
@@ -29,7 +31,10 @@ class StatisticsRepository:
             logger.debug(f"Отримано кількість активних комп’ютерів: {count}")
             return count
         except Exception as e:
-            logger.error(f"Помилка при отриманні кількості активних комп’ютерів: {str(e)}", exc_info=True)
+            logger.error(
+                f"Помилка при отриманні кількості активних комп’ютерів: {str(e)}",
+                exc_info=True,
+            )
             raise
 
     async def get_os_names(self) -> List[str]:
@@ -59,25 +64,23 @@ class StatisticsRepository:
             # Визначаємо категорію ОС із явною обробкою NULL та серверних ОС
             os_category = case(
                 (
-                    models.Computer.os_name.is_(None) | (models.Computer.os_name == ''),
-                    'Unknown'
+                    models.Computer.os_name.is_(None) | (models.Computer.os_name == ""),
+                    "Unknown",
                 ),
                 (
-                    models.Computer.os_name.ilike('%Server%') | models.Computer.os_name.ilike('%Hyper-V%'),
-                    func.coalesce(models.Computer.os_name, 'Other Servers')
+                    models.Computer.os_name.ilike("%Server%")
+                    | models.Computer.os_name.ilike("%Hyper-V%"),
+                    func.coalesce(models.Computer.os_name, "Other Servers"),
                 ),
-                else_=func.coalesce(models.Computer.os_name, 'Other Clients')
-            ).label('category')
+                else_=func.coalesce(models.Computer.os_name, "Other Clients"),
+            ).label("category")
 
             result = await self.db.execute(
-                select(
-                    os_category,
-                    func.count(models.Computer.id).label('count')
-                )
+                select(os_category, func.count(models.Computer.id).label("count"))
                 .filter(
                     and_(
-                        models.Computer.check_status != 'disabled',
-                        models.Computer.check_status != 'is_deleted'
+                        models.Computer.check_status != "disabled",
+                        models.Computer.check_status != "is_deleted",
                     )
                 )
                 .group_by(os_category)
@@ -112,14 +115,14 @@ class StatisticsRepository:
 
             for category, count in os_data:
                 logger.debug(f"Обробка категорії: {category}, count: {count}")
-                if category == 'Unknown':
+                if category == "Unknown":
                     client_os_counts["Unknown"] += count
                     continue
 
                 category_lower = category.lower()
                 matched = False
 
-                if 'server' in category_lower or 'hyper-v' in category_lower:
+                if "server" in category_lower or "hyper-v" in category_lower:
                     for name, pattern in server_os_map.items():
                         if re.search(pattern, category_lower, re.IGNORECASE):
                             server_os_counts[name] += count
@@ -142,23 +145,25 @@ class StatisticsRepository:
 
             client_os_stats = [
                 {"category": cat, "count": count}
-                for cat, count in client_os_counts.items() if count > 0
+                for cat, count in client_os_counts.items()
+                if count > 0
             ]
             server_os_stats = [
                 {"category": cat, "count": count}
-                for cat, count in server_os_counts.items() if count > 0
+                for cat, count in server_os_counts.items()
+                if count > 0
             ]
 
             # Обчислення загальної кількості комп’ютерів
-            total_count = sum(item["count"] for item in client_os_stats + server_os_stats)
+            total_count = sum(
+                item["count"] for item in client_os_stats + server_os_stats
+            )
             logger.debug(f"Загальна кількість комп’ютерів: {total_count}")
             logger.debug(f"Клієнтські ОС: {client_os_stats}")
             logger.debug(f"Серверні ОС: {server_os_stats}")
 
             return schemas.OsStats(
-                count=total_count,
-                client_os=client_os_stats,
-                server_os=server_os_stats
+                count=total_count, client_os=client_os_stats, server_os=server_os_stats
             )
         except Exception as e:
             logger.error(f"Помилка при отриманні розподілу ОС: {str(e)}")
@@ -177,11 +182,18 @@ class StatisticsRepository:
                     models.LogicalDisk.total_space,
                     models.LogicalDisk.free_space,
                 )
-                .join(models.Computer, models.LogicalDisk.computer_id == models.Computer.id)
+                .join(
+                    models.Computer,
+                    models.LogicalDisk.computer_id == models.Computer.id,
+                )
                 .filter(
                     models.LogicalDisk.total_space > 0,
                     models.LogicalDisk.free_space.isnot(None),
-                    (models.LogicalDisk.free_space.cast(Float) / models.LogicalDisk.total_space) < 0.1,  # Виправлено: cast до Float для уникнення помилок
+                    (
+                        models.LogicalDisk.free_space.cast(Float)
+                        / models.LogicalDisk.total_space
+                    )
+                    < 0.1,  # Виправлено: cast до Float для уникнення помилок
                 )
             )
             result = await self.db.execute(stmt)
@@ -194,15 +206,21 @@ class StatisticsRepository:
                     hostname=hostname,
                     device_id=device_id or "Unknown",
                     volume_label=volume_label,
-                    total_space_gb=round(total_space / (1024**3), 2) if total_space else 0.0,
-                    free_space_gb=round(free_space / (1024**3), 2) if free_space else 0.0,
+                    total_space_gb=(
+                        round(total_space / (1024**3), 2) if total_space else 0.0
+                    ),
+                    free_space_gb=(
+                        round(free_space / (1024**3), 2) if free_space else 0.0
+                    ),
                 )
                 for computer_id, hostname, device_id, volume_label, total_space, free_space in disks_data
             ]
             logger.debug(f"Сформовано {len(disk_volumes)} об’єктів DiskVolume")
             return disk_volumes
         except Exception as e:
-            logger.error(f"Помилка при отриманні даних про диски: {str(e)}", exc_info=True)
+            logger.error(
+                f"Помилка при отриманні даних про диски: {str(e)}", exc_info=True
+            )
             raise
 
     async def get_statistics(self, metrics: List[str]) -> schemas.DashboardStats:
@@ -212,7 +230,7 @@ class StatisticsRepository:
             os_stats=schemas.OsStats(count=0, client_os=[], server_os=[]),
             disk_stats=schemas.DiskStats(low_disk_space=[]),
             scan_stats=schemas.ScanStats(last_scan_time=None, status_stats=[]),
-            component_changes=[]
+            component_changes=[],
         )
 
         if "total_computers" in metrics:
@@ -227,10 +245,16 @@ class StatisticsRepository:
             # Оптимізовано: Використовуємо метод get_low_disk_space_with_volumes замість дубльованої логіки
             low_disks = await self.get_low_disk_space_with_volumes()
             stats.disk_stats.low_disk_space = low_disks
-            logger.debug(f"Сформовано {len(stats.disk_stats.low_disk_space)} об’єктів DiskVolume для метрики low_disk_space_with_volumes")
+            logger.debug(
+                f"Сформовано {len(stats.disk_stats.low_disk_space)} об’єктів DiskVolume для метрики low_disk_space_with_volumes"
+            )
 
         if "last_scan_time" in metrics:
-            last_scan = await self.db.execute(select(models.ScanTask.updated_at).order_by(models.ScanTask.updated_at.desc()))
+            last_scan = await self.db.execute(
+                select(models.ScanTask.updated_at).order_by(
+                    models.ScanTask.updated_at.desc()
+                )
+            )
             last_scan_time = last_scan.scalars().first()
             stats.scan_stats.last_scan_time = last_scan_time
 
@@ -246,17 +270,24 @@ class StatisticsRepository:
                 ("processor", models.Processor),
                 ("video_card", models.VideoCard),
                 ("ip_address", models.IPAddress),
-                ("mac_address", models.MACAddress)
+                ("mac_address", models.MACAddress),
             ]
             for component_type, model in component_types:
                 count_query = await self.db.execute(
-                    select(func.count()).select_from(model).filter(
-                        or_(model.detected_on.is_not(None), model.removed_on.is_not(None))  # Виправлено: is_not(None) замість != None
+                    select(func.count())
+                    .select_from(model)
+                    .filter(
+                        or_(
+                            model.detected_on.is_not(None),
+                            model.removed_on.is_not(None),
+                        )  # Виправлено: is_not(None) замість != None
                     )
                 )
                 count = count_query.scalar() or 0
                 stats.component_changes.append(
-                    schemas.ComponentChangeStats(component_type=component_type, changes_count=count)
+                    schemas.ComponentChangeStats(
+                        component_type=component_type, changes_count=count
+                    )
                 )
 
         return stats
@@ -268,15 +299,16 @@ class StatisticsRepository:
             result = await self.db.execute(
                 select(
                     models.Computer.check_status,
-                    func.count(models.Computer.id).label("count")
+                    func.count(models.Computer.id).label("count"),
                 ).group_by(models.Computer.check_status)
             )
             return [
-                schemas.StatusStats(status=str(status.value) if status else "Unknown", count=count)
-                for status, count in result.all() if count > 0
+                schemas.StatusStats(
+                    status=str(status.value) if status else "Unknown", count=count
+                )
+                for status, count in result.all()
+                if count > 0
             ]
         except Exception as e:
             logger.error(f"Помилка при отриманні статистики статусів: {str(e)}")
             raise
-
-    

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+// front/src/hooks/usePersistentState.ts
+import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
-function usePersistentState<T>(key: string, defaultValue: T): [T, (value: T) => void] {
+export function usePersistentState<T>(key: string, defaultValue: T): [T, Dispatch<SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => {
     const storedValue = localStorage.getItem(key);
     return storedValue ? JSON.parse(storedValue) : defaultValue;
@@ -12,5 +13,3 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, (value: T) => 
 
   return [state, setState];
 }
-
-export default usePersistentState;

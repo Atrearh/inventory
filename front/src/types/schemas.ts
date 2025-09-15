@@ -1,3 +1,5 @@
+// Auto-generated TypeScript types
+
 /* tslint:disable */
 /* eslint-disable */
 /**
@@ -45,9 +47,9 @@ export interface PhysicalDisk {
   detected_on?: string | null;
   removed_on?: string | null;
   id?: number | null;
-  computer_id?: number | null;
+  computer_id: number;
   model?: string | null;
-  serial: string;
+  serial?: string | null;
   interface?: string | null;
   media_type?: string | null;
 }
@@ -167,6 +169,8 @@ export interface ComputerListItem {
   last_updated?: string | null;
   domain_id?: number | null;
   domain_name?: string | null;
+  last_full_scan?: string | null;
+  ip_addresses?: IPAddress[];
 }
 export interface ComputerUpdateCheckStatus {
   hostname: string;

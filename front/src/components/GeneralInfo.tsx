@@ -2,7 +2,7 @@ import { Descriptions, Button, Modal, Input, notification } from 'antd';
 import { useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Computer } from '../types/schemas';
+import { ComputerList as Computer } from '../types/schemas';
 import { EditOutlined } from '@ant-design/icons';
 import { apiInstance } from '../api/api';
 import { useTimezone } from '../context/TimezoneContext';

@@ -1,37 +1,73 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, Link } from 'react-router-dom';
-import { notification, Skeleton, Button } from 'antd';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { notification, Skeleton, Table, Button } from 'antd';
 import { useExportCSV } from '../hooks/useExportCSV';
 import { useComputers, useStatistics } from '../hooks/useApiQueries';
-import usePersistentState from '../hooks/usePersistentState';
+import { Resizable } from 'react-resizable';
+import type { TableProps } from 'antd';
+import styles from './ComputerList.module.css';
 import { useComputerFilters } from '../hooks/useComputerFilters';
 import ComputerFiltersPanel from './ComputerFiltersPanel';
 import { AxiosError } from 'axios';
 import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
+import 'react-resizable/css/styles.css';
 import { getDomains } from '../api/domain.api';
 import { ComputerListItem } from '../types/schemas';
 import { usePageTitle } from '../context/PageTitleContext';
-import ReusableTable from '../components/ReusableTable';
-import styles from './ComputerList.module.css';
+import { usePersistentState } from '../hooks/usePersistentState';
 
-const defaultColumnWidths = {
-  hostname: 200,
-  ip_addresses: 150,
-  os_name: 150,
-  check_status: 100,
-  last_full_scan: 100,
+// Компонент для зміни розміру колонок
+const ResizableTitle = (props: any) => {
+  const { onResize, width, ...restProps } = props;
+
+  if (!width) {
+    return <th {...restProps} />;
+  }
+
+  return (
+    <Resizable
+      width={width}
+      height={0}
+      handle={
+        <span
+          className="react-resizable-handle"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        />
+      }
+      onResize={onResize}
+      draggableOpts={{ enableUserSelectHack: false }}
+    >
+      <th {...restProps} style={{ ...restProps.style, position: 'relative' }} />
+    </Resizable>
+  );
 };
 
-const ComputerList: React.FC = () => {
+const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { timezone } = useTimezone();
   const { setPageTitle } = usePageTitle();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
-  const [columnWidths, setColumnWidths] = usePersistentState('computerListColumnWidths', defaultColumnWidths);
+  const [columnWidths, setColumnWidths] = usePersistentState<{
+    hostname: number;
+    domain_id: number;
+    ip_addresses: number;
+    os_name: number;
+    check_status: number;
+    last_full_scan: number;
+  }>('columnWidths', {
+    hostname: 200,
+    domain_id: 100,
+    ip_addresses: 150,
+    os_name: 150,
+    check_status: 100,
+    last_full_scan: 100,
+  });
 
   const { data: domainsData, isLoading: isDomainsLoading } = useQuery({
     queryKey: ['domains'],
@@ -40,40 +76,34 @@ const ComputerList: React.FC = () => {
 
   const domainMap = useMemo(() => {
     const map = new Map<number, string>();
-    domainsData?.forEach((domain) => map.set(domain.id, domain.name));
+    domainsData?.forEach((domain) => {
+      map.set(domain.id, domain.name);
+    });
     return map;
   }, [domainsData]);
 
   const { filters, filteredComputers, debouncedSetHostname, handleFilterChange, clearAllFilters, handleTableChange } =
     useComputerFilters(cachedComputers);
 
-  const fetchData = useCallback(
-    async (params: any) => {
-      const { data, total } = await useComputers({
-        ...params,
-        hostname: undefined,
-        os_name: undefined,
-        check_status: undefined,
-        sort_by: params.sort_by,
-        sort_order: params.sort_order,
-        limit: 1000,
-      }).queryFn();
-      return { data, total };
-    },
-    []
-  );
-
-  const { data: computersData, error: computersError, isLoading: isComputersLoading } = useQuery({
-    queryKey: ['computers', filters],
-    queryFn: () => fetchData(filters),
+  const { data: computersData, error: computersError, isLoading: isComputersLoading } = useComputers({
+    ...filters,
+    hostname: undefined,
+    os_name: undefined,
+    check_status: undefined,
+    sort_by: undefined,
+    sort_order: undefined,
+    limit: 1000,
   });
 
   const { data: statsData, error: statsError, isLoading: isStatsLoading } = useStatistics(['os_distribution']);
+
   const { handleExportCSV } = useExportCSV(filters);
 
   useEffect(() => {
     if (computersData?.data) {
-      const uniqueComputers = Array.from(new Map(computersData.data.map((comp) => [comp.id, comp])).values());
+      const uniqueComputers = Array.from(
+        new Map(computersData.data.map((comp) => [comp.id, comp])).values()
+      );
       const transformedComputers = uniqueComputers.slice(0, 1000).map((computer) => ({
         ...computer,
         last_updated: computer.last_updated || '',
@@ -92,27 +122,32 @@ const ComputerList: React.FC = () => {
 
   const getCheckStatusColor = (status: string | null | undefined) => {
     switch (status) {
-      case 'success': return '#52c41a';
+      case 'success':
+        return '#52c41a'; // Зелений
       case 'failed':
-      case 'unreachable': return '#ff4d4f';
-      case 'partially_successful': return '#faad14';
+      case 'unreachable':
+        return '#ff4d4f'; // Червоний
+      case 'partially_successful':
+        return '#faad14'; // Жовтий
       case 'disabled':
-      case 'is_deleted': return '#8c8c8c';
-      default: return '#000';
+      case 'is_deleted':
+        return '#8c8c8c'; // Сірий
+      default:
+        return '#000'; // Чорний
     }
   };
 
   const getLastScanColor = (scanDate: string | null) => {
-    if (!scanDate) return '#000';
+    if (!scanDate) return '#000'; // Чорний за замовчуванням
     const date = new Date(scanDate);
     const now = new Date();
     const diffDays = (now.getTime() - date.getTime()) / (1000 * 3600 * 24);
-    if (diffDays <= 7) return '#52c41a';
-    if (diffDays <= 14) return '#faad14';
-    return '#ff4d4f';
+    if (diffDays <= 7) return '#52c41a'; // Зелений для сканувань за останній тиждень
+    if (diffDays <= 14) return '#faad14'; // Помаранчевий для 1–2 тижнів
+    return '#ff4d4f'; // Червоний для старіших
   };
 
-  const columns = useMemo(
+  const columns = useMemo<TableProps<ComputerListItem>['columns']>(
     () => [
       {
         title: t('hostname', 'Ім’я хоста'),
@@ -178,7 +213,7 @@ const ComputerList: React.FC = () => {
       },
     ],
     [t, filters.sort_by, filters.sort_order, columnWidths, timezone]
-  );
+  ) as NonNullable<TableProps<ComputerListItem>['columns']>;
 
   const handleResize = useCallback(
     (key: keyof typeof columnWidths) => (_: any, { size }: { size: { width: number } }) => {
@@ -206,7 +241,7 @@ const ComputerList: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      {isComputersLoading || isStatsLoading || isDomainsLoading ? (
+      {isComputersLoading || isStatsLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (
         <>
@@ -224,12 +259,26 @@ const ComputerList: React.FC = () => {
             handleFilterChange={handleFilterChange}
             clearAllFilters={clearAllFilters}
           />
-          <ReusableTable<ComputerListItem>
-            queryKey={['computers', filters]}
-            fetchData={fetchData}
+          <Table
+            components={{
+              header: {
+                cell: ResizableTitle,
+              },
+            }}
             columns={resizableColumns}
-            filters={filters}
-            onTableChange={handleTableChange}
+            dataSource={filteredComputers.data}
+            rowKey="id"
+            pagination={{
+              current: filters.page,
+              pageSize: filters.limit,
+              total: filteredComputers.total || 0,
+              showSizeChanger: false,
+              showQuickJumper: false,
+            }}
+            onChange={handleTableChange}
+            locale={{ emptyText: t('no_data', 'Немає даних для відображення') }}
+            size="small"
+            showSorterTooltip={false}
           />
         </>
       )}
@@ -237,4 +286,4 @@ const ComputerList: React.FC = () => {
   );
 };
 
-export default ComputerList;
+export default ComputerListComponent;

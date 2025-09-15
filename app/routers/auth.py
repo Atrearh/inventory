@@ -1,19 +1,19 @@
 import logging
 from typing import Callable
 from argon2 import PasswordHasher
-from sqlalchemy import select, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi_users import FastAPIUsers, BaseUserManager
+from fastapi import APIRouter, Depends, HTTPException,  status
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_users import BaseUserManager, FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
-from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
-from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users.password import PasswordHelper
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
-from ..models import User, RefreshToken
-from ..schemas import UserRead, UserCreate, UserUpdate
+from ..models import RefreshToken, User
+from ..schemas import UserCreate, UserRead, UserUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -29,22 +29,33 @@ cookie_transport = CookieTransport(
     cookie_samesite="lax",
 )
 
+
 # Стратегія для access- і refresh-токенів
 async def get_refresh_token_db(session: AsyncSession = Depends(get_db)):
     return SQLAlchemyAccessTokenDatabase(session, RefreshToken)
+
+async def get_user_db(session: AsyncSession = Depends(get_db)):
+    yield SQLAlchemyUserDatabase(session, User)
+
+async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):
+    yield UserManager(user_db)
 
 def get_refresh_strategy() -> Callable[[], DatabaseStrategy]:
     def strategy(session: AsyncSession = Depends(get_db)) -> DatabaseStrategy:
         logger.debug("Initializing token database strategy")
         db = SQLAlchemyAccessTokenDatabase(session, RefreshToken)
-        logger.info(f"Database strategy initialized for table: {RefreshToken.__tablename__}, adapter: {type(db).__name__}")
+        logger.info(
+            f"Database strategy initialized for table: {RefreshToken.__tablename__}, adapter: {type(db).__name__}"
+        )
         strategy_instance = DatabaseStrategy(
             database=db,
             lifetime_seconds=604800,  # Час життя refresh-токена (7 днів)
         )
         logger.debug(f"DatabaseStrategy created: {strategy_instance}")
         return strategy_instance
+
     return strategy
+
 
 # Backend для автентифікації
 auth_backend = AuthenticationBackend(
@@ -53,50 +64,57 @@ auth_backend = AuthenticationBackend(
     get_strategy=get_refresh_strategy(),
 )
 
+
 class UserManager(BaseUserManager[User, int]):
     password_helper = PasswordHelper(PasswordHasher())
 
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
-            logger.debug(f"Authenticating user with email: {credentials.username}")
-            async with self.user_db.session as session:
+        logger.debug(f"Authenticating user with email: {credentials.username}")
+        async with self.user_db.session as session:
+            try:
+                result = await session.execute(
+                    select(User).filter_by(email=credentials.username)
+                )
+                user = result.scalars().first()
+                if not user:
+                    logger.debug(f"User with email {credentials.username} not found")
+                    return None
+
+                logger.debug(f"Found user: {user.email}, user type: {type(user)}")
                 try:
-                    result = await session.execute(
-                        select(User).filter_by(email=credentials.username)
+                    verified, updated_hash = self.password_helper.verify_and_update(
+                        credentials.password, user.hashed_password
                     )
-                    user = result.scalars().first()
-                    if not user:
-                        logger.debug(f"User with email {credentials.username} not found")
+                    if verified:
+                        if updated_hash:
+                            user.hashed_password = updated_hash
+                            session.add(user)
+                            await session.commit()
+                        logger.info(f"User {user.email} authenticated successfully")
+                        return user
+                    else:
+                        logger.debug(
+                            f"Password verification failed for user: {user.email}"
+                        )
                         return None
-                    
-                    logger.debug(f"Found user: {user.email}, user type: {type(user)}")
-                    try:
-                        verified, updated_hash = self.password_helper.verify_and_update(
-                            credentials.password, user.hashed_password
-                        )
-                        if verified:
-                            if updated_hash:
-                                user.hashed_password = updated_hash
-                                session.add(user)
-                                await session.commit()
-                            logger.info(f"User {user.email} authenticated successfully")
-                            return user
-                        else:
-                            logger.debug(f"Password verification failed for user: {user.email}")
-                            return None
-                    except Exception as e:
-                        logger.error(f"Password verification error for user {user.email}: {str(e)}")
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="Помилка перевірки пароля"
-                        )
                 except Exception as e:
-                    logger.error(f"Database or authentication error: {str(e)}")
+                    logger.error(
+                        f"Password verification error for user {user.email}: {str(e)}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Внутрішня помилка сервера під час автентифікації"
+                        detail="Помилка перевірки пароля",
                     )
+            except Exception as e:
+                logger.error(f"Database or authentication error: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Внутрішня помилка сервера під час автентифікації",
+                )
 
-    async def create(self, user_create: UserCreate, safe: bool = False, **kwargs) -> User:
+    async def create(
+        self, user_create: UserCreate, safe: bool = False, **kwargs
+    ) -> User:
         logger.debug(f"Creating user with email: {user_create.email}")
         async with self.user_db.session as session:
             user = User(
@@ -128,19 +146,8 @@ class UserManager(BaseUserManager[User, int]):
             logger.error(f"Error parsing user_id '{user_id}' to int: {str(e)}")
             raise
 
-   
 
-async def get_user_manager(db: AsyncSession = Depends(get_db)):
-    logger.debug(f"Creating SQLAlchemyUserDatabase for table: {User.__tablename__}")
-    user_db = SQLAlchemyUserDatabase(db, User)
-    logger.info(f"Creating UserManager for table: {User.__tablename__}")
-    try:
-        user_manager = UserManager(user_db)
-        logger.info(f"UserManager created: {user_manager}")
-        yield user_manager
-    except Exception as e:
-        logger.error(f"Error creating UserManager: {str(e)}")
-        raise
+
 
 # Ініціалізація FastAPIUsers
 fastapi_users = FastAPIUsers[User, int](
@@ -149,7 +156,6 @@ fastapi_users = FastAPIUsers[User, int](
 )
 
 
-    
 get_current_user = fastapi_users.current_user()
 
 # Використання стандартного роутера для логіну
@@ -158,25 +164,18 @@ router.include_router(
     prefix="/jwt",
 )
 
-# Роутер для логауту
-@router.post("/jwt/logout")
-async def logout(response: Response):
-    """Вихід користувача з видаленням cookies."""
-    response.delete_cookie("auth_token")
-    logger.info("User logged out successfully")
-    return {"message": "Успішний вихід"}
 
 # Роути для роботи з користувачами
 @users_router.get("/", response_model=list[UserRead])
 async def get_custom_users(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     logger.info(f"Requesting user list, current user: {current_user.email}")
     result = await db.execute(select(User))
     users = result.scalars().all()
     logger.info(f"Found {len(users)} users")
     return [UserRead.model_validate(user) for user in users]
+
 
 @users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
@@ -185,24 +184,35 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    logger.info(f"Request to delete user with id={user_id}, current user: {current_user.email}")
+    logger.info(
+        f"Request to delete user with id={user_id}, current user: {current_user.email}"
+    )
     if not current_user.is_superuser:
         logger.error(f"User {current_user.email} is not a superuser")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Тільки суперкористувачі можуть видаляти користувачів")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Тільки суперкористувачі можуть видаляти користувачів",
+        )
     if current_user.id == user_id:
         logger.error(f"User {current_user.email} attempted to delete themselves")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неможливо видалити самого себе")
-    
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо видалити самого себе",
+        )
+
     result = await db.execute(select(User).filter_by(id=user_id))
     user = result.scalars().first()
     if not user:
         logger.error(f"User with id={user_id} not found")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Користувач не знайдений")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Користувач не знайдений"
+        )
+
     await db.execute(delete(User).filter_by(id=user_id))
     await db.commit()
     logger.info(f"User with id={user_id} deleted successfully")
     return None
+
 
 @users_router.patch("/{user_id}", response_model=UserRead)
 async def update_user(
@@ -212,22 +222,29 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    logger.info(f"Request to update user with id={user_id}, current user: {current_user.email}")
+    logger.info(
+        f"Request to update user with id={user_id}, current user: {current_user.email}"
+    )
     if not current_user.is_superuser and current_user.id != user_id:
         logger.error(f"User {current_user.email} lacks permission to update")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостатньо прав")
-    
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Недостатньо прав"
+        )
+
     result = await db.execute(select(User).filter_by(id=user_id))
     user = result.scalars().first()
     if not user:
         logger.error(f"User with id={user_id} not found")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Користувач не знайдений")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Користувач не знайдений"
+        )
+
     updated_user = await user_manager.update(user_update, user, safe=True)
     await db.commit()
     await db.refresh(updated_user)
     logger.info(f"User with id={user_id} updated successfully")
     return UserRead.model_validate(updated_user)
+
 
 # Додаємо роутер для реєстрації
 router.include_router(
@@ -235,6 +252,9 @@ router.include_router(
     prefix="/jwt",
 )
 
+
 @users_router.get("/me", response_model=UserRead)
-async def read_users_me(current_user: User = Depends(fastapi_users.current_user(active=True))):
+async def read_users_me(
+    current_user: User = Depends(fastapi_users.current_user(active=True)),
+):
     return current_user

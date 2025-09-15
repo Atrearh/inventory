@@ -1,8 +1,10 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlmodel import SQLModel
-from sqlalchemy.orm import sessionmaker
 import logging
 from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
+
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,9 @@ async_session_factory = sessionmaker(
     class_=AsyncSession,
     autoflush=False,
     autocommit=False,
-    expire_on_commit=False
+    expire_on_commit=False,
 )
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_factory() as session:
@@ -40,14 +43,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception as e:
-            logger.error(f"Помилка в сесії {id(session)}, відкат: {str(e)}", exc_info=True)
+            logger.error(
+                f"Помилка в сесії {id(session)}, відкат: {str(e)}", exc_info=True
+            )
             await session.rollback()
             raise
         finally:
             await session.close()
 
+
 def get_db_session() -> AsyncSession:
     return async_session_factory()
+
 
 async def init_db():
     try:
@@ -59,6 +66,7 @@ async def init_db():
     except Exception as e:
         logger.error(f"Помилка ініціалізації бази даних: {str(e)}", exc_info=True)
         raise
+
 
 async def shutdown_db():
     try:

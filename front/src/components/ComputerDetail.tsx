@@ -74,7 +74,7 @@ const ComputerDetail: React.FC = () => {
   }
 
   if (compError) {
-    return <div className={styles.error}>{t('error')}: {handleApiError(compError, t).message}</div>;
+    return <div className={styles.error}>{t('error')}: {handleApiError(compError).message}</div>;
   }
 
   if (!computer) {

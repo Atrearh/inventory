@@ -1,16 +1,18 @@
-import time
-import logging
-import functools
-from typing import Callable, Any
 import asyncio
+import functools
+import logging
+import time
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
 
 def log_function_call(func: Callable) -> Callable:
     """
     Декоратор для логування викликів функцій, їхніх аргументів,
     результатів та часу виконання. Підтримує синхронні та асинхронні функції.
     """
+
     def _format_args(args: Any, kwargs: Any) -> dict:
         """Форматує аргументи для логування, обмежуючи їх розмір."""
         try:
@@ -33,7 +35,7 @@ def log_function_call(func: Callable) -> Callable:
             end_time = time.perf_counter()
             logger.debug(
                 f"Функція {func_name} завершилася успішно за {end_time - start_time:.4f}с",
-                extra={**extra, "execution_time": end_time - start_time}
+                extra={**extra, "execution_time": end_time - start_time},
             )
             return result
         except Exception as e:
@@ -41,7 +43,7 @@ def log_function_call(func: Callable) -> Callable:
             logger.error(
                 f"Помилка у функції {func_name} після {end_time - start_time:.4f}с: {e}",
                 exc_info=True,
-                extra={**extra, "execution_time": end_time - start_time}
+                extra={**extra, "execution_time": end_time - start_time},
             )
             raise
 
@@ -56,7 +58,7 @@ def log_function_call(func: Callable) -> Callable:
             end_time = time.perf_counter()
             logger.debug(
                 f"Функція {func_name} завершилася успішно за {end_time - start_time:.4f}с",
-                extra={**extra, "execution_time": end_time - start_time}
+                extra={**extra, "execution_time": end_time - start_time},
             )
             return result
         except Exception as e:
@@ -64,7 +66,7 @@ def log_function_call(func: Callable) -> Callable:
             logger.error(
                 f"Помилка у функції {func_name} після {end_time - start_time:.4f}с: {e}",
                 exc_info=True,
-                extra={**extra, "execution_time": end_time - start_time}
+                extra={**extra, "execution_time": end_time - start_time},
             )
             raise
 

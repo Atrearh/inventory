@@ -24,23 +24,17 @@ export const apiInstance = axios.create({
 apiInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiErrorResponse>) => {
-    const originalRequest = error.config as CustomAxiosRequestConfig;
-
-    // Обробка 401 помилки (неавторизований доступ)
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      try {
-        // Спроба повторного виконання запиту
-        return await apiInstance(originalRequest);
-      } catch (refreshError) {
-        // Очищення сесії та перенаправлення на сторінку логіну
-        await logout(); // Виклик logout для очищення сесії
-        window.location.href = '/login';
-        throw new Error('Сесія закінчилася, будь ласка, увійдіть знову');
-      }
+    // Якщо помилка 401, не намагайтеся повторити запит.
+    // Просто завершіть сесію на клієнті.
+    if (error.response?.status === 401) {
+      // Викликаємо оновлену функцію logout, яка просто
+      // очистить cookie і перенаправить на /login
+      await logout(); 
+      // Викидаємо помилку, щоб ланцюжок promise перервався
+      throw new Error('Сесія закінчилася, будь ласка, увійдіть знову');
     }
 
-    // Обробка всіх інших помилок через централізований обробник
+    // Всі інші помилки обробляються як раніше
     throw handleApiError(error);
   }
 );

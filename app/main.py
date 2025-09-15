@@ -1,15 +1,24 @@
 # app/main.py
 import uvicorn
 from fastapi import FastAPI
-from .app_initializer import AppInitializer
-from .utils.security import setup_cors
-from .config import settings
-from .routers import auth, computers, scan, statistics, scripts, domain_router, tasks, sessions
-from .routers.settings import router as settings_router
-from .exceptions import global_exception_handler
-from .middlewares import register_middlewares
-from .logging_config import setup_logging 
 
+from .app_initializer import AppInitializer
+from .config import settings
+from .exceptions import global_exception_handler
+from .logging_config import setup_logging
+from .middlewares import register_middlewares
+from .routers import (
+    auth,
+    computers,
+    domain_router,
+    scan,
+    scripts,
+    sessions,
+    statistics,
+    tasks,
+)
+from .routers.settings import router as settings_router
+from .utils.security import setup_cors
 
 setup_logging(log_level="DEBUG")
 

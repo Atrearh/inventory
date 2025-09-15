@@ -150,37 +150,37 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
       </Card>
 
       <Row gutter={[16, 0]}>
-        <Col span={12}>
-          <Card>
-            <Title level={3} style={{ textAlign: 'center' }}>{t('client_os', 'Client OS')}</Title>
-            {clientOsChartData.labels.length > 0 ? (
-              <div style={{ height: '260px', cursor: 'pointer' }}>
-                <Pie
-                  data={clientOsChartData}
-                  options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, true) }}
-                />
-              </div>
-            ) : (
-              <p style={{ textAlign: 'center' }}>{t('no_client_os_data', 'No client OS data')}</p>
-            )}
-          </Card>
-        </Col>
+          <Col span={12}>
+            <Card>
+              <Title level={3} style={{ textAlign: 'center' }}>{t('client_os', 'Client OS')}</Title>
+              {clientOsChartData.labels && clientOsChartData.labels.length > 0 ? (
+                <div style={{ height: '260px', cursor: 'pointer' }}>
+                  <Pie
+                    data={clientOsChartData}
+                    options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, true) }}
+                  />
+                </div>
+              ) : (
+                <p style={{ textAlign: 'center' }}>{t('no_client_os_data', 'No client OS data')}</p>
+              )}
+            </Card>
+          </Col>
 
-        <Col span={12}>
-          <Card>
-            <Title level={3} style={{ textAlign: 'center' }}>{t('server_os', 'Server OS')}</Title>
-            {serverOsChartData.labels.length > 0 ? (
-              <div style={{ height: '260px', cursor: 'pointer' }}>
-                <Pie
-                  data={serverOsChartData}
-                  options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, false) }}
-                />
-              </div>
-            ) : (
-              <p style={{ textAlign: 'center' }}>{t('no_server_os_data', 'No server OS data')}</p>
-            )}
-          </Card>
-        </Col>
+            <Col span={12}>
+              <Card>
+                <Title level={3} style={{ textAlign: 'center' }}>{t('server_os', 'Server OS')}</Title>
+                {serverOsChartData.labels && serverOsChartData.labels.length > 0 ? (
+                  <div style={{ height: '260px', cursor: 'pointer' }}>
+                    <Pie
+                      data={serverOsChartData}
+                      options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, false) }}
+                    />
+                  </div>
+                ) : (
+                  <p style={{ textAlign: 'center' }}>{t('no_server_os_data', 'No server OS data')}</p>
+                )}
+              </Card>
+            </Col>
       </Row>
 
       <Card style={{ marginTop: '16px' }}>

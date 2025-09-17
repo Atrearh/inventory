@@ -1,19 +1,13 @@
 // Auto-generated TypeScript types
 
 /* tslint:disable */
-
+/* eslint-disable */
 /**
 /* This file was automatically generated from pydantic models by running pydantic2ts.
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export type CheckStatus =
-  | "success"
-  | "failed"
-  | "unreachable"
-  | "partially_successful"
-  | "disabled"
-  | "is_deleted";
+export type CheckStatus = "success" | "failed" | "unreachable" | "partially_successful" | "disabled" | "is_deleted";
 export type ScanStatus = "pending" | "running" | "completed" | "failed";
 
 export interface AppSettingUpdate {
@@ -45,15 +39,7 @@ export interface ComponentChangeStats {
 }
 export interface ComponentHistory {
   component_type: string;
-  data:
-    | PhysicalDisk
-    | LogicalDisk
-    | Processor
-    | VideoCard
-    | IPAddress
-    | MACAddress
-    | InstalledSoftwareRead
-    | Role;
+  data: PhysicalDisk | LogicalDisk | Processor | VideoCard | IPAddress | MACAddress | InstalledSoftwareRead | Role;
   detected_on?: string | null;
   removed_on?: string | null;
 }

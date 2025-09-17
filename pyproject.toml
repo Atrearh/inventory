@@ -1,2 +1,16 @@
-[tool.black]
+# pyproject.toml
+
+[tool.ruff]
+# Рівень помилок, які будуть показані (наприклад, "E" - всі помилки)
 line-length = 160
+
+[tool.ruff.lint]
+# Вибираємо набори правил. "E", "W" - це pycodestyle (PEP8). "F" - це Pyflakes.
+# "I" - це isort. Ruff замінює все це.
+select = ["E", "W", "F", "I", "N", "C4", "B"]
+
+# Ігноруємо специфічні правила, якщо потрібно.
+# ignore = ["E501"] # наприклад, ігнорувати помилку "довжина рядка"
+
+[tool.ruff.format]
+quote-style = "double"

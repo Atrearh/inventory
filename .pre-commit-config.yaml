@@ -1,4 +1,8 @@
+# .pre-commit-config.yaml
 repos:
+  # -----------------------
+  # Python: Black
+  # -----------------------
   - repo: https://github.com/psf/black
     rev: 24.8.0
     hooks:
@@ -9,6 +13,9 @@ repos:
         verbose: true
         entry: bash -c 'black --check --diff "$@" || true' --
 
+  # -----------------------
+  # Python: Flake8
+  # -----------------------
   - repo: https://github.com/PyCQA/flake8
     rev: 7.1.1
     hooks:
@@ -18,8 +25,12 @@ repos:
         verbose: true
         entry: bash -c 'flake8 "$@" || true' --
 
+  # -----------------------
+  # Local hooks (frontend + audits)
+  # -----------------------
   - repo: local
     hooks:
+      # ESLint (JS/TS/React)
       - id: eslint
         name: eslint
         entry: bash -c 'npx eslint front/src || true'
@@ -28,14 +39,25 @@ repos:
         always_run: true
         verbose: true
 
-      - id: pip-audit
-        name: pip-audit
-        entry: bash -c 'py -m pip_audit || echo "⚠️ pip-audit not installed, skipping"; true'
+      # Prettier (JS/TS/React formatting)
+      - id: prettier
+        name: prettier
+        entry: bash -c 'npx prettier --check front/src || true'
         language: system
         pass_filenames: false
         always_run: true
         verbose: true
 
+      # pip-audit (Python dependencies security)
+      - id: pip-audit
+        name: pip-audit
+        entry: bash -c 'python -m pip_audit || echo "⚠️ pip-audit not installed, skipping"; true'
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+      # npm-audit (frontend dependencies security)
       - id: npm-audit
         name: npm-audit
         entry: bash -c 'npm audit || true'

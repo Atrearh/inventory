@@ -71,9 +71,7 @@ def validate_domain_name(name: str) -> None:
 )
 async def create_domain(request: Request, domain: DomainCreate, db: AsyncSession = Depends(get_db)):
     """Створює новий домен з зашифрованим паролем."""
-    raw_data = await request.json()
-    logger.info(f"Отримані сирі дані запиту: {raw_data}")
-    logger.info(f"Валідовані дані домену: {domain.model_dump()}")
+    logger.info(f"Валідовані дані домену (без пароля): {domain.model_dump(exclude={'password'})}")
 
     try:
         # Валідуємо ім’я домену
@@ -89,7 +87,7 @@ async def create_domain(request: Request, domain: DomainCreate, db: AsyncSession
             raise HTTPException(status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує")
 
         # Шифруємо пароль
-        logger.debug(f"Шифрування паролю для домену: {domain.name}")
+        logger.debug(f"Шифрування пароля для домену: {domain.name}")
         encryption_service = EncryptionService(settings.encryption_key)
         encrypted_password = encryption_service.encrypt(domain.password)
         logger.debug(f"Пароль для домену {domain.name} зашифровано")
@@ -97,7 +95,7 @@ async def create_domain(request: Request, domain: DomainCreate, db: AsyncSession
         # Створюємо домен через репозиторій
         logger.debug(f"Створення домену в репозиторії: {domain.name}")
         db_domain = await domain_repo.create_or_update_domain(
-            name=domain.name,
+            name=domain.name.strip(),
             username=domain.username,
             encrypted_password=encrypted_password,
             server_url=domain.server_url,
@@ -149,16 +147,17 @@ async def update_domain(
 
         # Валідуємо ім’я домену, якщо воно надано
         if domain.name:
-            logger.debug(f"Валідація імені домену: {domain.name}")
-            validate_domain_name(domain.name)
-            existing_domain = await domain_repo.get_domain_by_name(domain.name)
+            name = domain.name.strip()
+            logger.debug(f"Валідація імені домену: {name}")
+            validate_domain_name(name)
+            existing_domain = await domain_repo.get_domain_by_name(name)
             if existing_domain and existing_domain.id != id:
-                logger.warning(f"Домен з ім'ям {domain.name} вже існує")
-                raise HTTPException(status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує")
+                logger.warning(f"Домен з ім'ям {name} вже існує")
+                raise HTTPException(status_code=400, detail=f"Домен з ім'ям {name} вже існує")
 
         # Оновлюємо поля, якщо вони надані
         if domain.name:
-            db_domain.name = domain.name
+            db_domain.name = name.lower()
         if domain.username:
             db_domain.username = domain.username
         if domain.server_url:
@@ -215,7 +214,7 @@ async def delete_domain(id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Помилка видалення домену: {str(e)}")
 
 
-@router.post("/validate")
+@router.post("/validate", dependencies=[Depends(fastapi_users.current_user(active=True, superuser=True))])
 async def validate_domain_connection(
     request: Request,
     domain: DomainCreate,
@@ -235,7 +234,11 @@ async def validate_domain_connection(
 
         server_url = domain.server_url
         if not server_url.startswith(("ldap://", "ldaps://")):
-            server_url = f"ldap://{server_url}:389"
+            if ":" in server_url:
+                host, port = server_url.split(":", 1)
+                server_url = f"ldap://{host}:{port.strip()}"
+            else:
+                server_url = f"ldap://{server_url}:389"
 
         logger.debug(f"Спроба підключення до LDAP-сервера: {server_url}, користувач: {domain.username}")
 

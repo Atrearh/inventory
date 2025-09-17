@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=SQLModel)
 
+
 class ComponentRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -81,11 +82,7 @@ class ComponentRepository:
         try:
             current_entities = getattr(db_computer, collection_name) or []
             current_entities_map = (
-                {
-                    getattr(entity, unique_field): entity
-                    for entity in current_entities
-                    if getattr(entity, unique_field) is not None
-                }
+                {getattr(entity, unique_field): entity for entity in current_entities if getattr(entity, unique_field) is not None}
                 if isinstance(unique_field, str)
                 else {
                     tuple(getattr(entity, field) for field in unique_field): entity
@@ -95,11 +92,7 @@ class ComponentRepository:
             )
 
             new_entities_map = {
-                (
-                    getattr(entity, unique_field)
-                    if isinstance(unique_field, str)
-                    else tuple(getattr(entity, field) for field in unique_field)
-                ): entity
+                (getattr(entity, unique_field) if isinstance(unique_field, str) else tuple(getattr(entity, field) for field in unique_field)): entity
                 for entity in new_entities
             }
 
@@ -119,11 +112,7 @@ class ComponentRepository:
                         await custom_logic(db_computer, pydantic_model)
                         if custom_logic
                         else model_class(
-                            **{
-                                k: v
-                                for k, v in pydantic_model.dict().items()
-                                if k not in ["computer_id", "detected_on", "removed_on"]
-                            },
+                            **{k: v for k, v in pydantic_model.dict().items() if k not in ["computer_id", "detected_on", "removed_on"]},
                             computer_id=db_computer.id,
                             detected_on=datetime.utcnow(),
                             removed_on=None,
@@ -147,9 +136,7 @@ class ComponentRepository:
                             setattr(existing_entity, field, getattr(pydantic_model, field))
 
             await self.db.flush()
-            logger.debug(
-                f"Оновлено {collection_name}", extra={"computer_id": db_computer.id}
-            )
+            logger.debug(f"Оновлено {collection_name}", extra={"computer_id": db_computer.id})
         except SQLAlchemyError as e:
             logger.error(
                 f"Помилка оновлення {collection_name}: {str(e)}",
@@ -240,9 +227,7 @@ class ComponentRepository:
                 extra={"computer_id": db_computer.id},
             )
         except SQLAlchemyError as e:
-            logger.error(
-                f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}"
-            )
+            logger.error(f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}")
             await self.db.rollback()
             raise
 
@@ -259,22 +244,14 @@ class ComponentRepository:
                 ("mac_address", models.MACAddress),
                 ("software", models.Software),
             ]:
-                result = await self.db.execute(
-                    select(model).where(model.computer_id == computer_id)
-                )
+                result = await self.db.execute(select(model).where(model.computer_id == computer_id))
                 for item in result.scalars().all():
                     history.append(
                         {
                             "component_type": component_type,
                             "data": item.dict(),
-                            "detected_on": (
-                                item.detected_on.isoformat()
-                                if item.detected_on
-                                else None
-                            ),
-                            "removed_on": (
-                                item.removed_on.isoformat() if item.removed_on else None
-                            ),
+                            "detected_on": (item.detected_on.isoformat() if item.detected_on else None),
+                            "removed_on": (item.removed_on.isoformat() if item.removed_on else None),
                         }
                     )
             history.sort(key=lambda x: x["detected_on"] or "")

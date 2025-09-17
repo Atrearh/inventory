@@ -18,7 +18,7 @@ class DomainRepository:
         """Отримує домен за назвою, ігноруючи регістр."""
         try:
             logger.debug(f"Виконую запит для пошуку домену: {name}")
-            result = await self.db.execute(select(Domain).filter(Domain.name.ilike(name.lower())))
+            result = await self.db.execute(select(Domain).filter(Domain.name == name.lower().strip()))
             domain = result.scalar_one_or_none()
             logger.debug(f"Пошук домену {name}: {'знайдено' if domain else 'не знайдено'}")
             return domain
@@ -35,6 +35,7 @@ class DomainRepository:
         ad_base_dn: Optional[str] = None,
     ) -> Domain:
         """Створює або оновлює домен."""
+        name = name.lower().strip()
         logger.info(f"Починаю створення/оновлення домену: {name}")
 
         try:
@@ -50,7 +51,7 @@ class DomainRepository:
             else:
                 logger.info(f"Створюю новий домен: {name}")
                 domain = Domain(
-                    name=name.lower(),  # Нормалізуємо регістр при створенні
+                    name=name,
                     username=username,
                     encrypted_password=encrypted_password,
                     server_url=server_url,
@@ -77,6 +78,22 @@ class DomainRepository:
                 raise ValueError(f"Домен з ім'ям {name} вже існує")
             else:
                 raise ValueError(f"Помилка цілісності даних: {str(e)}")
+
+        except OperationalError as e:
+            logger.error(
+                f"❌ Операційна помилка бази даних при збереженні домену {name}: {str(e)}",
+                exc_info=True,
+            )
+            await self.db.rollback()
+            raise ValueError(f"Помилка бази даних: {str(e)}")
+
+        except Exception as e:
+            logger.error(
+                f"❌ Загальна помилка при збереженні домену {name}: {str(e)}",
+                exc_info=True,
+            )
+            await self.db.rollback()
+            raise ValueError(f"Неочікувана помилка: {str(e)}")
 
         except OperationalError as e:
             logger.error(

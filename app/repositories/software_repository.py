@@ -8,13 +8,12 @@ from .. import models
 
 logger = logging.getLogger(__name__)
 
+
 class SoftwareRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def update_installed_software(
-        self, db_computer: models.Computer, new_software_list: List[Dict[str, Any]]
-    ) -> None:
+    async def update_installed_software(self, db_computer: models.Computer, new_software_list: List[Dict[str, Any]]) -> None:
         """
         Updates installed software for a computer using the new logic.
         1. Finds or creates entries in `software_catalog`.
@@ -50,7 +49,7 @@ class SoftwareRepository:
                 # Create a unique key for the software item
                 software_key = (name, version, publisher)
                 incoming_software_keys.add(software_key)
-                
+
                 # Find or create an entry in the software catalog
                 catalog_entry_result = await self.db.execute(
                     select(models.SoftwareCatalog).where(
@@ -62,9 +61,7 @@ class SoftwareRepository:
                 catalog_entry = catalog_entry_result.scalar_one_or_none()
 
                 if not catalog_entry:
-                    catalog_entry = models.SoftwareCatalog(
-                        name=name, version=version, publisher=publisher
-                    )
+                    catalog_entry = models.SoftwareCatalog(name=name, version=version, publisher=publisher)
                     self.db.add(catalog_entry)
                     await self.db.flush()  # Flush to get the new ID
 
@@ -88,7 +85,7 @@ class SoftwareRepository:
             for key, installation in current_software_map.items():
                 if key not in incoming_software_keys and installation.removed_on is None:
                     installation.removed_on = datetime.utcnow()
-                
+
             await self.db.flush()
 
         except Exception as e:

@@ -7,7 +7,7 @@ import ActionPanel from './ActionPanel';
 import HardwareInfo from './HardwareInfo';
 import styles from './ComputerDetail.module.css';
 import { differenceInDays } from 'date-fns';
-import { ComponentHistory, Software } from '../types/schemas';
+import { ComponentHistory, InstalledSoftwareRead } from '../types/schemas';
 import { useAuth } from '../context/AuthContext';
 import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
@@ -88,9 +88,9 @@ const ComputerDetail: React.FC = () => {
   const softwareColumns = [
     {
       title: t('name'),
-      dataIndex: 'DisplayName',
-      key: 'DisplayName',
-      sorter: (a: Software, b: Software) => a.DisplayName.localeCompare(b.DisplayName),
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (a: InstalledSoftwareRead, b: InstalledSoftwareRead) => a.name.localeCompare(b.name),
     },
     { title: t('version'), dataIndex: 'DisplayVersion', key: 'DisplayVersion' },
     {
@@ -98,16 +98,16 @@ const ComputerDetail: React.FC = () => {
       dataIndex: 'InstallDate',
       key: 'InstallDate',
       render: (val: string) => formatDateInUserTimezone(val, timezone, 'dd.MM.yyyy'),
-      sorter: (a: Software, b: Software) => new Date(a.InstallDate || 0).getTime() - new Date(b.InstallDate || 0).getTime(),
+      sorter: (a: InstalledSoftwareRead, b: InstalledSoftwareRead) => new Date(a.install_date || 0).getTime() - new Date(b.install_date || 0).getTime(),
     },
     {
       title: t('actions'),
       key: 'actions',
-      render: (_: any, record: Software) => (
+      render: (_: any, record: InstalledSoftwareRead) => (
         <Button
           type="primary"
           danger
-          onClick={() => handleUninstall(computer.hostname, record.DisplayName)}
+          onClick={() => handleUninstall(computer.hostname, record.name)}
         >
           {t('delete')}
         </Button>
@@ -160,7 +160,7 @@ const ComputerDetail: React.FC = () => {
           <Table
             dataSource={computer.software}
             columns={softwareColumns}
-            rowKey={(rec) => `${rec.DisplayName}-${rec.DisplayVersion}`}
+            rowKey={(rec) => `${rec.name}-${rec.version}`}
             pagination={{ pageSize: 15 }}
             locale={{ emptyText: t('no_data') }}
           />

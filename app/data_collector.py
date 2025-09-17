@@ -28,9 +28,7 @@ class ScriptCache:
         """Завантажує скрипт з диска."""
         file_path = SCRIPTS_DIR / file_name
         if not file_path.exists():
-            logger.error(
-                f"Скрипт {file_path} не знайдено", extra={"file_name": file_name}
-            )
+            logger.error(f"Скрипт {file_path} не знайдено", extra={"file_name": file_name})
             raise FileNotFoundError(f"Скрипт {file_path} не знайдено")
 
         with open(file_path, "r", encoding="utf-8-sig") as f:
@@ -89,18 +87,14 @@ def decode_output(output: bytes) -> str:
     try:
         return output.decode("utf-8")
     except UnicodeDecodeError:
-        logger.debug(
-            f"Не вдалося декодувати як UTF-8, використовується запасна кодування: {settings.powershell_encoding}"
-        )
+        logger.debug(f"Не вдалося декодувати як UTF-8, використовується запасна кодування: {settings.powershell_encoding}")
         return output.decode(settings.powershell_encoding, errors="replace")
 
 
 class WinRMDataCollector:
     """Збирає інформацію з віддалених хостів Windows за допомогою WinRM."""
 
-    def __init__(
-        self, hostname: str, db: AsyncSession, encryption_service: EncryptionService
-    ):
+    def __init__(self, hostname: str, db: AsyncSession, encryption_service: EncryptionService):
         self.hostname = hostname
         self.db = db
         self.encryption_service = encryption_service
@@ -123,9 +117,7 @@ class WinRMDataCollector:
 
         command = script_content
         if script_name == "software_info_changes.ps1" and last_updated:
-            command = (
-                f"& {{ {script_content} }} -LastUpdated '{last_updated.isoformat()}'"
-            )
+            command = f"& {{ {script_content} }} -LastUpdated '{last_updated.isoformat()}'"
 
         logger.debug(
             f"Виконання скрипта {script_name} на {self.hostname}",
@@ -147,9 +139,7 @@ class WinRMDataCollector:
                         extra={"hostname": self.hostname, "script_name": script_name},
                     )
                     return {"error": error_message}
-                return (
-                    json.loads(decode_output(result.std_out)) if result.std_out else {}
-                )
+                return json.loads(decode_output(result.std_out)) if result.std_out else {}
         except (WinRMError, requests.exceptions.RequestException) as e:
             logger.error(
                 f"Помилка підключення WinRM до {self.hostname}: {str(e)}",
@@ -227,9 +217,7 @@ class WinRMDataCollector:
                 )
             else:
                 failed_components += 1
-                result["errors"].append(
-                    hardware_data.get("error", "Невідома помилка system_info.ps1")
-                )
+                result["errors"].append(hardware_data.get("error", "Невідома помилка system_info.ps1"))
                 logger.error(
                     f"Помилка збору даних system_info.ps1: {hardware_data.get('error', 'Невідома помилка')}",
                     extra={"hostname": self.hostname},
@@ -246,39 +234,25 @@ class WinRMDataCollector:
                 )
             else:
                 failed_components += 1
-                result["errors"].append(
-                    disk_data.get("error", "Невідома помилка disk_info.ps1")
-                )
+                result["errors"].append(disk_data.get("error", "Невідома помилка disk_info.ps1"))
                 logger.error(
                     f"Помилка збору даних disk_info.ps1: {disk_data.get('error', 'Невідома помилка')}",
                     extra={"hostname": self.hostname},
                 )
 
-            software_script = (
-                "software_info_full.ps1"
-                if mode == "Full"
-                else "software_info_changes.ps1"
-            )
-            software_data = await self._execute_script(
-                software_script, winrm_service, last_updated=last_updated
-            )
+            software_script = "software_info_full.ps1" if mode == "Full" else "software_info_changes.ps1"
+            software_data = await self._execute_script(software_script, winrm_service, last_updated=last_updated)
             if isinstance(software_data, list):
                 result["software"] = software_data
                 successful_components += 1
-                logger.debug(
-                    "Дані ПЗ зібрано успішно", extra={"hostname": self.hostname}
-                )
+                logger.debug("Дані ПЗ зібрано успішно", extra={"hostname": self.hostname})
             elif isinstance(software_data, dict) and "error" not in software_data:
                 result["software"] = software_data.get("software", [])
                 successful_components += 1
-                logger.debug(
-                    "Дані ПЗ зібрано успішно", extra={"hostname": self.hostname}
-                )
+                logger.debug("Дані ПЗ зібрано успішно", extra={"hostname": self.hostname})
             else:
                 failed_components += 1
-                result["errors"].append(
-                    software_data.get("error", f"Невідома помилка {software_script}")
-                )
+                result["errors"].append(software_data.get("error", f"Невідома помилка {software_script}"))
                 logger.error(
                     f"Помилка збору даних {software_script}: {software_data.get('error', 'Невідома помилка')}",
                     extra={"hostname": self.hostname},
@@ -304,9 +278,7 @@ class WinRMDataCollector:
                 )
             elif successful_components > 0 and essential_data_present:
                 result["check_status"] = "success"
-                logger.info(
-                    "Збір даних успішно завершено", extra={"hostname": self.hostname}
-                )
+                logger.info("Збір даних успішно завершено", extra={"hostname": self.hostname})
             else:
                 result["check_status"] = "unreachable"
                 logger.warning(
@@ -315,9 +287,7 @@ class WinRMDataCollector:
                 )
 
         except ConnectionError as e:
-            logger.error(
-                f"Не вдалося підключитися: {str(e)}", extra={"hostname": self.hostname}
-            )
+            logger.error(f"Не вдалося підключитися: {str(e)}", extra={"hostname": self.hostname})
             result["check_status"] = "unreachable"
             result["errors"].append(str(e))
 

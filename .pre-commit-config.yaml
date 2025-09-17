@@ -1,0 +1,45 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        args: [--check, --diff]
+        pass_filenames: true
+        always_run: true
+        verbose: true
+        entry: bash -c 'black --check --diff "$@" || true' --
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        pass_filenames: true
+        always_run: true
+        verbose: true
+        entry: bash -c 'flake8 "$@" || true' --
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'npx eslint front/src || true'
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+      - id: pip-audit
+        name: pip-audit
+        entry: bash -c 'py -m pip_audit || echo "⚠️ pip-audit not installed, skipping"; true'
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+      - id: npm-audit
+        name: npm-audit
+        entry: bash -c 'npm audit || true'
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true

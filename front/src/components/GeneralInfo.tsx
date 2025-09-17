@@ -1,8 +1,9 @@
+// front/src/components/GeneralInfo.tsx
 import { Descriptions, Button, Modal, Input, notification } from 'antd';
 import { useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ComputerList as Computer } from '../types/schemas';
+import { ComputerDetail } from '../types/schemas';
 import { EditOutlined } from '@ant-design/icons';
 import { apiInstance } from '../api/api';
 import { useTimezone } from '../context/TimezoneContext';
@@ -10,7 +11,7 @@ import { formatDateInUserTimezone } from '../utils/formatDate';
 import { handleApiError } from '../utils/apiErrorHandler';
 
 interface GeneralInfoProps {
-  computer: Computer | undefined;
+  computer: ComputerDetail | undefined;
   lastCheckDate: Date | null;
   lastCheckColor: string;
 }
@@ -23,7 +24,7 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
   const { timezone } = useTimezone();
 
   if (!computer) {
-    return <div>{t('no_computer_data', 'Дані про комп\'ютер недоступні')}</div>;
+    return <div>{t('no_computer_data', "Дані про комп'ютер недоступні")}</div>;
   }
 
   const handleEditNotes = () => {
@@ -56,9 +57,11 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({ computer, lastCheckDate, last
       )}
       <Descriptions title={t('specifications', 'Характеристики')} bordered column={2} size="small" style={{ marginBottom: 24 }}>
         <Descriptions.Item label={t('ip_address', 'IP')}>{computer.ip_addresses && computer.ip_addresses.length > 0 ? computer.ip_addresses[0].address : '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('os_name', 'Назва ОС')}>{computer.os_name ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('os_version', 'Версія ОС')}>{computer.os_version ?? '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('processor', 'Процесор')}>{computer.processors && computer.processors.length > 0 ? computer.processors[0].name : '-'}</Descriptions.Item>
+        {/* -- ЗМІНЕНО -- */}
+        <Descriptions.Item label={t('os_name', 'Назва ОС')}>{computer.os?.name ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('os_version', 'Версія ОС')}>{computer.os?.version ?? '-'}</Descriptions.Item>
+        {/* -- КІНЕЦЬ ЗМІН -- */}
+        <Descriptions.Item label={t('processor', 'Процесор')}>{computer.processors && computer.processors.length > 0 ? computer.processors[0].Name : '-'}</Descriptions.Item>
         <Descriptions.Item label={t('ram', 'RAM')}>{computer.ram ?? '-'} {t('mb', 'МБ')}</Descriptions.Item>
         <Descriptions.Item label={t('mac_address', 'MAC')}>{computer.mac_addresses && computer.mac_addresses.length > 0 ? computer.mac_addresses[0].address : '-'}</Descriptions.Item>
         <Descriptions.Item label={t('motherboard', 'Материнська плата')}>{computer.motherboard ?? '-'}</Descriptions.Item>

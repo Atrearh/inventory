@@ -43,9 +43,7 @@ class AppInitializer:
             except ValueError as e:
                 logger.error(f"Невірний формат IP-діапазону {ip_range}: {str(e)}")
                 continue
-        logger.info(
-            f"Ініціалізовано {len(self.app.state.allowed_ip_networks)} IP-діапазонів: {self.app.state.allowed_ip_networks}"
-        )
+        logger.info(f"Ініціалізовано {len(self.app.state.allowed_ip_networks)} IP-діапазонів: {self.app.state.allowed_ip_networks}")
 
     async def initialize(self):
         logger.info("Асинхронна ініціалізація додатка...")
@@ -67,9 +65,7 @@ class AppInitializer:
             await script_cache.preload_scripts()
             # Більше тут нічого не потрібно, setup_logging вже був викликаний
         except Exception as e:
-            logger.error(
-                f"Помилка асинхронної ініціалізації додатка: {str(e)}", exc_info=True
-            )
+            logger.error(f"Помилка асинхронної ініціалізації додатка: {str(e)}", exc_info=True)
             raise
 
     async def shutdown(self):

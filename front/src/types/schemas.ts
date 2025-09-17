@@ -1,7 +1,7 @@
 // Auto-generated TypeScript types
 
 /* tslint:disable */
-/* eslint-disable */
+ 
 /**
 /* This file was automatically generated from pydantic models by running pydantic2ts.
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
@@ -39,7 +39,7 @@ export interface ComponentChangeStats {
 }
 export interface ComponentHistory {
   component_type: string;
-  data: PhysicalDisk | LogicalDisk | Processor | VideoCard | IPAddress | MACAddress | Software | Role;
+  data: PhysicalDisk | LogicalDisk | Processor | VideoCard | IPAddress | MACAddress | InstalledSoftwareRead | Role;
   detected_on?: string | null;
   removed_on?: string | null;
 }
@@ -86,12 +86,11 @@ export interface MACAddress {
   removed_on?: string | null;
   address: string;
 }
-export interface Software {
-  detected_on?: string | null;
-  removed_on?: string | null;
-  DisplayName: string;
-  DisplayVersion?: string | null;
-  InstallDate?: string | null;
+export interface InstalledSoftwareRead {
+  name: string;
+  version?: string | null;
+  publisher?: string | null;
+  install_date?: string | null;
 }
 export interface Role {
   detected_on?: string | null;
@@ -102,28 +101,23 @@ export interface ComponentSchema {
   detected_on?: string | null;
   removed_on?: string | null;
 }
-export interface ComputerBase {
+export interface ComputerCore {
   hostname: string;
-  os_name?: string | null;
-  os_version?: string | null;
+  os?: OperatingSystemRead | null;
   ram?: number | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  ip_addresses?: IPAddress[];
-  mac_addresses?: MACAddress[];
-  processors?: Processor[];
-  video_cards?: VideoCard[];
-  software?: Software[];
-  roles?: Role[];
-  physical_disks?: PhysicalDisk[];
-  logical_disks?: LogicalDisk[];
+}
+export interface OperatingSystemRead {
+  name: string;
+  version?: string | null;
+  architecture?: string | null;
 }
 export interface ComputerCreate {
   hostname: string;
-  os_name?: string | null;
-  os_version?: string | null;
+  os?: OperatingSystemRead | null;
   ram?: number | null;
   motherboard?: string | null;
   last_boot?: string | null;
@@ -133,43 +127,53 @@ export interface ComputerCreate {
   mac_addresses?: MACAddress[];
   processors?: Processor[];
   video_cards?: VideoCard[];
-  software?: Software[];
+  software?: InstalledSoftwareRead[];
   roles?: Role[];
   physical_disks?: PhysicalDisk[];
   logical_disks?: LogicalDisk[];
 }
-export interface ComputerList {
+export interface ComputerDetail {
   hostname: string;
-  os_name?: string | null;
-  os_version?: string | null;
+  os?: OperatingSystemRead | null;
   ram?: number | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  ip_addresses?: IPAddress[];
-  mac_addresses?: MACAddress[];
-  processors?: Processor[];
-  video_cards?: VideoCard[];
-  software?: Software[];
-  roles?: Role[];
-  physical_disks?: PhysicalDisk[];
-  logical_disks?: LogicalDisk[];
   id: number;
   last_updated?: string | null;
   last_full_scan?: string | null;
   domain_id?: number | null;
   domain_name?: string | null;
+  object_guid?: string | null;
+  when_created?: string | null;
+  when_changed?: string | null;
+  enabled?: boolean | null;
+  ad_notes?: string | null;
+  local_notes?: string | null;
+  last_logon?: string | null;
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  processors?: Processor[];
+  video_cards?: VideoCard[];
+  software?: InstalledSoftwareRead[];
+  roles?: Role[];
+  physical_disks?: PhysicalDisk[];
+  logical_disks?: LogicalDisk[];
 }
 export interface ComputerListItem {
-  id: number;
   hostname: string;
-  os_name?: string | null;
+  os?: OperatingSystemRead | null;
+  ram?: number | null;
+  motherboard?: string | null;
+  last_boot?: string | null;
+  is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
+  id: number;
   last_updated?: string | null;
+  last_full_scan?: string | null;
   domain_id?: number | null;
   domain_name?: string | null;
-  last_full_scan?: string | null;
   ip_addresses?: IPAddress[];
 }
 export interface ComputerUpdateCheckStatus {
@@ -192,6 +196,7 @@ export interface OsStats {
   server_os?: OsCategoryStats[];
   os_name?: string | null;
   count: number;
+  software_distribution?: OsCategoryStats[];
 }
 export interface OsCategoryStats {
   category: string;

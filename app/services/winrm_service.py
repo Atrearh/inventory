@@ -30,23 +30,17 @@ class WinRMService:
             domains = await self.domain_repo.get_all_domains()
             for domain in domains:
                 try:
-                    password = self.encryption_service.decrypt(
-                        domain.encrypted_password
-                    )
+                    password = self.encryption_service.decrypt(domain.encrypted_password)
                     domain_name = domain.name.lower()
                     self._credentials_cache[domain_name] = (domain.username, password)
-                    logger.debug(
-                        f"Облікові дані для домену {domain_name} завантажено в кеш"
-                    )
+                    logger.debug(f"Облікові дані для домену {domain_name} завантажено в кеш")
                 except Exception as e:
                     logger.error(
                         f"Помилка дешифрування для домену {domain.name}: {str(e)}",
                         exc_info=True,
                     )
                     continue
-            logger.info(
-                f"Завантажено {len(self._credentials_cache)} доменів у кеш: {list(self._credentials_cache.keys())}"
-            )
+            logger.info(f"Завантажено {len(self._credentials_cache)} доменів у кеш: {list(self._credentials_cache.keys())}")
         except Exception as e:
             logger.error(f"Помилка завантаження доменів: {str(e)}", exc_info=True)
             raise
@@ -56,9 +50,7 @@ class WinRMService:
         domain_name = domain_name.lower()
         credentials = self._credentials_cache.get(domain_name)
         if credentials is None:
-            logger.warning(
-                f"Домен {domain_name} не знайдено в кеші, виконую запит до бази даних"
-            )
+            logger.warning(f"Домен {domain_name} не знайдено в кеші, виконую запит до бази даних")
             try:
                 domain = await self.domain_repo.get_domain_by_name(domain_name)
                 if not domain:
@@ -73,22 +65,16 @@ class WinRMService:
                     f"Помилка отримання облікових даних для домену {domain_name}: {str(e)}",
                     exc_info=True,
                 )
-                raise ValueError(
-                    f"Не вдалося отримати облікові дані для домену {domain_name}: {str(e)}"
-                )
+                raise ValueError(f"Не вдалося отримати облікові дані для домену {domain_name}: {str(e)}")
         else:
-            logger.debug(
-                f"Використовуються кешовані облікові дані для домену {domain_name}"
-            )
+            logger.debug(f"Використовуються кешовані облікові дані для домену {domain_name}")
         return credentials
 
     @asynccontextmanager
     async def create_session(self, hostname: str) -> AsyncGenerator[Session, None]:
         """Контекстний менеджер для створення WinRM-сесії."""
         try:
-            domain_name = (
-                ".".join(hostname.split(".")[1:]).lower() if "." in hostname else None
-            )
+            domain_name = ".".join(hostname.split(".")[1:]).lower() if "." in hostname else None
             if not domain_name:
                 logger.error(f"Не вдалося витягнути ім’я домену з {hostname}")
                 raise ValueError(f"Не вдалося визначити домен з hostname {hostname}")
@@ -109,9 +95,7 @@ class WinRMService:
         finally:
             logger.debug(f"Сесію для {hostname} закрито")
 
-    async def run_cmd(
-        self, session: Session, command: str, args: list[str] | None = None
-    ):
+    async def run_cmd(self, session: Session, command: str, args: list[str] | None = None):
         """Асинхронний виклик команди через WinRM (не блокує event loop)."""
         args = args or []
         return await asyncio.to_thread(session.run_cmd, command, args)

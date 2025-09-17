@@ -21,9 +21,7 @@ def setup_logging(log_level: str = "DEBUG") -> logging.Logger:
     logger.debug(f"Виклик setup_logging з log_level={log_level}")
 
     if log_level not in valid_log_levels:
-        logger.warning(
-            f"Недопустимий рівень логування: {log_level}. Встановлено рівень за замовчуванням: DEBUG"
-        )
+        logger.warning(f"Недопустимий рівень логування: {log_level}. Встановлено рівень за замовчуванням: DEBUG")
         log_level = "DEBUG"
 
     # Створюємо директорію для логів
@@ -60,9 +58,7 @@ def setup_logging(log_level: str = "DEBUG") -> logging.Logger:
     root_logger.addHandler(file_handler)
     root_logger.setLevel(getattr(logging, log_level))
 
-    logger.debug(
-        f"Логування налаштовано з рівнем {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}"
-    )
+    logger.debug(f"Логування налаштовано з рівнем {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}")
     return root_logger
 
 
@@ -74,15 +70,11 @@ def update_logging_level(log_level: str):
     logger.debug(f"Виклик update_logging_level з log_level={log_level}")
 
     if log_level not in valid_log_levels:
-        logger.warning(
-            f"Недопустимий рівень логування: {log_level}. Залишаємо поточний рівень."
-        )
+        logger.warning(f"Недопустимий рівень логування: {log_level}. Залишаємо поточний рівень.")
         return
 
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level))
     for handler in root_logger.handlers:
         handler.setLevel(getattr(logging, log_level))
-    logger.info(
-        f"Рівень логування оновлено: {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}"
-    )
+    logger.info(f"Рівень логування оновлено: {log_level}. Поточний рівень: {logging.getLevelName(root_logger.level)}")

@@ -1,16 +1,13 @@
 import logging
 from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..database import get_db
-from ..repositories.statistics import StatisticsRepository
-from ..schemas import DashboardStats
+from app.database import get_db
+from app.repositories.statistics_repository import StatisticsRepository
+from app.schemas import DashboardStats
 from .auth import get_current_user
 
 logger = logging.getLogger(__name__)
-
 
 router = APIRouter(tags=["statistics"])
 
@@ -22,9 +19,7 @@ router = APIRouter(tags=["statistics"])
     dependencies=[Depends(get_current_user)],
 )
 async def get_statistics(
-    metrics: List[str] = Query(
-        None, description="Список метрик для отримання статистики"
-    ),
+    metrics: List[str] = Query(None, description="Список метрик для отримання статистики"),
     db: AsyncSession = Depends(get_db),
 ):
     logger.info(f"Запит статистики з метриками: {metrics}")

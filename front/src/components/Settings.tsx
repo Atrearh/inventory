@@ -82,7 +82,7 @@ const Settings: React.FC = () => {
               onFinish={(values) => mutation.mutate(values)}
               style={{ maxWidth: 400 }}
           >
-              {/* ... Все существующие Form.Item (timezone, log_level) ... */}
+
               <Form.Item
                   label={t('timezone', 'Часовий пояс')}
                   name="timezone"

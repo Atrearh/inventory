@@ -8,6 +8,7 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
     'low_disk_space_with_volumes',
     'last_scan_time',
     'status_stats',
+    'software_distribution', // Додано
   ];
   return apiRequest<DashboardStats>(
     'get',
@@ -21,6 +22,9 @@ export const getStatistics = async (params: { metrics?: string[] } = {}) => {
     }
   );
 };
+
+
+
 
 export const startScan = async () => {
   return apiRequest<ScanResponse>('post', '/scan', {});

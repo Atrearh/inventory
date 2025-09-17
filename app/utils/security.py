@@ -59,12 +59,7 @@ def is_ip_allowed(
     try:
         client_ip_addr = ipaddress.ip_address(client_ip)
         for ip_or_network in allowed_ips:
-            if (
-                isinstance(
-                    ip_or_network, (ipaddress.IPv4Network, ipaddress.IPv6Network)
-                )
-                and client_ip_addr in ip_or_network
-            ):
+            if isinstance(ip_or_network, (ipaddress.IPv4Network, ipaddress.IPv6Network)) and client_ip_addr in ip_or_network:
                 logger.debug(f"IP {client_ip} дозволено в мережі {ip_or_network}")
                 return True
             elif client_ip_addr == ip_or_network:

@@ -18,13 +18,9 @@ class DomainRepository:
         """Отримує домен за назвою, ігноруючи регістр."""
         try:
             logger.debug(f"Виконую запит для пошуку домену: {name}")
-            result = await self.db.execute(
-                select(Domain).filter(Domain.name.ilike(name.lower()))
-            )
+            result = await self.db.execute(select(Domain).filter(Domain.name.ilike(name.lower())))
             domain = result.scalar_one_or_none()
-            logger.debug(
-                f"Пошук домену {name}: {'знайдено' if domain else 'не знайдено'}"
-            )
+            logger.debug(f"Пошук домену {name}: {'знайдено' if domain else 'не знайдено'}")
             return domain
         except Exception as e:
             logger.error(f"Помилка пошуку домену {name}: {str(e)}", exc_info=True)
@@ -67,9 +63,7 @@ class DomainRepository:
 
             await self.db.flush()
             logger.debug(f"Flush виконано для домену: {name}, id={domain.id}")
-            logger.info(
-                f"✅ Домен успішно збережено у сесії: id={domain.id}, name={domain.name}"
-            )
+            logger.info(f"✅ Домен успішно збережено у сесії: id={domain.id}, name={domain.name}")
 
             return domain
 

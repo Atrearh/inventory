@@ -46,18 +46,14 @@ async def get_all_domains(db: AsyncSession = Depends(get_db)):
                 username=domain.username,
                 server_url=domain.server_url,
                 ad_base_dn=domain.ad_base_dn,
-                last_updated=(
-                    domain.last_updated.isoformat() if domain.last_updated else None
-                ),
+                last_updated=(domain.last_updated.isoformat() if domain.last_updated else None),
             )
             for domain in domains
         ]
 
     except Exception as e:
         logger.error(f"Помилка отримання списку доменів: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Помилка отримання доменів: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка отримання доменів: {str(e)}")
 
 
 def validate_domain_name(name: str) -> None:
@@ -73,9 +69,7 @@ def validate_domain_name(name: str) -> None:
     response_model=DomainRead,
     dependencies=[Depends(fastapi_users.current_user(active=True, superuser=True))],
 )
-async def create_domain(
-    request: Request, domain: DomainCreate, db: AsyncSession = Depends(get_db)
-):
+async def create_domain(request: Request, domain: DomainCreate, db: AsyncSession = Depends(get_db)):
     """Створює новий домен з зашифрованим паролем."""
     raw_data = await request.json()
     logger.info(f"Отримані сирі дані запиту: {raw_data}")
@@ -92,9 +86,7 @@ async def create_domain(
         existing_domain = await domain_repo.get_domain_by_name(name=domain.name)
         if existing_domain:
             logger.warning(f"Домен {domain.name} вже існує")
-            raise HTTPException(
-                status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує"
-            )
+            raise HTTPException(status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує")
 
         # Шифруємо пароль
         logger.debug(f"Шифрування паролю для домену: {domain.name}")
@@ -121,9 +113,7 @@ async def create_domain(
             username=db_domain.username,
             server_url=db_domain.server_url,
             ad_base_dn=db_domain.ad_base_dn,
-            last_updated=(
-                db_domain.last_updated.isoformat() if db_domain.last_updated else None
-            ),
+            last_updated=(db_domain.last_updated.isoformat() if db_domain.last_updated else None),
         )
 
     except ValidationError as e:
@@ -132,9 +122,7 @@ async def create_domain(
     except Exception as e:
         logger.error(f"Помилка створення домену: {str(e)}")
         await db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Помилка створення домену: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка створення домену: {str(e)}")
 
 
 @router.put(
@@ -166,9 +154,7 @@ async def update_domain(
             existing_domain = await domain_repo.get_domain_by_name(domain.name)
             if existing_domain and existing_domain.id != id:
                 logger.warning(f"Домен з ім'ям {domain.name} вже існує")
-                raise HTTPException(
-                    status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує"
-                )
+                raise HTTPException(status_code=400, detail=f"Домен з ім'ям {domain.name} вже існує")
 
         # Оновлюємо поля, якщо вони надані
         if domain.name:
@@ -195,17 +181,13 @@ async def update_domain(
             username=db_domain.username,
             server_url=db_domain.server_url,
             ad_base_dn=db_domain.ad_base_dn,
-            last_updated=(
-                db_domain.last_updated.isoformat() if db_domain.last_updated else None
-            ),
+            last_updated=(db_domain.last_updated.isoformat() if db_domain.last_updated else None),
         )
 
     except Exception as e:
         logger.error(f"Помилка оновлення домену з id={id}: {str(e)}")
         await db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Помилка оновлення домену: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка оновлення домену: {str(e)}")
 
 
 @router.delete(
@@ -217,7 +199,6 @@ async def delete_domain(id: int, db: AsyncSession = Depends(get_db)):
     logger.info(f"Початок видалення домену з id={id}")
 
     try:
-        domain_repo = DomainRepository(db)
         domain = await db.execute(select(Domain).filter(Domain.id == id))
         domain = domain.scalar_one_or_none()
         if not domain:
@@ -231,9 +212,7 @@ async def delete_domain(id: int, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Помилка видалення домену з id={id}: {str(e)}")
         await db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Помилка видалення домену: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка видалення домену: {str(e)}")
 
 
 @router.post("/validate")
@@ -248,9 +227,7 @@ async def validate_domain_connection(
 
     try:
         if not domain.server_url or not domain.username or not domain.password:
-            logger.warning(
-                f"Не вказано server_url, username або password для домену {domain.name}"
-            )
+            logger.warning(f"Не вказано server_url, username або password для домену {domain.name}")
             raise HTTPException(
                 status_code=400,
                 detail="server_url, username і password є обов’язковими для перевірки LDAP",
@@ -260,14 +237,10 @@ async def validate_domain_connection(
         if not server_url.startswith(("ldap://", "ldaps://")):
             server_url = f"ldap://{server_url}:389"
 
-        logger.debug(
-            f"Спроба підключення до LDAP-сервера: {server_url}, користувач: {domain.username}"
-        )
+        logger.debug(f"Спроба підключення до LDAP-сервера: {server_url}, користувач: {domain.username}")
 
         server = Server(server_url, get_info=ALL)
-        conn = Connection(
-            server, user=domain.username, password=domain.password, auto_bind=True
-        )
+        conn = Connection(server, user=domain.username, password=domain.password, auto_bind=True)
         logger.info(f"Підключення до {server_url} успішне")
         conn.unbind()
         return {"status": "success", "message": f"Підключення до {server_url} успішне"}
@@ -275,13 +248,9 @@ async def validate_domain_connection(
     except LDAPException as e:
         logger.error(f"Помилка LDAP для домену {domain.name}: {str(e)}", exc_info=True)
         if "invalidCredentials" in str(e):
-            raise HTTPException(
-                status_code=400, detail="Невірні облікові дані для LDAP"
-            )
+            raise HTTPException(status_code=400, detail="Невірні облікові дані для LDAP")
         elif "invalidServer" in str(e):
-            raise HTTPException(
-                status_code=400, detail=f"Невірний server_url: {server_url}"
-            )
+            raise HTTPException(status_code=400, detail=f"Невірний server_url: {server_url}")
         else:
             raise HTTPException(status_code=400, detail=f"Помилка LDAP: {str(e)}")
 
@@ -290,9 +259,7 @@ async def validate_domain_connection(
             f"Непередбачена помилка при перевірці домену {domain.name}: {str(e)}",
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500, detail=f"Помилка перевірки домену: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка перевірки домену: {str(e)}")
 
 
 @router.get(
@@ -319,16 +286,12 @@ async def get_domain(id: int, db: AsyncSession = Depends(get_db)):
             username=domain.username,
             server_url=domain.server_url,
             ad_base_dn=domain.ad_base_dn,
-            last_updated=(
-                domain.last_updated.isoformat() if domain.last_updated else None
-            ),
+            last_updated=(domain.last_updated.isoformat() if domain.last_updated else None),
         )
 
     except Exception as e:
         logger.error(f"Помилка отримання домену з id={id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Помилка отримання домену: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка отримання домену: {str(e)}")
 
 
 @router.post(
@@ -356,14 +319,10 @@ async def scan_domains(
             domain = result.scalar_one_or_none()
             if not domain:
                 logger.warning(f"Домен з id={domain_id} не знайдено")
-                raise HTTPException(
-                    status_code=404, detail=f"Домен з id={domain_id} не знайдено"
-                )
+                raise HTTPException(status_code=404, detail=f"Домен з id={domain_id} не знайдено")
 
             task_id = str(uuid.uuid4())
-            logger.debug(
-                f"Створено задачу сканування з task_id={task_id} для домену {domain.name}"
-            )
+            logger.debug(f"Створено задачу сканування з task_id={task_id} для домену {domain.name}")
             await ad_service.scan_and_update_ad(db, domain)
             logger.info(f"Сканування AD завершено для домену {domain.name}")
             return {"status": "success", "task_id": task_id}
@@ -379,9 +338,7 @@ async def scan_domains(
             task_ids = []
             for domain in domains:
                 task_id = str(uuid.uuid4())
-                logger.debug(
-                    f"Створено задачу сканування з task_id={task_id} для домену {domain.name}"
-                )
+                logger.debug(f"Створено задачу сканування з task_id={task_id} для домену {domain.name}")
                 await ad_service.scan_and_update_ad(db, domain)
                 task_ids.append(task_id)
 
@@ -390,6 +347,4 @@ async def scan_domains(
 
     except Exception as e:
         logger.error(f"Помилка сканування доменів (domain_id={domain_id}): {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Помилка сканування доменів: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Помилка сканування доменів: {str(e)}")

@@ -88,9 +88,7 @@ class EncryptionService:
 
         try:
             decrypted = self.cipher.decrypt(encrypted_value.encode()).decode()
-            logger.debug(
-                f"Успешно дешифровано значение длиной {len(encrypted_value)} символов"
-            )
+            logger.debug(f"Успешно дешифровано значение длиной {len(encrypted_value)} символов")
             return decrypted
         except (ValueError, InvalidToken) as e:
             logger.error(f"Ошибка дешифровки: {str(e)}")

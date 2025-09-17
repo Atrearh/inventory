@@ -23,9 +23,7 @@ async def add_correlation_id(request: Request, call_next):
 async def log_requests(request: Request, call_next):
     """Логування вхідних запитів і відповідей."""
     request_logger = getattr(request.state, "logger", logger)
-    request_logger.info(
-        f"Запит: {request.method} {request.url}, headers: {dict(request.headers)}"
-    )
+    request_logger.info(f"Запит: {request.method} {request.url}, headers: {dict(request.headers)}")
     response = await call_next(request)
     request_logger.info(f"Відповідь: {response.status_code}")
     return response
@@ -38,13 +36,8 @@ async def check_ip_allowed(request: Request, call_next):
     request_logger.debug(f"Перевірка IP: {client_ip}")
 
     # Якщо allowed_ip_networks порожній, дозволяємо всі IP
-    if (
-        not hasattr(request.app.state, "allowed_ip_networks")
-        or not request.app.state.allowed_ip_networks
-    ):
-        request_logger.warning(
-            f"ALLOWED_IPS не ініціалізовано, дозволяємо доступ для IP: {client_ip}"
-        )
+    if not hasattr(request.app.state, "allowed_ip_networks") or not request.app.state.allowed_ip_networks:
+        request_logger.warning(f"ALLOWED_IPS не ініціалізовано, дозволяємо доступ для IP: {client_ip}")
         return await call_next(request)
 
     if not is_ip_allowed(client_ip, request.app.state.allowed_ip_networks):

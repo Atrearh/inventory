@@ -2,44 +2,56 @@ import { Input, Select, Button, Checkbox } from 'antd';
 import { useRef } from 'react';
 import { InputRef } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Filters } from '../hooks/useComputerFilters';
 import { DashboardStats, DomainRead } from '../types/schemas';
 import styles from './ComputerList.module.css';
-import { getDomains } from '../api/domain.api';
 
 interface ComputerFiltersPanelProps {
   filters: Filters;
   statsData?: DashboardStats;
   isStatsLoading: boolean;
+  domainsData?: DomainRead[];
+  isDomainsLoading: boolean;
   debouncedSetHostname: (value: string | undefined) => void;
+  debouncedSetOsName: (value: string | undefined) => void;
+  debouncedSetDomain: (value: string | undefined) => void;
+  debouncedSetCheckStatus: (value: string | undefined) => void;
   handleFilterChange: (key: keyof Filters, value: string | boolean | undefined) => void;
   clearAllFilters: () => void;
 }
+
+const CHECK_STATUS_OPTIONS = [
+  { labelKey: 'all_statuses', value: '', defaultLabel: 'Усі статуси' },
+  { labelKey: 'status_success', value: 'success', defaultLabel: 'Успішно' },
+  { labelKey: 'status_failed', value: 'failed', defaultLabel: 'Невдало' },
+  { labelKey: 'status_unreachable', value: 'unreachable', defaultLabel: 'Недоступно' },
+  { labelKey: 'status_partially_successful', value: 'partially_successful', defaultLabel: 'Частково успішно' },
+  { labelKey: 'status_disabled', value: 'disabled', defaultLabel: 'Відключено' },
+  { labelKey: 'status_is_deleted', value: 'is_deleted', defaultLabel: 'Видалено' },
+];
 
 const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
   filters,
   statsData,
   isStatsLoading,
+  domainsData,
+  isDomainsLoading,
   debouncedSetHostname,
+  debouncedSetOsName,
+  debouncedSetDomain,
+  debouncedSetCheckStatus,
   handleFilterChange,
   clearAllFilters,
 }) => {
   const { t } = useTranslation();
   const inputRef = useRef<InputRef>(null);
 
-  // Запит для отримання доменів
-  const { data: domainsData, isLoading: isDomainsLoading } = useQuery({
-    queryKey: ['domains'],
-    queryFn: getDomains,
-  });
-
-  const osOptions = statsData?.os_stats?.client_os?.map((os) => ({
-      label: os.category,
-      value: os.category,
+  const osOptions: { label: string; value: string }[] = statsData?.os_stats?.client_os?.map((os) => ({
+    label: os.category,
+    value: os.category,
   })) || [];
 
-  const domainOptions = domainsData?.map((domain) => ({
+  const domainOptions: { label: string; value: string }[] = domainsData?.map((domain) => ({
     label: domain.name,
     value: domain.name,
   })) || [];
@@ -56,7 +68,7 @@ const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
       />
       <Select
         value={filters.os_name || undefined}
-        onChange={(value) => handleFilterChange('os_name', value)}
+        onChange={(value) => debouncedSetOsName(value)}
         className={styles.filterSelect}
         placeholder={t('select_os', 'Оберіть ОС')}
         loading={isStatsLoading}
@@ -67,27 +79,18 @@ const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
       />
       <Select
         value={filters.check_status || undefined}
-        onChange={(value) => handleFilterChange('check_status', value)}
+        onChange={(value) => debouncedSetCheckStatus(value)}
         className={styles.filterSelect}
         placeholder={t('select_status', 'Усі статуси')}
-        options={[
-          { label: t('all_statuses', 'Усі статуси'), value: '' },
-          { label: t('status_success', 'Успішно'), value: 'success' },
-          { label: t('status_failed', 'Невдало'), value: 'failed' },
-          { label: t('status_unreachable', 'Недоступно'), value: 'unreachable' },
-          { label: t('status_partially_successful', 'Частково успішно'), value: 'partially_successful' },
-          ...(filters.show_disabled
-            ? [
-                { label: t('status_disabled', 'Відключено'), value: 'disabled' },
-                { label: t('status_is_deleted', 'Видалено'), value: 'is_deleted' },
-              ]
-            : []),
-        ]}
+        options={CHECK_STATUS_OPTIONS.map((opt) => ({
+          label: t(opt.labelKey, opt.defaultLabel),
+          value: opt.value,
+        }))}
         allowClear
       />
       <Select
         value={filters.domain || undefined}
-        onChange={(value) => handleFilterChange('domain', value)}
+        onChange={(value) => debouncedSetDomain(value)}
         className={styles.filterSelect}
         placeholder={t('select_domain', 'Оберіть домен')}
         showSearch

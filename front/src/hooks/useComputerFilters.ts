@@ -1,12 +1,10 @@
-import { useState, useCallback, useEffect, useMemo} from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDebounce } from './useDebounce';
 import { ComputerListItem } from '../types/schemas';
 import { ITEMS_PER_PAGE } from '../config';
 import type { TablePaginationConfig } from 'antd';
 import type { SorterResult } from 'antd/es/table/interface';
-import { getDomains } from '../api/domain.api';
-import { useQuery } from '@tanstack/react-query';
 
 export interface Filters {
   hostname: string | undefined;
@@ -27,15 +25,7 @@ export const isServerOs = (osName: string) => {
   return serverOsPatterns.some((pattern) => pattern.test(osName.toLowerCase()));
 };
 
-const extractDomainFromHostname = (hostname: string): string | null => {
-  const parts = hostname.split('.');
-  if (parts.length > 1) {
-    return parts.slice(1).join('.'); // Повертаємо домен (все після першого '.')
-  }
-  return null;
-};
-
-export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
+export const useComputerFilters = (cachedComputers: ComputerListItem[], domainMap: Map<number, string>) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Filters>({
     hostname: searchParams.get('hostname') || undefined,
@@ -51,43 +41,14 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
     ip_range: searchParams.get('ip_range') || undefined,
   });
 
-  const debouncedHostname = useDebounce(filters.hostname || '', 300);
-  const debouncedOsName = useDebounce(filters.os_name || '', 300);
-  const debouncedDomain = useDebounce(filters.domain || '', 300);
-  const debouncedCheckStatus = useDebounce(filters.check_status || '', 300);
+  const debouncedFilters = useDebounce(filters, 300);
 
-  const { data: domainsData } = useQuery({
-      queryKey: ['domains'],
-      queryFn: getDomains,
-    });
-
-  const domainMap = useMemo(() => {
-    const map = new Map<number, string>();
-    domainsData?.forEach((domain) => {
-      map.set(domain.id, domain.name);
-    });
-    return map;
-  }, [domainsData]);
   // Оновлення параметрів URL при зміні фільтрів
   useEffect(() => {
     setSearchParams(
       (prevParams) => {
         const newParams = new URLSearchParams(prevParams);
-        const filterParams: Record<string, any> = {
-          hostname: filters.hostname,
-          os_name: filters.os_name,
-          domain: filters.domain,
-          check_status: filters.check_status,
-          show_disabled: filters.show_disabled,
-          sort_by: filters.sort_by,
-          sort_order: filters.sort_order,
-          page: filters.page,
-          limit: filters.limit,
-          server_filter: filters.server_filter,
-          ip_range: filters.ip_range,
-        };
-
-        for (const [key, value] of Object.entries(filterParams)) {
+        for (const [key, value] of Object.entries(filters)) {
           if (value !== undefined && value !== null && String(value) !== '') {
             if (key === 'show_disabled' && value === false) {
               newParams.delete(key);
@@ -98,7 +59,6 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
             newParams.delete(key);
           }
         }
-
         return newParams;
       },
       { replace: true }
@@ -153,100 +113,62 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
     []
   );
 
+  // Уніфікована функція для отримання значення для сортування
+  const getSortValue = (comp: ComputerListItem, field: keyof ComputerListItem | string, domainMap: Map<number, string>) => {
+    if (field === 'ip_addresses') return comp.ip_addresses?.[0]?.address || '';
+    if (field === 'os') return comp.os?.name?.toLowerCase() || '';
+    //if (field === 'is_virtual') return comp.is_virtual ?? false;
+    //if (field === 'physical_disks') return comp.physical_disks?.[0]?.model || '';
+    //if (field === 'logical_disks') return comp.logical_disks?.[0]?.volume_label || '';
+    //if (field === 'processors') return comp.processors?.[0]?.name || '';
+    //if (field === 'mac_addresses') return comp.mac_addresses?.[0]?.address || '';
+    //if (field === 'roles') return comp.roles?.[0]?.Name || '';
+    //if (field === 'software') return comp.software?.[0]?.DisplayName || '';
+    //if (field === 'video_cards') return comp.video_cards?.[0]?.name || '';
+    if (field === 'last_full_scan') return comp.last_full_scan ? new Date(comp.last_full_scan) : new Date(0);
+    if (field === 'domain_id') return comp.domain_id ? domainMap.get(comp.domain_id) ?? '' : '';
+    return comp[field as keyof ComputerListItem] ?? '';
+  };
+
   // Фільтрація комп’ютерів на клієнтській стороні
   const filteredComputers = useMemo(() => {
     let filtered = [...cachedComputers];
 
-    if (debouncedHostname) {
-      filtered = filtered.filter((comp) =>
-        comp.hostname?.toLowerCase().includes(debouncedHostname.toLowerCase())
-      );
-    }
-    if (debouncedOsName) {
-      filtered = filtered.filter((comp) =>
-        comp.os_name?.toLowerCase().includes(debouncedOsName.toLowerCase())
-      );
-    }
-    if (debouncedDomain) {
-      filtered = filtered.filter((comp) =>
-        comp.domain_id ? domainMap.get(comp.domain_id)?.toLowerCase() === debouncedDomain.toLowerCase() : false
-      );
-    }
-    if (debouncedCheckStatus) {
-      filtered = filtered.filter((comp) => comp.check_status === debouncedCheckStatus);
-    }
-    if (!filters.show_disabled) {
-      filtered = filtered.filter(
-        (comp) => comp.check_status !== 'disabled' && comp.check_status !== 'is_deleted'
-      );
-    }
-    if (filters.server_filter === 'server') {
-      filtered = filtered.filter((comp) => comp.os_name && isServerOs(comp.os_name));
-    } else if (filters.server_filter === 'client') {
-      filtered = filtered.filter((comp) => comp.os_name && !isServerOs(comp.os_name));
-    }
-    if (filters.ip_range) {
-      filtered = filtered.filter((comp) =>
-        comp.ip_addresses?.some((ip) => {
-          const ipParts = ip.address.split('.');
-          const rangeParts = filters.ip_range!.split('.');
-          if (rangeParts[2]?.startsWith('[')) {
-            const [start, end] = rangeParts[2].match(/\[(\d+)-(\d+)\]/)!.slice(1).map(Number);
-            const thirdOctet = Number(ipParts[2]);
-            return (
-              ipParts[0] === rangeParts[0] &&
-              ipParts[1] === rangeParts[1] &&
-              thirdOctet >= start &&
-              thirdOctet <= end
-            );
-          }
-          return ip.address === filters.ip_range;
-        })
-      );
-    }
+    // Застосовуємо фільтри
+    filtered = filtered.filter((comp) => {
+          const domainName = comp.domain_id ? domainMap.get(comp.domain_id)?.toLowerCase() : '';
+          const showDisabledFilter = debouncedFilters.show_disabled || (comp.check_status !== 'disabled' && comp.check_status !== 'is_deleted');
 
+      const hostnameFilter = !debouncedFilters.hostname || comp.hostname?.toLowerCase().includes(debouncedFilters.hostname.toLowerCase());
+      const osNameFilter = !debouncedFilters.os_name || comp.os?.name?.toLowerCase().includes(debouncedFilters.os_name.toLowerCase());
+      const domainFilter = !debouncedFilters.domain || domainName === debouncedFilters.domain.toLowerCase();
+      const checkStatusFilter = !debouncedFilters.check_status || comp.check_status === debouncedFilters.check_status;
+      const serverFilter = !debouncedFilters.server_filter ||
+        (debouncedFilters.server_filter === 'server' && comp.os?.name && isServerOs(comp.os.name)) ||
+        (debouncedFilters.server_filter === 'client' && comp.os?.name && !isServerOs(comp.os.name));
+      const ipRangeFilter = !debouncedFilters.ip_range || comp.ip_addresses?.some((ip) => {
+        const ipParts = ip.address.split('.');
+        const rangeParts = debouncedFilters.ip_range!.split('.');
+        if (rangeParts[2]?.startsWith('[')) {
+          const [start, end] = rangeParts[2].match(/\[(\d+)-(\d+)\]/)!.slice(1).map(Number);
+          const thirdOctet = Number(ipParts[2]);
+          return (
+            ipParts[0] === rangeParts[0] &&
+            ipParts[1] === rangeParts[1] &&
+            thirdOctet >= start &&
+            thirdOctet <= end
+          );
+        }
+        return ip.address === debouncedFilters.ip_range;
+      });
+
+      return showDisabledFilter && hostnameFilter && osNameFilter && domainFilter && checkStatusFilter && serverFilter && ipRangeFilter;
+    });
+
+    // Сортування
     filtered.sort((a, b) => {
-      const field = filters.sort_by as keyof ComputerListItem;
-      let aValue: string | number | boolean | Date = '';
-      let bValue: string | number | boolean | Date = '';
-
-      if (field === 'ip_addresses') {
-        aValue = a.ip_addresses?.[0]?.address || '';
-        bValue = b.ip_addresses?.[0]?.address || '';
-      } else if (field === 'is_virtual') {
-        aValue = a.is_virtual ?? false;
-        bValue = b.is_virtual ?? false;
-      } else if (field === 'physical_disks') {
-        aValue = a.physical_disks?.[0]?.model || '';
-        bValue = b.physical_disks?.[0]?.model || '';
-      } else if (field === 'logical_disks') {
-        aValue = a.logical_disks?.[0]?.volume_label || '';
-        bValue = b.logical_disks?.[0]?.volume_label || '';
-      } else if (field === 'processors') {
-        aValue = a.processors?.[0]?.name || '';
-        bValue = b.processors?.[0]?.name || '';
-      } else if (field === 'mac_addresses') {
-        aValue = a.mac_addresses?.[0]?.address || '';
-        bValue = b.mac_addresses?.[0]?.address || '';
-      } else if (field === 'roles') {
-        aValue = a.roles?.[0]?.Name || '';
-        bValue = b.roles?.[0]?.Name || '';
-      } else if (field === 'software') {
-        aValue = a.software?.[0]?.DisplayName || '';
-        bValue = b.software?.[0]?.DisplayName || '';
-      } else if (field === 'video_cards') {
-        aValue = a.video_cards?.[0]?.name || '';
-        bValue = b.video_cards?.[0]?.name || '';
-      } else if (field === 'last_full_scan') {
-        aValue = a.last_full_scan ? new Date(a.last_full_scan) : new Date(0);
-        bValue = b.last_full_scan ? new Date(b.last_full_scan) : new Date(0);
-      } else if (field === 'domain_id') { 
-        aValue = a.domain_id ? domainMap.get(a.domain_id) ?? '' : '';
-        bValue = b.domain_id ? domainMap.get(b.domain_id) ?? '' : '';
-      } else {
-        aValue = a[field] ?? '';
-        bValue = b[field] ?? '';
-      }
+      const aValue = getSortValue(a, filters.sort_by, domainMap);
+      const bValue = getSortValue(b, filters.sort_by, domainMap);
 
       if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
         return filters.sort_order === 'asc'
@@ -271,13 +193,14 @@ export const useComputerFilters = (cachedComputers: ComputerListItem[]) => {
         : String(bValue).localeCompare(String(aValue));
     });
 
+    // Пагінація
     const start = (filters.page - 1) * filters.limit;
     const end = start + filters.limit;
     return {
       data: filtered.slice(start, end),
       total: filtered.length,
     };
-  }, [cachedComputers, debouncedHostname, debouncedOsName, debouncedDomain, debouncedCheckStatus, filters, domainMap]);
+  }, [cachedComputers, debouncedFilters, filters.sort_by, filters.sort_order, filters.page, filters.limit, domainMap]);
 
   return {
     filters,

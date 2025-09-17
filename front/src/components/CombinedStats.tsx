@@ -1,3 +1,4 @@
+// front/src/components/CombinedStats.tsx
 import { Card, Row, Col, Table, Typography } from 'antd';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, ChartData, ChartOptions } from 'chart.js';
@@ -9,7 +10,6 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { memo } from 'react';
 
-// Реєстрація необхідних компонентів chart.js
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const { Title } = Typography;
@@ -19,13 +19,13 @@ interface CombinedStatsProps {
   lastScanTime: string | null;
   clientOsData: DashboardStats['os_stats']['client_os'];
   serverOsData: DashboardStats['os_stats']['server_os'];
+  softwareData: DashboardStats['os_stats']['software_distribution']; // Додано
   statusStats: DashboardStats['scan_stats']['status_stats'];
   lowDiskSpaceCount: number;
   onOsClick: (os: string, isClientOs: boolean) => void;
   onStatusClick: (status: string) => void;
 }
 
-// Нормалізація назви ОС для відображення
 const normalizeOsName = (name: string, t: TFunction): string => {
   const nameLower = name.toLowerCase();
   if (nameLower.includes('windows 10') && (nameLower.includes('корпоративная') || nameLower.includes('enterprise') || nameLower.includes('ltsc'))) {
@@ -42,6 +42,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   lastScanTime,
   clientOsData,
   serverOsData,
+  softwareData,
   statusStats,
   lowDiskSpaceCount,
   onOsClick,
@@ -51,17 +52,16 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   const navigate = useNavigate();
   const { timezone } = useTimezone();
 
-  // Динамічні кольори для діаграм, сумісні зі світлою та темною темами
   const chartColors = {
     clientOs: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
     serverOs: ['#FF9F40', '#FFCD56', '#C9CB3F', '#36A2EB'],
+    software: ['#FF5733', '#33FF57', '#3357FF', '#FF33A1', '#33FFF5'], // Додано кольори для ПЗ
   };
 
-  // Обчислення загальної кількості для клієнтських і серверних ОС
   const clientOsTotal = clientOsData && Array.isArray(clientOsData) ? clientOsData.reduce((sum, os) => sum + os.count, 0) : 0;
   const serverOsTotal = serverOsData && Array.isArray(serverOsData) ? serverOsData.reduce((sum, os) => sum + os.count, 0) : 0;
+  const softwareTotal = softwareData && Array.isArray(softwareData) ? softwareData.reduce((sum, sw) => sum + sw.count, 0) : 0;
 
-  // Дані для діаграми клієнтських ОС
   const clientOsChartData: ChartData<'pie', number[], string> = {
     labels: clientOsData && Array.isArray(clientOsData) ? clientOsData.map(os => normalizeOsName(os.category, t)) : [],
     datasets: [{
@@ -70,7 +70,6 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     }],
   };
 
-  // Дані для діаграми серверних ОС
   const serverOsChartData: ChartData<'pie', number[], string> = {
     labels: serverOsData && Array.isArray(serverOsData) ? serverOsData.map(os => normalizeOsName(os.category, t)) : [],
     datasets: [{
@@ -79,7 +78,14 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     }],
   };
 
-  // Опції для діаграм
+  const softwareChartData: ChartData<'pie', number[], string> = {
+    labels: softwareData && Array.isArray(softwareData) ? softwareData.map(sw => sw.category) : [],
+    datasets: [{
+      data: softwareData && Array.isArray(softwareData) ? softwareData.map(sw => sw.count) : [],
+      backgroundColor: chartColors.software,
+    }],
+  };
+
   const chartOptions: ChartOptions<'pie'> = {
     maintainAspectRatio: false,
     responsive: true,
@@ -89,7 +95,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
         callbacks: {
           label: (context) => {
             const value = context.raw as number;
-            const total = context.datasetIndex === 0 ? clientOsTotal : serverOsTotal;
+            const total = context.datasetIndex === 0 ? clientOsTotal : context.datasetIndex === 1 ? serverOsTotal : softwareTotal;
             const percentage = total ? ((value / total) * 100).toFixed(1) : '0';
             return `${context.label}: ${value} ${t('os_tooltip_computers', 'Computers')} (${percentage} ${t('os_tooltip_percentage', 'Percentage')})`;
           },
@@ -98,7 +104,6 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     },
   };
 
-  // Обробка кліку по діаграмі
   const handlePieClick = (elements: { index: number }[], chart: ChartJS<'pie', number[], string>, isClientOs: boolean) => {
     if (!elements.length || !chart.data.labels) return;
     const index = elements[0].index;
@@ -108,7 +113,6 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
     }
   };
 
-  // Колонки для таблиці статусів
   const statusColumns = [
     {
       title: t('status', 'Status'),
@@ -150,37 +154,53 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
       </Card>
 
       <Row gutter={[16, 0]}>
-          <Col span={12}>
-            <Card>
-              <Title level={3} style={{ textAlign: 'center' }}>{t('client_os', 'Client OS')}</Title>
-              {clientOsChartData.labels && clientOsChartData.labels.length > 0 ? (
-                <div style={{ height: '260px', cursor: 'pointer' }}>
-                  <Pie
-                    data={clientOsChartData}
-                    options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, true) }}
-                  />
-                </div>
-              ) : (
-                <p style={{ textAlign: 'center' }}>{t('no_client_os_data', 'No client OS data')}</p>
-              )}
-            </Card>
-          </Col>
+        <Col span={8}>
+          <Card>
+            <Title level={3} style={{ textAlign: 'center' }}>{t('client_os', 'Client OS')}</Title>
+            {clientOsChartData.labels && clientOsChartData.labels.length > 0 ? (
+              <div style={{ height: '260px', cursor: 'pointer' }}>
+                <Pie
+                  data={clientOsChartData}
+                  options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, true) }}
+                />
+              </div>
+            ) : (
+              <p style={{ textAlign: 'center' }}>{t('no_client_os_data', 'No client OS data')}</p>
+            )}
+          </Card>
+        </Col>
 
-            <Col span={12}>
-              <Card>
-                <Title level={3} style={{ textAlign: 'center' }}>{t('server_os', 'Server OS')}</Title>
-                {serverOsChartData.labels && serverOsChartData.labels.length > 0 ? (
-                  <div style={{ height: '260px', cursor: 'pointer' }}>
-                    <Pie
-                      data={serverOsChartData}
-                      options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, false) }}
-                    />
-                  </div>
-                ) : (
-                  <p style={{ textAlign: 'center' }}>{t('no_server_os_data', 'No server OS data')}</p>
-                )}
-              </Card>
-            </Col>
+        <Col span={8}>
+          <Card>
+            <Title level={3} style={{ textAlign: 'center' }}>{t('server_os', 'Server OS')}</Title>
+            {serverOsChartData.labels && serverOsChartData.labels.length > 0 ? (
+              <div style={{ height: '260px', cursor: 'pointer' }}>
+                <Pie
+                  data={serverOsChartData}
+                  options={{ ...chartOptions, onClick: (e, el, c) => handlePieClick(el, c as ChartJS<'pie', number[], string>, false) }}
+                />
+              </div>
+            ) : (
+              <p style={{ textAlign: 'center' }}>{t('no_server_os_data', 'No server OS data')}</p>
+            )}
+          </Card>
+        </Col>
+
+        <Col span={8}>
+          <Card>
+            <Title level={3} style={{ textAlign: 'center' }}>{t('software_distribution', 'Software Distribution')}</Title>
+            {softwareChartData.labels && softwareChartData.labels.length > 0 ? (
+              <div style={{ height: '260px', cursor: 'pointer' }}>
+                <Pie
+                  data={softwareChartData}
+                  options={{ ...chartOptions }}
+                />
+              </div>
+            ) : (
+              <p style={{ textAlign: 'center' }}>{t('no_software_data', 'No software data')}</p>
+            )}
+          </Card>
+        </Col>
       </Row>
 
       <Card style={{ marginTop: '16px' }}>

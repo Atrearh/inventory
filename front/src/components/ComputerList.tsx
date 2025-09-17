@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, Link } from 'react-router-dom';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { notification, Skeleton, Table, Button } from 'antd';
 import { useExportCSV } from '../hooks/useExportCSV';
 import { useComputers, useStatistics } from '../hooks/useApiQueries';
-import { Resizable } from 'react-resizable';
 import type { TableProps } from 'antd';
 import styles from './ComputerList.module.css';
 import { useComputerFilters } from '../hooks/useComputerFilters';
@@ -13,39 +12,9 @@ import ComputerFiltersPanel from './ComputerFiltersPanel';
 import { AxiosError } from 'axios';
 import { useTimezone } from '../context/TimezoneContext';
 import { formatDateInUserTimezone } from '../utils/formatDate';
-import 'react-resizable/css/styles.css';
 import { getDomains } from '../api/domain.api';
-import { ComputerListItem } from '../types/schemas';
+import { ComputerListItem, OperatingSystemRead } from '../types/schemas'; // Додано OperatingSystemRead
 import { usePageTitle } from '../context/PageTitleContext';
-import { usePersistentState } from '../hooks/usePersistentState';
-
-// Компонент для зміни розміру колонок
-const ResizableTitle = (props: any) => {
-  const { onResize, width, ...restProps } = props;
-
-  if (!width) {
-    return <th {...restProps} />;
-  }
-
-  return (
-    <Resizable
-      width={width}
-      height={0}
-      handle={
-        <span
-          className="react-resizable-handle"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        />
-      }
-      onResize={onResize}
-      draggableOpts={{ enableUserSelectHack: false }}
-    >
-      <th {...restProps} style={{ ...restProps.style, position: 'relative' }} />
-    </Resizable>
-  );
-};
 
 const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
@@ -53,21 +22,6 @@ const ComputerListComponent: React.FC = () => {
   const { timezone } = useTimezone();
   const { setPageTitle } = usePageTitle();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
-  const [columnWidths, setColumnWidths] = usePersistentState<{
-    hostname: number;
-    domain_id: number;
-    ip_addresses: number;
-    os_name: number;
-    check_status: number;
-    last_full_scan: number;
-  }>('columnWidths', {
-    hostname: 200,
-    domain_id: 100,
-    ip_addresses: 150,
-    os_name: 150,
-    check_status: 100,
-    last_full_scan: 100,
-  });
 
   const { data: domainsData, isLoading: isDomainsLoading } = useQuery({
     queryKey: ['domains'],
@@ -83,7 +37,7 @@ const ComputerListComponent: React.FC = () => {
   }, [domainsData]);
 
   const { filters, filteredComputers, debouncedSetHostname, handleFilterChange, clearAllFilters, handleTableChange } =
-    useComputerFilters(cachedComputers);
+    useComputerFilters(cachedComputers, domainMap);
 
   const { data: computersData, error: computersError, isLoading: isComputersLoading } = useComputers({
     ...filters,
@@ -94,7 +48,7 @@ const ComputerListComponent: React.FC = () => {
     sort_order: undefined,
     limit: 1000,
   });
-
+  
   const { data: statsData, error: statsError, isLoading: isStatsLoading } = useStatistics(['os_distribution']);
 
   const { handleExportCSV } = useExportCSV(filters);
@@ -147,14 +101,13 @@ const ComputerListComponent: React.FC = () => {
     return '#ff4d4f'; // Червоний для старіших
   };
 
-  const columns = useMemo<TableProps<ComputerListItem>['columns']>(
+ const columns = useMemo<TableProps<ComputerListItem>['columns']>(
     () => [
       {
         title: t('hostname', 'Ім’я хоста'),
         dataIndex: 'hostname',
         key: 'hostname',
         sorter: true,
-        width: columnWidths.hostname,
         sortOrder: filters.sort_by === 'hostname' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
         render: (_: string, record: ComputerListItem) => (
           <Link to={`/computer/${record.id}`} className={styles.link}>{record.hostname}</Link>
@@ -164,27 +117,25 @@ const ComputerListComponent: React.FC = () => {
         title: t('ip_addresses', 'IP-адреси'),
         dataIndex: 'ip_addresses',
         key: 'ip_addresses',
-        sorter: true,
-        width: columnWidths.ip_addresses,
-        sortOrder: filters.sort_by === 'ip_addresses' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+        sorter: false, // Сортування по IP може бути нетривіальним
         render: (_: any, record: ComputerListItem) =>
           record.ip_addresses?.map((ip) => ip.address).join(', ') || '-',
       },
+      // -- ЗМІНЕНО --
       {
         title: t('os_name', 'Операційна система'),
-        dataIndex: 'os_name',
-        key: 'os_name',
+        dataIndex: 'os',
+        key: 'os',
         sorter: true,
-        width: columnWidths.os_name,
-        sortOrder: filters.sort_by === 'os_name' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
-        render: (text: string) => text ?? '-',
+        sortOrder: filters.sort_by === 'os' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
+        render: (os: OperatingSystemRead | null) => os?.name ?? '-',
       },
+      // -- КІНЕЦЬ ЗМІН --
       {
         title: t('last_check', 'Остання перевірка'),
         dataIndex: 'last_full_scan',
         key: 'last_full_scan',
         sorter: true,
-        width: columnWidths.last_full_scan,
         sortOrder: filters.sort_by === 'last_full_scan' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
         render: (text: string | null) => (
           <span style={{ color: getLastScanColor(text) }}>
@@ -197,7 +148,6 @@ const ComputerListComponent: React.FC = () => {
         dataIndex: 'check_status',
         key: 'check_status',
         sorter: true,
-        width: columnWidths.check_status,
         sortOrder: filters.sort_by === 'check_status' ? (filters.sort_order === 'asc' ? 'ascend' : 'descend') : undefined,
         render: (text: string | null) => {
           const statusMap: Record<string, string> = {
@@ -212,36 +162,19 @@ const ComputerListComponent: React.FC = () => {
         },
       },
     ],
-    [t, filters.sort_by, filters.sort_order, columnWidths, timezone]
+    [t, filters.sort_by, filters.sort_order, timezone]
   ) as NonNullable<TableProps<ComputerListItem>['columns']>;
 
-  const handleResize = useCallback(
-    (key: keyof typeof columnWidths) => (_: any, { size }: { size: { width: number } }) => {
-      setColumnWidths((prev: typeof columnWidths) => ({
-        ...prev,
-        [key]: size.width,
-      }));
-    },
-    [setColumnWidths]
-  );
-
-  const resizableColumns = columns.map((col) => ({
-    ...col,
-    onHeaderCell: (column: any) => ({
-      width: column.width,
-      onResize: handleResize(column.key as keyof typeof columnWidths),
-    }),
-  }));
-
-  if (computersError || statsError) {
-    if ((computersError as AxiosError)?.response?.status === 401 || (statsError as AxiosError)?.response?.status === 401) {
+  useEffect(() => {
+    const error = computersError || statsError;
+    if (error && (error as AxiosError).response?.status === 401) {
       navigate('/login');
     }
-  }
+  }, [computersError, statsError, navigate]);
 
   return (
     <div className={styles.container}>
-      {isComputersLoading || isStatsLoading ? (
+      {isComputersLoading || isStatsLoading || isDomainsLoading ? (
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (
         <>
@@ -255,17 +188,17 @@ const ComputerListComponent: React.FC = () => {
             filters={filters}
             statsData={statsData}
             isStatsLoading={isStatsLoading}
+            domainsData={domainsData}
+            isDomainsLoading={isDomainsLoading}
             debouncedSetHostname={debouncedSetHostname}
+            debouncedSetOsName={handleFilterChange.bind(null, 'os_name')}
+            debouncedSetDomain={handleFilterChange.bind(null, 'domain')}
+            debouncedSetCheckStatus={handleFilterChange.bind(null, 'check_status')}
             handleFilterChange={handleFilterChange}
             clearAllFilters={clearAllFilters}
           />
           <Table
-            components={{
-              header: {
-                cell: ResizableTitle,
-              },
-            }}
-            columns={resizableColumns}
+            columns={columns}
             dataSource={filteredComputers.data}
             rowKey="id"
             pagination={{

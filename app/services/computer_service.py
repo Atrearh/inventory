@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
-
+from ..schemas import ComputerCreate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,9 @@ from ..database import async_session_factory
 from ..decorators import log_function_call
 from ..mappers.component_mapper import map_to_components
 from ..repositories.computer_repository import ComputerRepository
+from ..repositories.component_repository import ComponentRepository
+from ..repositories.software_repository import SoftwareRepository
+from ..repositories.tasks_repository import TasksRepository
 from ..services.encryption_service import get_encryption_service
 from ..services.winrm_service import WinRMService
 
@@ -25,6 +28,9 @@ class ComputerService:
         self.semaphore = asyncio.Semaphore(settings.scan_max_workers)
         self.db = db
         self.computer_repo = ComputerRepository(db)
+        self.component_repo = ComponentRepository(db)
+        self.software_repo = SoftwareRepository(db)
+        self.tasks_repo = TasksRepository(db)
 
     async def get_hosts_to_scan(self) -> List[str]:
         """Отримання хостів для сканування."""
@@ -40,9 +46,7 @@ class ComputerService:
         error: Optional[str] = None,
     ):
         """Оновлює статус задачі сканування в базі даних."""
-        await self.computer_repo.update_scan_task_status(
-            task_id, status, scanned_hosts, successful_hosts, error
-        )
+        await self.tasks_repo.update_scan_task_status(task_id, status, scanned_hosts, successful_hosts, error)
 
     def _determine_scan_mode(self, db_computer: Optional[models.Computer]) -> str:
         """Визначає, чи потрібне повне сканування."""
@@ -53,13 +57,10 @@ class ComputerService:
         return "Changes"
 
     @log_function_call
-    async def _get_scan_context(
-        self, host: str
-    ) -> Tuple[Optional[models.Computer], str]:
+    async def _get_scan_context(self, host: str) -> Tuple[Optional[models.Computer], str]:
         """Визначає контекст сканування: режим та наявність комп'ютера в БД."""
-        db_computer = await self.computer_repo.get_computer_by_hostname(
-            self.computer_repo.db, host
-        )
+        computers, _ = await self.computer_repo.get_computer(hostname=host)
+        db_computer = computers[0] if computers else None
         mode = self._determine_scan_mode(db_computer)
         logger.debug(
             f"Контекст сканування для {host}: режим {mode}",
@@ -79,113 +80,100 @@ class ComputerService:
         encryption_service = get_encryption_service()
         collector = WinRMDataCollector(
             hostname=host,
-            db=self.computer_repo.db,
+            db=self.db,
             encryption_service=encryption_service,
         )
-        return await collector.collect_pc_info(
-            mode=mode, last_updated=last_updated, winrm_service=winrm_service
-        )
+        return await collector.collect_pc_info(mode=mode, last_updated=last_updated, winrm_service=winrm_service)
 
     @log_function_call
-    async def _prepare_and_save_data(
-        self, raw_data: Dict[str, Any], hostname: str, mode: str
-    ):
+    async def _prepare_and_save_data(self, raw_data: Dict[str, Any], hostname: str, mode: str):
         """
-        Готує та зберігає дані, отримані з хоста, напряму працюючи з SQLModel.
+        Підготовка та збереження даних, отриманих із хоста, включаючи ОС, компоненти та ПЗ.
         """
         logger.debug(
             f"Підготовка та збереження даних для хоста {hostname}",
             extra={"hostname": hostname},
         )
         try:
-            # Отримуємо або створюємо основний об'єкт Computer
+            # Оновлення або створення основного об'єкта Computer
             computer_data = {
-                "os_name": raw_data.get("os_name", "Unknown"),
-                "os_version": raw_data.get("os_version"),
+                "hostname": hostname,
                 "ram": raw_data.get("ram"),
                 "motherboard": raw_data.get("motherboard"),
                 "last_boot": raw_data.get("last_boot"),
                 "check_status": raw_data.get("check_status", "failed"),
             }
-            # Цей виклик тепер повертає комп'ютер з усіма завантаженими зв'язками
-            db_computer = await self.computer_repo.get_or_create_computer(
-                computer_data, hostname
-            )
+            computer_id = await self.computer_repo.async_upsert_computer(computer=ComputerCreate(**computer_data), hostname=hostname, mode=mode)
+            computers, _ = await self.computer_repo.get_computer(id=computer_id)
+            db_computer = computers[0]
 
-            # Встановлюємо дати сканування
-            db_computer.last_updated = datetime.utcnow()
-            if mode == "Full":
-                db_computer.last_full_scan = datetime.utcnow()
+            # --- Обробка Operating System ---
+            os_name = raw_data.get("os_name")
+            if os_name:
+                os_version = raw_data.get("os_version")
+                # Пошук або створення запису ОС
+                os_result = await self.db.execute(
+                    select(models.OperatingSystem).where(
+                        models.OperatingSystem.name == os_name,
+                        models.OperatingSystem.version == os_version,
+                    )
+                )
+                os_entry = os_result.scalar_one_or_none()
 
-            # Мапимо та оновлюємо пов'язані сутності
+                if not os_entry:
+                    os_entry = models.OperatingSystem(name=os_name, version=os_version)
+                    self.db.add(os_entry)
+                    await self.db.flush()  # Отримання нового ID
+
+                # Прив’язка ОС до комп'ютера
+                await self.computer_repo.update_computer(db_computer.id, {"os_id": os_entry.id})
+
+            # --- Обробка компонентів ---
             disks_data = raw_data.get("disks", {})
-
-            # Ця частина тепер буде працювати без помилки, бо `db_computer` має завантажені зв'язки
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.IPAddress, raw_data.get("ip_addresses", []), hostname
-                ),
+                map_to_components(models.IPAddress, raw_data.get("ip_addresses", []), hostname),
                 models.IPAddress,
                 "address",
                 "ip_addresses",
             )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.MACAddress, raw_data.get("mac_addresses", []), hostname
-                ),
+                map_to_components(models.MACAddress, raw_data.get("mac_addresses", []), hostname),
                 models.MACAddress,
                 "address",
                 "mac_addresses",
             )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.Processor, raw_data.get("processors", []), hostname
-                ),
+                map_to_components(models.Processor, raw_data.get("processors", []), hostname),
                 models.Processor,
                 "name",
                 "processors",
             )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.VideoCard, raw_data.get("video_cards", []), hostname
-                ),
+                map_to_components(models.VideoCard, raw_data.get("video_cards", []), hostname),
                 models.VideoCard,
                 "name",
                 "video_cards",
             )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.PhysicalDisk, disks_data.get("physical_disks", []), hostname
-                ),
+                map_to_components(models.PhysicalDisk, disks_data.get("physical_disks", []), hostname),
                 models.PhysicalDisk,
                 "serial",
                 "physical_disks",
             )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
-                map_to_components(
-                    models.LogicalDisk, disks_data.get("logical_disks", []), hostname
-                ),
+                map_to_components(models.LogicalDisk, disks_data.get("logical_disks", []), hostname),
                 models.LogicalDisk,
                 "device_id",
                 "logical_disks",
-                custom_logic=self.computer_repo._create_logical_disk,
+                custom_logic=self.component_repo._create_logical_disk,
             )
-            await self.computer_repo.update_related_entities(
-                db_computer,
-                map_to_components(
-                    models.Software, raw_data.get("software", []), hostname
-                ),
-                models.Software,
-                ("name", "version"),
-                "software",
-            )
-            await self.computer_repo.update_related_entities(
+            await self.component_repo.update_related_entities(
                 db_computer,
                 map_to_components(models.Role, raw_data.get("roles", []), hostname),
                 models.Role,
@@ -193,23 +181,25 @@ class ComputerService:
                 "roles",
             )
 
+            # --- Обробка програмного забезпечення ---
+            software_list = raw_data.get("software", [])
+            if software_list is not None:
+                await self.software_repo.update_installed_software(db_computer, software_list)
+
             await self.db.commit()
-            logger.debug(
-                f"Дані для {hostname} успішно збережено", extra={"hostname": hostname}
-            )
+            logger.debug(f"Дані для {hostname} успішно збережено", extra={"hostname": hostname})
 
         except Exception as e:
             logger.error(
                 f"Помилка валідації або збереження даних для {hostname}: {str(e)}",
                 extra={"hostname": hostname},
+                exc_info=True,
             )
             await self.db.rollback()
             raise
 
     @log_function_call
-    async def process_single_host(
-        self, host: str, logger_adapter: logging.LoggerAdapter
-    ) -> bool:
+    async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
         """Обробка одного хоста."""
         try:
             db_computer, mode = await self._get_scan_context(host)
@@ -217,14 +207,10 @@ class ComputerService:
 
             async with async_session_factory() as session:
                 encryption_service = get_encryption_service()
-                winrm_service = WinRMService(
-                    encryption_service=encryption_service, db=session
-                )
+                winrm_service = WinRMService(encryption_service=encryption_service, db=session)
                 await winrm_service.initialize()
 
-                raw_data = await self._fetch_data_from_host(
-                    host, mode, last_updated, winrm_service
-                )
+                raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
 
                 if not raw_data or raw_data.get("check_status") in [
                     "failed",
@@ -234,21 +220,16 @@ class ComputerService:
                         f"Збір даних з хоста {host} не вдався.",
                         extra={"details": raw_data.get("errors")},
                     )
-                    await self.computer_repo.async_update_computer_check_status(
-                        host, raw_data.get("check_status", "failed")
-                    )
+                    await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status", "failed"))
                     await self.computer_repo.db.commit()
                     return False
 
-                # Викликаємо оновлену функцію для підготовки та збереження
                 await self._prepare_and_save_data(raw_data, host, mode)
 
                 logger_adapter.info(f"Хост {host} успішно оброблено.")
                 return True
         except Exception as e:
-            logger_adapter.error(
-                f"Критична помилка при обробці хоста {host}: {e}", exc_info=True
-            )
+            logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
             await self.computer_repo.db.rollback()
             await self.computer_repo.async_update_computer_check_status(host, "failed")
             await self.computer_repo.db.commit()
@@ -257,45 +238,7 @@ class ComputerService:
     @log_function_call
     async def create_scan_task(self, task_id: str) -> Optional[models.ScanTask]:
         """Створює нову задачу сканування."""
-        try:
-            result = await self.computer_repo.db.execute(
-                select(models.ScanTask).filter(models.ScanTask.id == task_id)
-            )
-            existing_task = result.scalars().first()
-            if existing_task:
-                if existing_task.status in [
-                    models.ScanStatus.completed,
-                    models.ScanStatus.failed,
-                ]:
-                    logger.warning(
-                        f"Задача {task_id} існує зі статусом {existing_task.status}, видаляємо",
-                        extra={"task_id": task_id},
-                    )
-                    await self.computer_repo.db.delete(existing_task)
-                    await self.computer_repo.db.flush()
-                else:
-                    logger.error(
-                        f"Задача {task_id} вже виконується зі статусом {existing_task.status}",
-                        extra={"task_id": task_id},
-                    )
-                    raise ValueError(f"Задача {task_id} вже виконується")
-
-            db_task = models.ScanTask(
-                id=task_id,
-                status=models.ScanStatus.running,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            self.computer_repo.db.add(db_task)
-            await self.computer_repo.db.flush()
-            await self.computer_repo.db.refresh(db_task)
-            return db_task
-        except Exception as e:
-            logger.error(
-                f"Помилка створення задачі: {str(e)}", extra={"task_id": task_id}
-            )
-            await self.computer_repo.db.rollback()
-            raise
+        return await self.tasks_repo.create_scan_task(task_id)
 
     @log_function_call
     async def run_scan_task(
@@ -308,10 +251,7 @@ class ComputerService:
         hosts = []
         successful = 0
         try:
-            result = await self.computer_repo.db.execute(
-                select(models.ScanTask).filter(models.ScanTask.id == task_id)
-            )
-            task = result.scalars().first()
+            task = await self.tasks_repo.db.get(models.ScanTask, task_id)
             if not task:
                 raise ValueError(f"Задача {task_id} не знайдена")
             if task.status != models.ScanStatus.running:
@@ -366,7 +306,7 @@ class ComputerService:
                 successful_hosts=successful,
             )
         except Exception as e:
-            await self.computer_repo.db.rollback()
+            await self.tasks_repo.db.rollback()
             await self.update_scan_task_status(
                 task_id=task_id,
                 status=models.ScanStatus.failed,

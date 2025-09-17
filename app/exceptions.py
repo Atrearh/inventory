@@ -19,9 +19,7 @@ settings_manager = settings
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальний обробник винятків для додатка."""
     correlation_id = getattr(request.state, "correlation_id", "unknown")
-    request_logger = (
-        request.state.logger if hasattr(request.state, "logger") else logger
-    )
+    request_logger = request.state.logger if hasattr(request.state, "logger") else logger
     request_logger.error(f"Необроблений виняток: {exc}", exc_info=True)
 
     match exc:
@@ -30,9 +28,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
         # 👇 Нова, більш детальна обробка помилок БД
         case IntegrityError():
-            status_code = (
-                status.HTTP_409_CONFLICT
-            )  # 409 Conflict - краще підходить для дублікатів
+            status_code = status.HTTP_409_CONFLICT  # 409 Conflict - краще підходить для дублікатів
             error_message = "Запис із такими даними вже існує."
 
         case OperationalError():
@@ -57,11 +53,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
     response = ErrorResponse(
         error=error_message,
-        detail=(
-            str(exc)
-            if settings_manager.log_level == "DEBUG"
-            else "Деталі помилки приховані"
-        ),
+        detail=(str(exc) if settings_manager.log_level == "DEBUG" else "Деталі помилки приховані"),
         correlation_id=correlation_id,
     )
 

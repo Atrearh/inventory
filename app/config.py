@@ -60,11 +60,7 @@ class AppSettings(BaseSettings):
     @property
     def cors_allow_origins_list(self) -> List[str]:
         """Перетворює cors_allow_origins у список для CORS middleware."""
-        return [
-            origin.strip()
-            for origin in self.cors_allow_origins.split(",")
-            if origin.strip()
-        ]
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
 
     @property
     def allowed_ips_list(self) -> List[str]:
@@ -84,9 +80,7 @@ class AppSettings(BaseSettings):
         # 2. Завантаження всіх налаштувань з БД
         try:
             result = await db.execute(select(AppSetting))
-            db_settings = {
-                setting.key: setting.value for setting in result.scalars().all()
-            }
+            db_settings = {setting.key: setting.value for setting in result.scalars().all()}
 
             for key, value in db_settings.items():
                 if hasattr(self, key):
@@ -98,9 +92,7 @@ class AppSettings(BaseSettings):
                         else:
                             setattr(self, key, value)
                     except (ValueError, TypeError) as e:
-                        logger.warning(
-                            f"Не вдалося конвертувати налаштування '{key}' зі значенням '{value}': {e}"
-                        )
+                        logger.warning(f"Не вдалося конвертувати налаштування '{key}' зі значенням '{value}': {e}")
 
             # 3. Оновлення рівня логування
             update_logging_level(self.log_level)
@@ -135,9 +127,7 @@ class AppSettings(BaseSettings):
         except Exception as e:
             await db.rollback()
             logger.error(f"Помилка збереження налаштувань: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=500, detail="Помилка збереження налаштувань"
-            )
+            raise HTTPException(status_code=500, detail="Помилка збереження налаштувань")
 
 
 # Створюємо єдиний екземпляр налаштувань для всього додатку

@@ -44,13 +44,9 @@ async def start_scan(
                 f"Задача {task_id} вже існує і має статус {task.status}",
                 extra={"task_id": task_id},
             )
-            raise HTTPException(
-                status_code=409, detail=f"Задача з ID {task_id} вже існує"
-            )
+            raise HTTPException(status_code=409, detail=f"Задача з ID {task_id} вже існує")
 
-        background_tasks.add_task(
-            computer_service.run_scan_task, task_id, logger_adapter, hostname=hostname
-        )
+        background_tasks.add_task(computer_service.run_scan_task, task_id, logger_adapter, hostname=hostname)
 
         return {"status": "success", "task_id": task_id}
     except HTTPException:
@@ -60,9 +56,7 @@ async def start_scan(
             f"Помилка запуску сканування {task_id}: {str(e)}",
             extra={"task_id": task_id},
         )
-        await computer_service.update_scan_task_status(
-            task_id, models.ScanStatus.failed, error=str(e)
-        )
+        await computer_service.update_scan_task_status(task_id, models.ScanStatus.failed, error=str(e))
         raise HTTPException(status_code=500, detail="Помилка сервера")
 
 
@@ -77,14 +71,10 @@ async def scan_status(
         async with db as session:
             from sqlalchemy import select
 
-            result = await session.execute(
-                select(models.ScanTask).filter(models.ScanTask.id == task_id)
-            )
+            result = await session.execute(select(models.ScanTask).filter(models.ScanTask.id == task_id))
             db_task = result.scalars().first()
             if not db_task:
-                logger_adapter.error(
-                    f"Задача {task_id} не знайдена", extra={"task_id": task_id}
-                )
+                logger_adapter.error(f"Задача {task_id} не знайдена", extra={"task_id": task_id})
                 raise HTTPException(status_code=404, detail="Задача не знайдена")
             return db_task
     except Exception as e:
@@ -108,9 +98,7 @@ async def start_ad_scan(
             extra={"task_id": task_id},
         )
         await service.create_scan_task(task_id)
-        background_tasks.add_task(
-            run_ad_scan_background, task_id, ad_service, service.computer_repo.db
-        )
+        background_tasks.add_task(run_ad_scan_background, task_id, ad_service, service.computer_repo.db)
         return {"task_id": task_id, "status": "Scan started"}
     except Exception as e:
         logger.error(
@@ -140,9 +128,7 @@ async def run_ad_scan_background(task_id: str, ad_service: ADService, db: AsyncS
             successful_hosts=0,  # Можна оновити після доопрацювання ADService
         )
     except Exception as e:
-        logger.error(
-            f"Помилка фонового сканування AD: {str(e)}", extra={"task_id": task_id}
-        )
+        logger.error(f"Помилка фонового сканування AD: {str(e)}", extra={"task_id": task_id})
         computer_service = ComputerService(db)
         await computer_service.update_scan_task_status(
             task_id=task_id,

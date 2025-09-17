@@ -43,9 +43,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception as e:
-            logger.error(
-                f"Помилка в сесії {id(session)}, відкат: {str(e)}", exc_info=True
-            )
+            logger.error(f"Помилка в сесії {id(session)}, відкат: {str(e)}", exc_info=True)
             await session.rollback()
             raise
         finally:

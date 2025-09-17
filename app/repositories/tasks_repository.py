@@ -19,9 +19,7 @@ class TasksRepository:
         try:
             existing_task = await self.db.get(models.ScanTask, task_id)
             if existing_task:
-                logger.warning(
-                    "Задача сканування вже існує", extra={"task_id": task_id}
-                )
+                logger.warning("Задача сканування вже існує", extra={"task_id": task_id})
                 return existing_task
 
             new_task = models.ScanTask(
@@ -64,13 +62,9 @@ class TasksRepository:
                 scan_task.updated_at = datetime.utcnow()
                 await self.db.commit()
                 await self.db.refresh(scan_task)
-                logger.debug(
-                    f"Статус задачі оновлено: {status}", extra={"task_id": task_id}
-                )
+                logger.debug(f"Статус задачі оновлено: {status}", extra={"task_id": task_id})
             else:
-                logger.warning(
-                    "Задача сканування не знайдена", extra={"task_id": task_id}
-                )
+                logger.warning("Задача сканування не знайдена", extra={"task_id": task_id})
         except SQLAlchemyError as e:
             logger.error(
                 f"Помилка оновлення статусу задачі: {str(e)}",
@@ -79,16 +73,9 @@ class TasksRepository:
             await self.db.rollback()
             raise
 
-    async def get_scan_tasks(
-        self, limit: int = 100, offset: int = 0
-    ) -> Tuple[List[models.ScanTask], int]:
+    async def get_scan_tasks(self, limit: int = 100, offset: int = 0) -> Tuple[List[models.ScanTask], int]:
         try:
-            query = (
-                select(models.ScanTask)
-                .order_by(models.ScanTask.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-            )
+            query = select(models.ScanTask).order_by(models.ScanTask.created_at.desc()).offset(offset).limit(limit)
             count_query = select(func.count()).select_from(models.ScanTask)
             result = await self.db.execute(query)
             count_result = await self.db.execute(count_query)
@@ -107,9 +94,7 @@ class TasksRepository:
         try:
             scan_task = await self.db.get(models.ScanTask, task_id)
             if not scan_task:
-                logger.warning(
-                    "Задача сканування не знайдена", extra={"task_id": task_id}
-                )
+                logger.warning("Задача сканування не знайдена", extra={"task_id": task_id})
                 return False
             await self.db.delete(scan_task)
             await self.db.commit()
@@ -123,15 +108,11 @@ class TasksRepository:
             await self.db.rollback()
             raise
 
-    async def update_scan_task_state(
-        self, task_id: str, state: str
-    ) -> Optional[models.ScanTask]:
+    async def update_scan_task_state(self, task_id: str, state: str) -> Optional[models.ScanTask]:
         try:
             scan_task = await self.db.get(models.ScanTask, task_id)
             if not scan_task:
-                logger.warning(
-                    "Задача сканування не знайдена", extra={"task_id": task_id}
-                )
+                logger.warning("Задача сканування не знайдена", extra={"task_id": task_id})
                 return None
             if state not in ["SUSPENDED", "RESUMED", "PENDING", "RUNNING", "FAILED"]:
                 logger.error(f"Недопустимий стан: {state}", extra={"task_id": task_id})
@@ -140,13 +121,9 @@ class TasksRepository:
             scan_task.updated_at = datetime.utcnow()
             await self.db.commit()
             await self.db.refresh(scan_task)
-            logger.debug(
-                f"Статус задачі оновлено до {state}", extra={"task_id": task_id}
-            )
+            logger.debug(f"Статус задачі оновлено до {state}", extra={"task_id": task_id})
             return scan_task
         except SQLAlchemyError as e:
-            logger.error(
-                f"Помилка оновлення стану задачі: {str(e)}", extra={"task_id": task_id}
-            )
+            logger.error(f"Помилка оновлення стану задачі: {str(e)}", extra={"task_id": task_id})
             await self.db.rollback()
             raise

@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional, Union
 from uuid import UUID
 from fastapi_users import schemas
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 from app.utils.validators import (
     AllowedIPsStr,
@@ -40,12 +40,14 @@ class CheckStatus(Enum):
     disabled = "disabled"
     is_deleted = "is_deleted"
 
+
 class ScanStatus(Enum):
     pending = "pending"
     running = "running"
     completed = "completed"
     failed = "failed"
-    
+
+
 # --- Базові класи ---
 class BaseSchema(BaseModel):
     model_config = ConfigDict(
@@ -70,25 +72,17 @@ class Role(ComponentSchema):
     name: NonEmptyStr = Field(..., alias="Name")
 
 
-class Software(ComponentSchema):
-    _identifier_field = IdentifierField.NAME
-    name: NonEmptyStr = Field(..., alias="DisplayName")
-    version: Optional[str] = Field(None, alias="DisplayVersion")
-    install_date: Optional[datetime] = Field(None, alias="InstallDate")
+class OperatingSystemRead(BaseSchema):
+    name: NonEmptyStr
+    version: Optional[str] = None
+    architecture: Optional[str] = None
 
-    @field_validator("install_date", mode="before")
-    @classmethod
-    def validate_install_date(cls, v):
-        """Конвертує ISO-рядок у datetime або повертає None."""
-        if v is None or v == "":
-            return None
-        try:
-            if isinstance(v, str):
-                return datetime.fromisoformat(v.replace("Z", "+00:00"))
-            return v
-        except ValueError:
-            logger.warning(f"Некоректний формат install_date: {v}")
-            return None
+
+class InstalledSoftwareRead(BaseSchema):
+    name: NonEmptyStr
+    version: Optional[str] = None
+    publisher: Optional[str] = None
+    install_date: Optional[datetime] = None
 
 
 class PhysicalDisk(ComponentSchema):
@@ -96,21 +90,18 @@ class PhysicalDisk(ComponentSchema):
     id: Optional[int] = None
     computer_id: int
     model: Optional[NonEmptyStr] = Field(None, alias="model", max_length=255)
-    serial: Optional[NonEmptyStr] = Field(None, alias="serial", max_length=100)  
+    serial: Optional[NonEmptyStr] = Field(None, alias="serial", max_length=100)
     interface: Optional[NonEmptyStr] = Field(None, alias="interface", max_length=50)
     media_type: Optional[NonEmptyStr] = Field(None, alias="media_type", max_length=50)
+
 
 class LogicalDisk(ComponentSchema):
     _identifier_field = IdentifierField.DEVICE_ID
     device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", max_length=255)
-    volume_label: Optional[NonEmptyStr] = Field(
-        None, alias="volume_label", max_length=255
-    )
+    volume_label: Optional[NonEmptyStr] = Field(None, alias="volume_label", max_length=255)
     total_space: int = Field(ge=0, alias="total_space")
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
-    parent_disk_serial: Optional[NonEmptyStr] = Field(
-        None, alias="parent_disk_serial", max_length=100
-    )
+    parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)
 
 
 class Processor(ComponentSchema):
@@ -137,52 +128,65 @@ class MACAddress(ComponentSchema):
     address: MACAddressStr = Field(..., alias="address")
 
 
-# --- Базова схема для комп'ютерів ---
-class ComputerBase(BaseSchema):
+# --- Базова схема для комп'ютерів з мінімальними полями ---
+class ComputerCore(BaseSchema):
     hostname: HostnameStr = Field(..., max_length=255)
-    os_name: Optional[NonEmptyStr] = None
-    os_version: Optional[NonEmptyStr] = None
+    os: Optional[OperatingSystemRead] = None
     ram: Optional[int] = Field(None, ge=0)
     motherboard: Optional[NonEmptyStr] = None
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = False
-    check_status: Optional[CheckStatus] = Field(
-        None, examples=["reachable", "unreachable"]
-    )
+    check_status: Optional[CheckStatus] = Field(None, examples=["reachable", "unreachable"])
+
+
+# --- Схема для створення та оновлення комп'ютерів ---
+class ComputerCreate(ComputerCore):
     ip_addresses: List[IPAddress] = []
     mac_addresses: List[MACAddress] = []
     processors: List[Processor] = []
     video_cards: List[VideoCard] = []
-    software: List[Software] = []
+    software: List[InstalledSoftwareRead] = []
     roles: List[Role] = []
     physical_disks: List[PhysicalDisk] = []
     logical_disks: List[LogicalDisk] = []
 
 
-class ComputerCreate(ComputerBase):
-    pass
-
-
-class ComputerListItem(BaseSchema):
-    id: int
-    hostname: HostnameStr = Field(..., max_length=255)
-    os_name: Optional[NonEmptyStr] = None
-    check_status: Optional[CheckStatus] = None
-    last_updated: Optional[datetime] = None
-    domain_id: Optional[int] = None
-    domain_name: Optional[NonEmptyStr] = None
-    last_full_scan: Optional[datetime] = None # <--- Додано
-    ip_addresses: List[IPAddress] = []
-
-
-class ComputerList(ComputerBase):
+# --- Схема для спискового представлення ---
+class ComputerListItem(ComputerCore):
     id: int
     last_updated: Optional[datetime] = None
     last_full_scan: Optional[datetime] = None
     domain_id: Optional[int] = None
     domain_name: Optional[NonEmptyStr] = None
+    ip_addresses: List[IPAddress] = []
+    os: Optional[OperatingSystemRead] = None
 
 
+# --- Схема для детального перегляду комп'ютера ---
+class ComputerDetail(ComputerCore):
+    id: int
+    last_updated: Optional[datetime] = None
+    last_full_scan: Optional[datetime] = None
+    domain_id: Optional[int] = None
+    domain_name: Optional[NonEmptyStr] = None
+    object_guid: Optional[str] = None
+    when_created: Optional[datetime] = None
+    when_changed: Optional[datetime] = None
+    enabled: Optional[bool] = None
+    ad_notes: Optional[NonEmptyStr] = None
+    local_notes: Optional[NonEmptyStr] = None
+    last_logon: Optional[datetime] = None
+    ip_addresses: List[IPAddress] = []
+    mac_addresses: List[MACAddress] = []
+    processors: List[Processor] = []
+    video_cards: List[VideoCard] = []
+    software: List[InstalledSoftwareRead] = []
+    roles: List[Role] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
+
+
+# --- Схема для списку комп'ютерів ---
 class ComputersResponse(BaseSchema):
     data: List[ComputerListItem]
     total: int
@@ -204,6 +208,7 @@ class OsStats(BaseSchema):
     server_os: List[OsCategoryStats] = []
     os_name: Optional[NonEmptyStr] = None
     count: int = Field(ge=0)
+    software_distribution: List[OsCategoryStats] = []
 
 
 class DiskVolume(BaseSchema):
@@ -281,7 +286,7 @@ class ComponentHistory(BaseSchema):
         VideoCard,
         IPAddress,
         MACAddress,
-        Software,
+        InstalledSoftwareRead,
         Role,
     ]
     detected_on: Optional[NonEmptyStr] = None
@@ -350,7 +355,6 @@ class ComputerUpdateCheckStatus(BaseSchema):
     check_status: CheckStatus
 
 
-
 class ScanTask(BaseSchema):
     id: UUID
     status: ScanStatus
@@ -359,7 +363,7 @@ class ScanTask(BaseSchema):
     error: Optional[NonEmptyStr]
     created_at: datetime
     updated_at: datetime
-    progress: float = 0.0  
+    progress: float = 0.0
     name: Optional[NonEmptyStr] = None
 
     model_config = {"from_attributes": True}

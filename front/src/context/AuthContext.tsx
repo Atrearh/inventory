@@ -1,7 +1,13 @@
 // AuthProvider.tsx
-import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
-import { UserRead } from '../types/schemas';
-import { getMe, login as apiLogin, logout as apiLogout } from '../api/auth.api';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useCallback,
+  useContext,
+} from "react";
+import { UserRead } from "../types/schemas";
+import { getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
 
 interface AuthContextType {
   user: UserRead | null;
@@ -22,12 +28,14 @@ export const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<UserRead | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);

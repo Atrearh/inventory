@@ -1,48 +1,42 @@
-import js from "@eslint/js";
-import tseslint from "@typescript-eslint/eslint-plugin";
+// eslint.config.js
 import tsParser from "@typescript-eslint/parser";
-import react from "eslint-plugin-react";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
+import reactPlugin from "eslint-plugin-react";
+import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
-  js.configs.recommended,
   {
-    files: ["front/src/**/*.{js,jsx,ts,tsx}"],
-    ignores: ["node_modules", "front/dist", ".venv"],
+    files: ["**/*.{ts,tsx,js,jsx}"],
+    ignores: ["dist/**", "node_modules/**", ".venv/**"],
 
     languageOptions: {
       parser: tsParser,
       parserOptions: {
+        project: "./front/tsconfig.json",
         ecmaVersion: "latest",
         sourceType: "module",
+        ecmaFeatures: {
+          jsx: true
+        }
       },
       globals: {
-        console: "readonly",
-        document: "readonly",
-        window: "readonly",
-        TextEncoder: "readonly",
-        MutationObserver: "readonly",
-        self: "readonly",
-        fetch: "readonly",
-      },
+        React: "writable",
+        JSX: "readonly"
+      }
     },
 
     plugins: {
-      "@typescript-eslint": tseslint,
-      react,
+      "@typescript-eslint": tsPlugin,
+      react: reactPlugin,
+      "react-hooks": reactHooks
     },
 
     rules: {
       "no-unused-vars": "warn",
-      "no-console": "off",
-      "react/prop-types": "off",
-      "react/jsx-uses-react": "off",
-      "react/react-in-jsx-scope": "off",
-    },
-
-    settings: {
-      react: {
-        version: "detect",
-      },
-    },
-  },
+      "no-undef": "off",
+      "@typescript-eslint/no-unused-vars": "warn",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn"
+    }
+  }
 ];

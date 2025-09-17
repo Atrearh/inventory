@@ -1,15 +1,15 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { ThemeContext } from '../context/ThemeContext';
-import { Button, Form, Input, Card } from 'antd';
-import { useQueryClient } from '@tanstack/react-query';
-import { getStatistics, getComputers, getUsers } from '../api/api';
-import { Filters, isServerOs } from '../hooks/useComputerFilters';
-import { ITEMS_PER_PAGE } from '../config';
-import { useTranslation } from 'react-i18next';
-import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
-import { theme } from 'antd';
+import React, { useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { ThemeContext } from "../context/ThemeContext";
+import { Button, Form, Input, Card } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
+import { getStatistics, getComputers, getUsers } from "../api/api";
+import { Filters, isServerOs } from "../hooks/useComputerFilters";
+import { ITEMS_PER_PAGE } from "../config";
+import { useTranslation } from "react-i18next";
+import LanguageAndThemeSwitch from "./LanguageAndThemeSwitch";
+import { theme } from "antd";
 
 const Login: React.FC = () => {
   const { token } = theme.useToken();
@@ -25,8 +25,8 @@ const Login: React.FC = () => {
     os_name: undefined,
     check_status: undefined,
     show_disabled: false,
-    sort_by: 'hostname',
-    sort_order: 'asc',
+    sort_by: "hostname",
+    sort_order: "asc",
     page: 1,
     limit: ITEMS_PER_PAGE,
     server_filter: undefined,
@@ -40,17 +40,30 @@ const Login: React.FC = () => {
 
       await Promise.all([
         queryClient.prefetchQuery({
-          queryKey: ['statistics'],
-          queryFn: () => getStatistics({ metrics: ['total_computers', 'os_distribution', 'low_disk_space_with_volumes', 'last_scan_time', 'status_stats'] }),
+          queryKey: ["statistics"],
+          queryFn: () =>
+            getStatistics({
+              metrics: [
+                "total_computers",
+                "os_distribution",
+                "low_disk_space_with_volumes",
+                "last_scan_time",
+                "status_stats",
+              ],
+            }),
         }),
         queryClient.prefetchQuery({
-          queryKey: ['computers', defaultFilters],
+          queryKey: ["computers", defaultFilters],
           queryFn: () => {
-            const params: Partial<Filters> = { ...defaultFilters, hostname: undefined, limit: 1000 };
-            if (params.os_name && params.os_name.toLowerCase() === 'unknown') {
-              params.os_name = 'unknown';
+            const params: Partial<Filters> = {
+              ...defaultFilters,
+              hostname: undefined,
+              limit: 1000,
+            };
+            if (params.os_name && params.os_name.toLowerCase() === "unknown") {
+              params.os_name = "unknown";
             } else if (params.os_name && isServerOs(params.os_name)) {
-              params.server_filter = 'server';
+              params.server_filter = "server";
             } else {
               params.server_filter = undefined;
             }
@@ -58,12 +71,12 @@ const Login: React.FC = () => {
           },
         }),
         queryClient.prefetchQuery({
-          queryKey: ['users'],
+          queryKey: ["users"],
           queryFn: getUsers,
         }),
       ]);
 
-      navigate('/');
+      navigate("/");
     } catch (err: any) {
       setError(err.message);
     }
@@ -72,40 +85,67 @@ const Login: React.FC = () => {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
         backgroundColor: token.colorBgLayout,
       }}
     >
-      <Card style={{ width: 400, background: dark ? '#2c2c2c' : '#ffffff', color: token.colorText}}>
-        <h2 style={{ textAlign: 'center', marginBottom: 24, color: token.colorText, userSelect: 'none' }}>
-          {t('login', 'Вхід')}
+      <Card
+        style={{
+          width: 400,
+          background: dark ? "#2c2c2c" : "#ffffff",
+          color: token.colorText,
+        }}
+      >
+        <h2
+          style={{
+            textAlign: "center",
+            marginBottom: 24,
+            color: token.colorText,
+            userSelect: "none",
+          }}
+        >
+          {t("login", "Вхід")}
         </h2>
         <Form onFinish={onFinish} layout="vertical">
           <Form.Item
             name="email"
             rules={[
-              { required: true, message: t('enter_email', 'Введіть email') },
-              { type: 'email', message: t('invalid_email', 'Некоректний email') },
+              { required: true, message: t("enter_email", "Введіть email") },
+              {
+                type: "email",
+                message: t("invalid_email", "Некоректний email"),
+              },
             ]}
           >
-            <Input placeholder={t('email', 'Email')} />
+            <Input placeholder={t("email", "Email")} />
           </Form.Item>
           <Form.Item
             name="password"
             rules={[
-              { required: true, message: t('enter_password', 'Введіть пароль') },
-              { min: 6, message: t('password_min_length', 'Пароль має містити щонайменше 6 символів') },
+              {
+                required: true,
+                message: t("enter_password", "Введіть пароль"),
+              },
+              {
+                min: 6,
+                message: t(
+                  "password_min_length",
+                  "Пароль має містити щонайменше 6 символів",
+                ),
+              },
             ]}
           >
-            <Input.Password placeholder={t('password', 'Пароль')} />
+            <Input.Password placeholder={t("password", "Пароль")} />
           </Form.Item>
-          {error && <p style={{ color: token.colorText, marginBottom: 16 }}>{error}</p>}
+          {error && (
+            <p style={{ color: token.colorText, marginBottom: 16 }}>{error}</p>
+          )}
           <Form.Item>
             <Button type="primary" htmlType="submit" block>
-              {t('login', 'Вхід')}
+              {t("login", "Вхід")}
             </Button>
           </Form.Item>
           <Form.Item>

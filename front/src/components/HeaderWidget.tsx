@@ -1,18 +1,24 @@
-import { useState, useEffect, useCallback, useContext } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Button, Space, Dropdown, MenuProps, Badge, Typography, theme } from 'antd'; 
-import { useAuth } from '../context/AuthContext';
-import { useTimezone } from '../context/TimezoneContext';
-import { ThemeContext } from '../context/ThemeContext';
-import { formatDateInUserTimezone } from '../utils/formatDate';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getTasks } from '../api/tasks.api';
-import LanguageAndThemeSwitch from './LanguageAndThemeSwitch';
-import { LogoutOutlined, DownOutlined } from '@ant-design/icons';
-import styles from './HeaderWidget.module.css';
-import { ScanTask } from '../types/schemas';
-
-
+import { useState, useEffect, useCallback, useContext } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Button,
+  Space,
+  Dropdown,
+  MenuProps,
+  Badge,
+  Typography,
+  theme,
+} from "antd";
+import { useAuth } from "../context/AuthContext";
+import { useTimezone } from "../context/TimezoneContext";
+import { ThemeContext } from "../context/ThemeContext";
+import { formatDateInUserTimezone } from "../utils/formatDate";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getTasks } from "../api/tasks.api";
+import LanguageAndThemeSwitch from "./LanguageAndThemeSwitch";
+import { LogoutOutlined, DownOutlined } from "@ant-design/icons";
+import styles from "./HeaderWidget.module.css";
+import { ScanTask } from "../types/schemas";
 
 const HeaderWidget: React.FC = () => {
   const { t } = useTranslation();
@@ -21,7 +27,7 @@ const HeaderWidget: React.FC = () => {
   const { dark } = useContext(ThemeContext);
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const { token } = theme.useToken(); 
+  const { token } = theme.useToken();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -31,11 +37,11 @@ const HeaderWidget: React.FC = () => {
   }, []);
 
   const { data: tasks = [], isLoading: isTasksLoading } = useQuery({
-      queryKey: ['tasks'],
-      queryFn: () => getTasks(),
-      refetchInterval: 15000,
-      enabled: !!user,
-      select: (data: [ScanTask[], number]) => data[0],
+    queryKey: ["tasks"],
+    queryFn: () => getTasks(),
+    refetchInterval: 15000,
+    enabled: !!user,
+    select: (data: [ScanTask[], number]) => data[0],
   });
 
   const handleLogout = useCallback(() => {
@@ -43,27 +49,46 @@ const HeaderWidget: React.FC = () => {
     queryClient.clear();
   }, [logout, queryClient]);
 
-  const formattedTime = formatDateInUserTimezone(currentTime, timezone, 'dd.MM.yyyy HH:mm:ss');
+  const formattedTime = formatDateInUserTimezone(
+    currentTime,
+    timezone,
+    "dd.MM.yyyy HH:mm:ss",
+  );
 
-  const taskMenuItems: MenuProps['items'] = tasks.length > 0 ? tasks.map((task) => ({
-    key: task.id,
-    label: (
-      <div>
-        <Typography.Text strong>{task.name || `Сканування ${task.id}`}</Typography.Text>
-        <br />
-        <Typography.Text type="secondary">
-          {t('status')}: {task.status} | {formatDateInUserTimezone(task.created_at, timezone, 'HH:mm:ss')}
-        </Typography.Text>
-      </div>
-    ),
-  })) : [{
-    key: 'no-tasks',
-    label: t('no_active_tasks', 'Немає активних завдань'),
-    disabled: true,
-  }];
+  const taskMenuItems: MenuProps["items"] =
+    tasks.length > 0
+      ? tasks.map((task) => ({
+          key: task.id,
+          label: (
+            <div>
+              <Typography.Text strong>
+                {task.name || `Сканування ${task.id}`}
+              </Typography.Text>
+              <br />
+              <Typography.Text type="secondary">
+                {t("status")}: {task.status} |{" "}
+                {formatDateInUserTimezone(
+                  task.created_at,
+                  timezone,
+                  "HH:mm:ss",
+                )}
+              </Typography.Text>
+            </div>
+          ),
+        }))
+      : [
+          {
+            key: "no-tasks",
+            label: t("no_active_tasks", "Немає активних завдань"),
+            disabled: true,
+          },
+        ];
 
   return (
-    <div className={styles.container} style={{ background: token.colorBgContainer }}>
+    <div
+      className={styles.container}
+      style={{ background: token.colorBgContainer }}
+    >
       <Space align="center">
         <Typography.Text style={{ color: token.colorText }}>
           {formattedTime}
@@ -75,12 +100,12 @@ const HeaderWidget: React.FC = () => {
             </Typography.Text>
             <Dropdown
               menu={{ items: taskMenuItems }}
-              trigger={['click']}
+              trigger={["click"]}
               disabled={isTasksLoading}
             >
-              <Button size="small" type={dark ? 'default' : 'primary'}>
+              <Button size="small" type={dark ? "default" : "primary"}>
                 <Badge count={tasks.length} size="small">
-                  {t('tasks', 'Завдання')} <DownOutlined />
+                  {t("tasks", "Завдання")} <DownOutlined />
                 </Badge>
               </Button>
             </Dropdown>
@@ -89,10 +114,10 @@ const HeaderWidget: React.FC = () => {
               size="small"
               icon={<LogoutOutlined />}
               onClick={handleLogout}
-              aria-label={t('logout', 'Вийти')}
-              type={dark ? 'default' : 'primary'}
+              aria-label={t("logout", "Вийти")}
+              type={dark ? "default" : "primary"}
             >
-              {t('logout', 'Вийти')}
+              {t("logout", "Вийти")}
             </Button>
           </>
         )}

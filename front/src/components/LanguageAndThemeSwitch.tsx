@@ -1,8 +1,8 @@
-import React, { useContext } from 'react';
-import { Button, Space } from 'antd';
-import { useTranslation } from 'react-i18next';
-import { ThemeContext } from '../context/ThemeContext';
-import { GlobalOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons'; 
+import React, { useContext } from "react";
+import { Button, Space } from "antd";
+import { useTranslation } from "react-i18next";
+import { ThemeContext } from "../context/ThemeContext";
+import { GlobalOutlined, SunOutlined, MoonOutlined } from "@ant-design/icons";
 
 // Компонент для мовної панелі та перемикача тем
 const LanguageAndThemeSwitch: React.FC = () => {
@@ -11,7 +11,7 @@ const LanguageAndThemeSwitch: React.FC = () => {
 
   // Перемикання мови між українською та англійською
   const toggleLanguage = () => {
-    i18n.changeLanguage(i18n.language === 'ua' ? 'en' : 'ua');
+    i18n.changeLanguage(i18n.language === "ua" ? "en" : "ua");
   };
 
   // Перемикання теми
@@ -20,23 +20,22 @@ const LanguageAndThemeSwitch: React.FC = () => {
   };
 
   return (
-    <Space
-    >
+    <Space>
       <Button
         size="small"
         icon={<GlobalOutlined />}
         onClick={toggleLanguage}
-        aria-label={t('switch_language')}
+        aria-label={t("switch_language")}
       >
-        {i18n.language === 'ua' ? 'EN' : 'UA'}
+        {i18n.language === "ua" ? "EN" : "UA"}
       </Button>
       <Button
         size="small"
-        icon={dark ? <SunOutlined /> : <MoonOutlined />} 
+        icon={dark ? <SunOutlined /> : <MoonOutlined />}
         onClick={toggleTheme}
-        aria-label={t('switch_theme')}
+        aria-label={t("switch_theme")}
       >
-        {t(dark ? 'light_theme' : 'dark_theme')}
+        {t(dark ? "light_theme" : "dark_theme")}
       </Button>
     </Space>
   );

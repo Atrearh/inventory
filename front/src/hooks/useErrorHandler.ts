@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
-import { notification } from 'antd';
-import { useTranslation } from 'react-i18next';
-import { handleApiError } from '../utils/apiErrorHandler';
-import { AxiosError } from 'axios';
+import { useCallback } from "react";
+import { notification } from "antd";
+import { useTranslation } from "react-i18next";
+import { handleApiError } from "../utils/apiErrorHandler";
+import { AxiosError } from "axios";
 
 interface ApiErrorResponse {
   detail?: string;
@@ -17,12 +17,12 @@ export const useErrorHandler = () => {
     (error: AxiosError<ApiErrorResponse> | any, defaultMessage?: string) => {
       const errorObj = handleApiError(error, t, defaultMessage);
       notification.error({
-        message: t('error'),
+        message: t("error"),
         description: errorObj.message,
       });
       return errorObj;
     },
-    [t]
+    [t],
   );
 
   return handleError;

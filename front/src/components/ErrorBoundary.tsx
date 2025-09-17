@@ -1,6 +1,6 @@
 // src/components/ErrorBoundary.tsx
-import { Component, ReactNode } from 'react';
-import { notification } from 'antd';
+import { Component, ReactNode } from "react";
+import { notification } from "antd";
 
 interface Props {
   children: ReactNode;
@@ -23,20 +23,22 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
     notification.error({
-      message: 'Произошла ошибка',
+      message: "Произошла ошибка",
       description: error.message,
     });
   }
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div style={{ padding: 16, color: '#ff4d4f' }}>
-          <h2>Что-то пошло не так</h2>
-          <p>{this.state.error?.message}</p>
-        </div>
+      return (
+        this.props.fallback || (
+          <div style={{ padding: 16, color: "#ff4d4f" }}>
+            <h2>Что-то пошло не так</h2>
+            <p>{this.state.error?.message}</p>
+          </div>
+        )
       );
     }
     return this.props.children;

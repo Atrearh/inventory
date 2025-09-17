@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, ReactNode } from "react";
 
 // Інтерфейс для контексту теми
 interface ThemeContextType {
@@ -13,15 +13,17 @@ export const ThemeContext = createContext<ThemeContextType>({
 });
 
 // Провайдер для контексту теми
-export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const ThemeProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [dark, setDark] = useState(() => {
     // Завантажуємо тему з localStorage, за замовчуванням світла (false)
-    return localStorage.getItem('theme') === 'dark';
+    return localStorage.getItem("theme") === "dark";
   });
 
   // Зберігаємо вибір теми в localStorage
   useEffect(() => {
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
+    localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
   return (

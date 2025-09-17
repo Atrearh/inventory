@@ -1,6 +1,6 @@
 // src/hooks/useModalForm.ts
-import { useState, useCallback } from 'react';
-import { FormInstance } from 'antd';
+import { useState, useCallback } from "react";
+import { FormInstance } from "antd";
 
 // Інтерфейс для типізації хука
 interface UseModalFormProps<T> {
@@ -16,7 +16,10 @@ interface UseModalFormResult<T> {
   handleCancel: () => void;
 }
 
-export function useModalForm<T>({ form, defaultValues }: UseModalFormProps<T>): UseModalFormResult<T> {
+export function useModalForm<T>({
+  form,
+  defaultValues,
+}: UseModalFormProps<T>): UseModalFormResult<T> {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<T | null>(null);
 
@@ -37,7 +40,7 @@ export function useModalForm<T>({ form, defaultValues }: UseModalFormProps<T>): 
       form.setFieldsValue(item);
       setIsModalOpen(true);
     },
-    [form]
+    [form],
   );
 
   // Закриття модального вікна

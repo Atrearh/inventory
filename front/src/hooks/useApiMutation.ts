@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { message, notification } from 'antd';
-import { useTranslation } from 'react-i18next';
-import { AxiosError } from 'axios';
-import { QueryKey } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { message, notification } from "antd";
+import { useTranslation } from "react-i18next";
+import { AxiosError } from "axios";
+import { QueryKey } from "@tanstack/react-query";
 
 // Тип для структури помилки API
 interface ApiErrorDetail {
@@ -11,19 +11,27 @@ interface ApiErrorDetail {
 }
 
 // Утилітна функція для уніфікованої обробки помилок
-const getErrorMessage = (error: Error | AxiosError, t: (key: string, options?: any) => string): string => {
+const getErrorMessage = (
+  error: Error | AxiosError,
+  t: (key: string, options?: any) => string,
+): string => {
   if ((error as AxiosError).response?.data) {
-    const detail = (error as AxiosError).response!.data as { detail?: string | ApiErrorDetail[] };
+    const detail = (error as AxiosError).response!.data as {
+      detail?: string | ApiErrorDetail[];
+    };
     if (detail.detail) {
       if (Array.isArray(detail.detail)) {
         return detail.detail
-          .map((err: ApiErrorDetail) => `${err.loc?.join('.') || 'error'}: ${err.msg}`)
-          .join('; ');
+          .map(
+            (err: ApiErrorDetail) =>
+              `${err.loc?.join(".") || "error"}: ${err.msg}`,
+          )
+          .join("; ");
       }
       return detail.detail as string;
     }
   }
-  return error.message || t('error');
+  return error.message || t("error");
 };
 
 interface UseApiMutationOptions<TData, TVariables> {
@@ -59,7 +67,7 @@ export const useApiMutation = <TData = unknown, TVariables = void>({
         }
       }
       if (invalidateQueryKeys.length > 0) {
-        invalidateQueryKeys.forEach(key => {
+        invalidateQueryKeys.forEach((key) => {
           queryClient.invalidateQueries({ queryKey: key });
         });
       }

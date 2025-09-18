@@ -1,6 +1,7 @@
 // front/src/api/auth.api.ts
 import { apiRequest } from "../utils/apiUtils";
 import { UserRead, UserCreate, UserUpdate } from "../types/schemas";
+import { handleApiError } from "../utils/apiErrorHandler";
 
 export interface LoginCredentials { 
   email: string;
@@ -15,7 +16,11 @@ export interface SessionData {
 }
 
 export const getMe = async (): Promise<UserRead> => {
-  return apiRequest("get", "/users/me");
+  try {
+    return await apiRequest("get", "/users/me");
+  } catch (_) { // Фікс: замість error використовуємо _, якщо не потрібен
+    throw handleApiError(new Error("Failed to fetch user"));
+  }
 };
 
 export const login = async (

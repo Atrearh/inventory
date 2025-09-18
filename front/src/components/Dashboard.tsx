@@ -10,12 +10,12 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import { AxiosError } from "axios";
 import { startHostScan } from "../api/api";
 import { useTranslation } from "react-i18next";
-import { usePageTitle } from "../context/PageTitleContext";
+import { useAppContext } from "../context/AppContext";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const Dashboard: React.FC = () => {
-  const { setPageTitle } = usePageTitle();
+  const { setPageTitle } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();

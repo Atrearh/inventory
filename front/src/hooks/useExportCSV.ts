@@ -1,7 +1,7 @@
 // src/hooks/useExportCSV.ts
 import { useCallback } from "react";
 import { notification } from "antd";
-import { apiInstance } from "../api/api";
+import { apiInstance } from "../api/instance";
 import { Filters } from "./useComputerFilters";
 
 export const useExportCSV = (filters: Filters) => {

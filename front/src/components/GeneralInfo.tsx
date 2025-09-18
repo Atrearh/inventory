@@ -5,10 +5,11 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ComputerDetail } from "../types/schemas";
 import { EditOutlined } from "@ant-design/icons";
-import { apiInstance } from "../api/api";
-import { useTimezone } from "../context/TimezoneContext";
+import { apiRequest } from "../utils/apiUtils" 
+import { useAppContext } from "../context/AppContext";
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { handleApiError } from "../utils/apiErrorHandler";
+
 
 interface GeneralInfoProps {
   computer: ComputerDetail | undefined;
@@ -25,7 +26,7 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({
   const navigate = useNavigate();
   const [localNotes, setLocalNotes] = useState(computer?.local_notes || "");
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const { timezone } = useTimezone();
+  const { timezone } = useAppContext();
 
   if (!computer) {
     return <div>{t("no_computer_data", "Дані про комп'ютер недоступні")}</div>;
@@ -38,7 +39,7 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({
 
   const handleSaveNotes = async () => {
     try {
-      await apiInstance.put(`/computers/${computer.id}/local_notes`, {
+      await apiRequest("put", `/computers/${computer.id}/local_notes`, {
         local_notes: localNotes,
       });
       notification.success({
@@ -46,10 +47,7 @@ const GeneralInfo: React.FC<GeneralInfoProps> = ({
       });
       setIsModalVisible(false);
     } catch (error) {
-      const apiError = handleApiError(
-        error,
-        t("error_saving_notes", "Помилка збереження приміток"),
-      );
+      const apiError = handleApiError(error,t, t("error_saving_notes", "Помилка збереження приміток"));
       if ((error as any).response?.status === 401) {
         notification.error({
           message: t(

@@ -34,7 +34,7 @@ const Login: React.FC = () => {
 
   const onFinish = async (values: { email: string; password: string }) => {
     try {
-      await login(values.email, values.password);
+      await login(values);
 
       await Promise.all([
         queryClient.prefetchQuery({

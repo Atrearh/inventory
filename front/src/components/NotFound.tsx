@@ -2,14 +2,14 @@ import { useEffect } from "react";
 import { Typography, Button } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { usePageTitle } from "../context/PageTitleContext";
+import { useAppContext } from "../context/AppContext"; 
 
 const { Title, Paragraph } = Typography;
 
 const NotFound: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { setPageTitle } = usePageTitle();
+  const { setPageTitle } = useAppContext();
 
   useEffect(() => {
     setPageTitle(t("not_found", "Сторінка не знайдена"));

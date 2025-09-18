@@ -380,3 +380,6 @@ class SessionRead(BaseSchema):
     issued_at: datetime
     expires_at: datetime
     is_current: bool = False
+
+class LocalNotesUpdate(BaseModel):
+    local_notes: Optional[str] = None

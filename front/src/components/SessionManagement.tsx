@@ -9,13 +9,13 @@ import {
 } from "../api/auth.api";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { formatDateInUserTimezone } from "../utils/formatDate";
-import { useTimezone } from "../context/TimezoneContext";
+import { useAppContext } from "../context/AppContext";
 
 const { Title, Text } = Typography;
 
 const SessionManagement: React.FC = () => {
   const { t } = useTranslation();
-  const { timezone } = useTimezone();
+  const { timezone } = useAppContext();
   const queryKey = ["sessions"];
 
   const { data: sessions, isLoading } = useQuery({

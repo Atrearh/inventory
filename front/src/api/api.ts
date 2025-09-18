@@ -1,6 +1,5 @@
-import axios, { AxiosError } from "axios";
-import { handleApiError } from "../utils/apiErrorHandler";
-import { cleanAndSerializeParams } from "../utils/apiUtils"
+import { AxiosError } from "axios";
+import { apiInstance } from "./instance"; 
 
 // Інтерфейс для структури помилки API
 interface ApiErrorResponse {
@@ -9,24 +8,11 @@ interface ApiErrorResponse {
   errors?: any;
 }
 
-export const apiInstance = axios.create({
-  baseURL: "/api",
-  withCredentials: true,
-  paramsSerializer: cleanAndSerializeParams, 
-});
-
-
 apiInstance.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<ApiErrorResponse>) => {
-    if (error.response?.status === 401) {
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
-      }
-      return;
-    }
-    throw handleApiError(error, undefined);
-  },
+  (error: AxiosError<ApiErrorResponse>) => {
+    return Promise.reject(error);
+  }
 );
 
 export * from "./auth.api";

@@ -10,17 +10,17 @@ import styles from "./ComputerList.module.css";
 import { useComputerFilters } from "../hooks/useComputerFilters";
 import ComputerFiltersPanel from "./ComputerFiltersPanel";
 import { AxiosError } from "axios";
-import { useTimezone } from "../context/TimezoneContext";
+import { useAppContext } from "../context/AppContext";
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { getDomains } from "../api/domain.api";
-import { ComputerListItem, OperatingSystemRead } from "../types/schemas"; // Додано OperatingSystemRead
-import { usePageTitle } from "../context/PageTitleContext";
+import { ComputerListItem, OperatingSystemRead } from "../types/schemas"; 
+
 
 const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { timezone } = useTimezone();
-  const { setPageTitle } = usePageTitle();
+  const { timezone } = useAppContext();
+  const { setPageTitle } = useAppContext();
   const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>(
     [],
   );

@@ -1,0 +1,1 @@
+import{c as s}from"./index-ousJY6BN.js";const o=async()=>s("get","/domains/"),e=async a=>s("post","/domains/",a),c=async(a,n)=>s("patch",`/domains/${a}`,n),i=async a=>s("delete",`/domains/${a}`),r=async a=>s("post","/domains/validate",a),m=async a=>s("post","/domains/scan",void 0,{params:a?{domain_id:a}:{}});export{e as c,i as d,o as g,m as s,c as u,r as v};

@@ -266,6 +266,9 @@ export interface ErrorResponse {
   detail?: string | null;
   correlation_id?: string | null;
 }
+export interface LocalNotesUpdate {
+  local_notes?: string | null;
+}
 export interface ScanResponse {
   status: string;
   task_id: string;

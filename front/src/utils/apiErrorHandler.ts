@@ -13,8 +13,7 @@ export function handleApiError(
   t?: (key: string, fallback: string) => string, 
   defaultMessage?: string,
 ): Error {
-  const translate: (key: string, fallback: string) => string = 
-    t || ((key: string, fallback: string) => fallback); 
+  const translate = t || ((_: string, fallback: string) => fallback); 
 
   if (error.code === "ECONNREFUSED" || !error.response || error.response?.status === 503) {
     return new Error(translate("server_unavailable", "Сервер недоступний. Перевірте підключення до мережі.")); 

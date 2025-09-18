@@ -12,10 +12,11 @@ import {
   Typography,
 } from "antd";
 import { useTranslation } from "react-i18next";
-import { apiInstance } from "../api/api";
+import { apiRequest } from "../utils/apiUtils" 
 import { useAppContext } from "../context/AppContext";
 import { handleApiError } from "../utils/apiErrorHandler";
 import SessionManagement from "./SessionManagement";
+import { AxiosResponse } from "axios";
 
 const { Title } = Typography;
 
@@ -33,20 +34,20 @@ const Settings: React.FC = () => {
   const { data, isLoading, error } = useQuery<SettingsData, Error>({
     queryKey: ["settings"],
     queryFn: async () => {
-      const response = await apiInstance.get("/settings");
+      const response: AxiosResponse<SettingsData> = await apiRequest("get", "/settings");
       return response.data;
     },
   });
 
   const mutation = useMutation({
     mutationFn: async (values: {}) => {
-      return await apiInstance.post("/settings", values);
+      return await apiRequest("post", "/settings", values); 
     },
     onSuccess: () => {
       message.success(t("settings_updated", "Налаштування успішно оновлено!"));
     },
     onError: (error: Error) => {
-      const apiError = handleApiError(error, t("error_updating_settings", "Помилка оновлення налаштувань"));
+      const apiError = handleApiError(error, t, t("error_updating_settings", "Помилка оновлення налаштувань"));
       message.error(apiError.message);
     },
   });
@@ -64,7 +65,7 @@ const Settings: React.FC = () => {
   }
 
   if (error) {
-    const apiError = handleApiError(error, t("error_loading_settings", "Помилка завантаження налаштувань"));
+    const apiError = handleApiError(error, t, t("error_loading_settings", "Помилка завантаження налаштувань"));
     return (
       <div>
         {t("error_loading_settings", "Помилка завантаження налаштувань")}:{" "}

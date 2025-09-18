@@ -14,6 +14,7 @@ from ..schemas import (
     ComputersResponse,
     ComputerUpdateCheckStatus,
     InstalledSoftwareRead,
+    LocalNotesUpdate,
 )
 from ..repositories.component_repository import ComponentRepository
 from ..database import get_db
@@ -267,3 +268,36 @@ async def get_computer_by_id(
     except Exception as e:
         logger.error(f"Помилка отримання комп'ютера {computer_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Помилка сервера: {e}")
+    
+@router.put(
+    "/computers/{computer_id}/local_notes",
+    response_model=dict,
+    dependencies=[Depends(get_current_user)],
+)
+async def update_local_notes(
+    computer_id: int,
+    notes_update: LocalNotesUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Оновлює локальні примітки для комп'ютера."""
+    logger.info(f"Запит на оновлення локальних приміток для computer_id={computer_id}")
+    repo = ComputerRepository(db)
+    
+    # Спочатку перевіряємо, чи існує комп'ютер
+    computers, _ = await repo.get_computer(id=computer_id)
+    if not computers:
+        logger.warning(f"Комп'ютер з ID {computer_id} не знайдено")
+        raise HTTPException(status_code=404, detail="Комп'ютер не знайдено")
+    
+    db_computer = computers[0]
+
+    try:
+        # Оновлюємо поле
+        await repo.update_computer(db_computer.id, {"local_notes": notes_update.local_notes})
+        await db.commit()
+        logger.info(f"Локальні примітки для computer_id={computer_id} успішно оновлено")
+        return {"status": "success", "message": "Примітки оновлено"}
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Помилка оновлення приміток для computer_id={computer_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Помилка збереження приміток")

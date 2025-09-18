@@ -16,3 +16,7 @@ export const updateTaskState = async (
 ): Promise<ScanTask> => {
   return apiRequest("patch", `/tasks/${taskId}/state?state=${state}`); 
 };
+
+export const deleteTask = async (taskId: string): Promise<void> => {
+  await apiRequest("delete", `/tasks/${taskId}`);
+};

@@ -8,16 +8,17 @@ import {
   Space,
   Card,
 } from "antd";
+import { ColumnsType } from "antd/es/table";
 import { QueryKey } from "@tanstack/react-query";
-import { useMemo, useEffect } from "react";
-import { startScan, register, updateUser, deleteUser } from "../api/api";
+import { useMemo, useEffect, useCallback } from "react";
+import { register, updateUser, deleteUser } from "../api/api";
 import { scanDomains } from "../api/domain.api";
 import { UserRead, UserCreate, UserUpdate } from "../types/schemas";
 import { useUsers } from "../hooks/useApiQueries";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useModalForm } from "../hooks/useModalForm";
+import { useAppContext } from "../context/AppContext";
 import DomainManagement from "./DomainManagement";
-import { usePageTitle } from "../context/AppContext";
 import { useTranslation } from "react-i18next";
 
 interface MutationResponse {
@@ -28,7 +29,7 @@ interface MutationResponse {
 
 const AdminPanel: React.FC = () => {
   const { t } = useTranslation();
-  const { setPageTitle } = usePageTitle();
+  const { setPageTitle } = useAppContext();
   const [form] = Form.useForm();
   const {
     isModalOpen,
@@ -37,30 +38,36 @@ const AdminPanel: React.FC = () => {
     openEditModal,
     handleCancel,
   } = useModalForm<UserRead>({ form });
-  const {
-    data: users,
-    isLoading: isUsersLoading,
-  } = useUsers();
+  const { data: users, isLoading: isUsersLoading } = useUsers();
   const usersQueryKey: QueryKey = ["users"];
 
-  // Мутації з використанням useApiMutation
-  const { mutate: registerMutation, isPending: isRegisterLoading } =
-    useApiMutation<UserRead, UserCreate>({
-      mutationFn: register,
-      successMessage: t("register_success"),
-      errorMessage: t("register_error"),
-      invalidateQueryKeys: [usersQueryKey],
-      onSuccessCallback: handleCancel,
-    });
+  // Встановлення заголовка сторінки
+  useEffect(() => {
+    setPageTitle(t("admin_panel_title"));
+  }, [t, setPageTitle]);
 
-  const { mutate: updateUserMutation, isPending: isUpdateLoading } =
-    useApiMutation<UserRead, { id: number; data: Partial<UserUpdate> }>({
-      mutationFn: ({ id, data }) => updateUser(id, data),
-      successMessage: t("user_updated"),
-      errorMessage: t("update_error"),
-      invalidateQueryKeys: [usersQueryKey],
-      onSuccessCallback: handleCancel,
-    });
+  // Мутації
+  const { mutate: registerMutation, isPending: isRegisterLoading } = useApiMutation<
+    UserRead,
+    UserCreate
+  >({
+    mutationFn: register,
+    successMessage: t("register_success"),
+    errorMessage: t("register_error"),
+    invalidateQueryKeys: [usersQueryKey],
+    onSuccessCallback: handleCancel,
+  });
+
+  const { mutate: updateUserMutation, isPending: isUpdateLoading } = useApiMutation<
+    UserRead,
+    { id: number; data: Partial<UserUpdate> }
+  >({
+    mutationFn: ({ id, data }) => updateUser(id, data),
+    successMessage: t("user_updated"),
+    errorMessage: t("update_error"),
+    invalidateQueryKeys: [usersQueryKey],
+    onSuccessCallback: handleCancel,
+  });
 
   const { mutate: deleteUserMutation } = useApiMutation<void, number>({
     mutationFn: deleteUser,
@@ -69,60 +76,47 @@ const AdminPanel: React.FC = () => {
     invalidateQueryKeys: [usersQueryKey],
   });
 
-  const { mutate: startScanMutation, isPending: isScanLoading } =
-    useApiMutation<MutationResponse, void>({
-      mutationFn: startScan,
-      successMessage: t("scan_started"), // task_id обробляється в mutationFn
-      errorMessage: t("scan_error"),
-    });
-
-  const {
-    mutate: scanAllDomainsMutation,
-    isPending: isAllDomainsADScanLoading,
-  } = useApiMutation<MutationResponse, void>({
-    mutationFn: () => scanDomains(), // Викликаємо scanDomains без параметрів
-    successMessage: t("scan_all_domains_started findebug: true"), // Додаємо findbugs
-    errorMessage: t("scan_all_domains_error"),
-  });
-
-  // Обробка відправлення форми
-  const onFinish = async (values: any) => {
-    if (editingItem) {
-      updateUserMutation({ id: editingItem.id, data: values });
-    } else {
-      registerMutation(values);
-    }
-  };
-
-  useEffect(() => {
-    setPageTitle(t("admin"));
-  }, [setPageTitle, t]);
-
-  // Визначення стовпців таблиці
-  const columns = useMemo(
+  // Типізація колонок
+  const columns: ColumnsType<UserRead> = useMemo(
     () => [
-      { title: t("username"), dataIndex: "username", key: "username" },
-      { title: t("email"), dataIndex: "email", key: "email" },
+      {
+        title: t("username"),
+        dataIndex: "username",
+        key: "username",
+      },
+      {
+        title: t("email"),
+        dataIndex: "email",
+        key: "email",
+      },
+      {
+        title: t("role"),
+        dataIndex: "role",
+        key: "role",
+        render: (role: string | null) => role || "-",
+      },
       {
         title: t("actions"),
         key: "actions",
-        render: (_: any, record: UserRead) => (
-          <Space>
+        render: (_, record: UserRead) => (
+          <Space size="middle">
             <Button
+              type="link"
               onClick={() => openEditModal(record)}
-              aria-label={t("edit_user", { username: record.username })}
+              aria-label={t("edit")}
             >
               {t("edit")}
             </Button>
             <Popconfirm
               title={t("confirm_delete")}
               onConfirm={() => deleteUserMutation(record.id)}
-              okText={t("yes")}
-              cancelText={t("no")}
+              okText={t("yes", "Yes")}
+              cancelText={t("cancel")}
             >
               <Button
+                type="link"
                 danger
-                aria-label={t("delete_user", { username: record.username })}
+                aria-label={t("delete_user")}
               >
                 {t("delete")}
               </Button>
@@ -131,41 +125,28 @@ const AdminPanel: React.FC = () => {
         ),
       },
     ],
-    [deleteUserMutation, openEditModal, t],
+    [t, openEditModal, deleteUserMutation],
+  );
+
+  // Обробка форми
+  const onFinish = useCallback(
+    (values: UserCreate | UserUpdate) => {
+      if (editingItem) {
+        updateUserMutation({ id: editingItem.id, data: values });
+      } else {
+        registerMutation(values as UserCreate);
+      }
+    },
+    [editingItem, registerMutation, updateUserMutation],
   );
 
   return (
-    <div style={{ padding: "16px 24px" }}>
-      <Card title={t("global_actions")} style={{ marginBottom: 24 }}>
-        <Space>
-          <Button
-            onClick={() => startScanMutation()}
-            loading={isScanLoading}
-            disabled={isScanLoading || isAllDomainsADScanLoading}
-            aria-label={t("start_inventory")}
-          >
-            {t("start_inventory")}
-          </Button>
-          <Button
-            onClick={() => scanAllDomainsMutation()}
-            loading={isAllDomainsADScanLoading}
-            disabled={isScanLoading || isAllDomainsADScanLoading}
-            aria-label={t("scan_all_domains")}
-          >
-            {t("scan_all_domains")}
-          </Button>
-        </Space>
-      </Card>
-
+    <div>
       <Card
-        title={t("user_management")}
+        title={t("admin_panel_title")}
         extra={
-          <Button
-            type="primary"
-            onClick={openCreateModal}
-            aria-label={t("add_user")}
-          >
-            {t("add_user")}
+          <Button type="primary" onClick={openCreateModal} aria-label={t("new_user")}>
+            {t("new_user")}
           </Button>
         }
         style={{ marginBottom: 24 }}
@@ -197,7 +178,7 @@ const AdminPanel: React.FC = () => {
             type="primary"
             loading={isRegisterLoading || isUpdateLoading}
             onClick={() => form.submit()}
-            aria-label={editingItem ? t("save_user_changes") : t("create_user")}
+            aria-label={editingItem ? t("save") : t("create")}
           >
             {editingItem ? t("save") : t("create")}
           </Button>,
@@ -219,9 +200,7 @@ const AdminPanel: React.FC = () => {
           <Form.Item
             name="email"
             label={t("email")}
-            rules={[
-              { required: true, type: "email", message: t("invalid_email") },
-            ]}
+            rules={[{ required: true, type: "email", message: t("invalid_email") }]}
           >
             <Input />
           </Form.Item>

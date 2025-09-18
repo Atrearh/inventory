@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getComputers } from "../api/api";
-import { ComputersResponse, ComputerList } from "../types/schemas";
+import { ComputersResponse, ComputerListItem } from "../types/schemas";
 import { useEffect, useState } from "react";
 import {
   Chart as ChartJS,
@@ -12,16 +12,15 @@ import {
 } from "chart.js";
 import { Pie } from "react-chartjs-2";
 import { notification, Table } from "antd";
-import { useAuth } from "../context/AuthContext";
+import { useAppContext } from "../context/AppContext";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { AxiosError } from "axios";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface SubnetStatsProps {
   onSubnetClick?: (subnet: string) => void;
-  emptyComponent?: React.ReactNode; // Додаємо проп для порожнього стану
+  emptyComponent?: React.ReactNode; 
 }
 
 const SubnetStats: React.FC<SubnetStatsProps> = ({
@@ -29,7 +28,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({
   emptyComponent,
 }) => {
   const { t } = useTranslation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAppContext();
   const [subnetData, setSubnetData] = useState<
     { subnet: string; count: number }[]
   >([]);
@@ -93,7 +92,7 @@ const SubnetStats: React.FC<SubnetStatsProps> = ({
             computer.check_status !== "disabled" &&
             computer.check_status !== "is_deleted",
         )
-        .forEach((computer: ComputerList) => {
+        .forEach((computer: ComputerListItem) => {
           const ip = computer.ip_addresses?.[0]?.address;
           let subnet = t("unknown", "Unknown");
           if (ip) {

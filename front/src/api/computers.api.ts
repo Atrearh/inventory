@@ -1,11 +1,12 @@
 // front/src/api/computers.api.ts
-import { apiRequest, cleanAndSerializeParams } from "../utils/apiUtils";
+import { apiRequest} from "../utils/apiUtils";
 import {
   ComputersResponse,
   ComputerDetail,
   ComponentHistory,
 } from "../types/schemas";
 import { Filters } from "../hooks/useComputerFilters";
+import { cleanAndSerializeParams } from "../utils/paramsUtils";
 
 export const getComputers = async (params: Filters) => {
   const serializedParams = cleanAndSerializeParams({

@@ -11,7 +11,7 @@ import {
 } from "chart.js";
 import { DashboardStats } from "../types/schemas";
 import { useNavigate, Link } from "react-router-dom";
-import { useTimezone } from "../context/AppContext";
+import { useAppContext } from "../context/AppContext"; 
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -62,7 +62,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { timezone } = useTimezone();
+  const { timezone } = useAppContext();
 
   const chartColors = {
     clientOs: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"],

@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import run from 'vite-plugin-run';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { visualizer } from "rollup-plugin-visualizer";
 
 interface NodeJSError extends Error {code?: string;}
 
@@ -11,11 +12,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      visualizer({ open: true }),
       run([
         {
           name: 'generate-ts-types',
-          run: ['npm run generate:ts'],
-          pattern: ['app/schemas.py'],
+          run: ['npm', 'run', 'generate:ts'],
+          pattern: ['../app/schemas.py'],
         },
       ]),
     ],
@@ -43,6 +45,26 @@ export default defineConfig(({ mode }) => {
                 }
               }
             });
+          },
+        },
+      },
+    },
+    build: { // <-- Додайте цю секцію
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('antd')) {
+                return 'vendor_antd';
+              }
+              if (id.includes('chart.js') || id.includes('react-chartjs-2')) {
+                  return 'vendor_chart';
+              }
+              if (id.includes('@tanstack')) {
+                  return 'vendor_tanstack';
+              }
+              return 'vendor'; 
+            }
           },
         },
       },

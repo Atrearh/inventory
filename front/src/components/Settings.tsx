@@ -35,8 +35,12 @@ const Settings: React.FC = () => {
     queryKey: ["settings"],
     queryFn: async () => {
       const response: AxiosResponse<SettingsData> = await apiRequest("get", "/settings");
+      if (!response.data) {
+        console.warn("Порожня відповідь від /api/settings");
+        return {}; // Повертаємо порожній об’єкт, щоб уникнути undefined
+      }
       return response.data;
-    },
+    }
   });
 
   const mutation = useMutation({

@@ -1,11 +1,13 @@
-import { ReactNode, useState, useEffect, useCallback } from "react";
+import { ReactNode, useState, useEffect, useMemo, useCallback,Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { createCustomContext } from "../utils/createContext";
-import { UserRead } from "../types/schemas";
-import { getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
+import { LoginCredentials, getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
 import { handleApiError } from "../utils/apiErrorHandler";
-import { message } from "antd";
+import { message, Spin } from "antd";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { I18N_KEYS } from "../utils/i18nKeys"; 
+import { UserRead } from "../types/schemas";  
 
 // Інтерфейс для всіх значень контексту
 interface AppContextType {
@@ -20,7 +22,7 @@ interface AppContextType {
   user: UserRead | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,6 +34,7 @@ const [AppContext, AppProviderBase, useAppContext] = createCustomContext<AppCont
 // Єдиний провайдер
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
 
   // --- Theme ---
   const [dark, setDark] = usePersistentState<boolean>("theme", false);
@@ -57,36 +60,35 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Auth ---
   const [user, setUser] = useState<UserRead | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
-  const checkAuth = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const currentUser = await getMe();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-    } catch (error) {
-      const apiError = handleApiError(error, t("error_checking_auth", "Помилка перевірки автентифікації"));
-      message.error(apiError.message);
-      setUser(null);
-      setIsAuthenticated(false);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [t]);
+  const { data: queryUser, isLoading } = useQuery<UserRead | null, Error>({
+    queryKey: ["auth", "me"],
+    queryFn: async () => {
+      try {
+        return await getMe();
+      } catch {
+        return null;
+      }
+    },
+    initialData: null, // Фікс TS-2345: уникаємо undefined
+    enabled: true,
+    staleTime: 5 * 60 * 1000, // 5 хв кеш
+    retry: 0, // Не retry auth
+  });
+
+  const isAuthenticated = !!queryUser;
 
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    setUser(queryUser); // Фікс TS-2345: синхронізація з query
+  }, [queryUser]);
 
-  const handleLogin = async (email: string, password: string) => {
+  const handleLogin = async (credentials: LoginCredentials) => {
     try {
-      await apiLogin({ email, password });
-      await checkAuth();
-      message.success(t("login_success", "Успішний вхід!"));
+      await apiLogin(credentials);
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      message.success(t(I18N_KEYS.login_success.key, I18N_KEYS.login_success.fallback));
     } catch (error) {
-      const apiError = handleApiError(error, t("error_logging_in", "Помилка входу"));
+      const apiError = handleApiError(error, undefined, t(I18N_KEYS.error_logging_in.key, I18N_KEYS.error_logging_in.fallback));
       throw apiError;
     }
   };
@@ -94,35 +96,60 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const handleLogout = useCallback(async () => {
     try {
       await apiLogout();
-      message.success(t("logout_success", "У Uспішний вихід!"));
+      message.success(t(I18N_KEYS.logout_success.key, I18N_KEYS.logout_success.fallback));
     } catch (error) {
-      const apiError = handleApiError(error, t("error_logging_out", "Помилка виходу"));
+      const apiError = handleApiError(error, undefined, t(I18N_KEYS.error_logging_out.key, I18N_KEYS.error_logging_out.fallback));
       message.error(apiError.message);
     } finally {
+      queryClient.clear(); // Очистити весь кеш
       setUser(null);
-      setIsAuthenticated(false);
       sessionStorage.clear();
     }
-  }, [t]);
+  }, [t, queryClient]);
 
   // Об'єкт з усіма значеннями для провайдера
-  const value: AppContextType = {
-    dark,
-    toggleTheme,
-    timezone,
-    setTimezone,
-    language,
-    changeLanguage,
-    pageTitle,
-    setPageTitle,
-    user,
-    isAuthenticated,
-    isLoading,
-    login: handleLogin,
-    logout: handleLogout,
-  };
+  const value: AppContextType = useMemo(
+    () => ({
+      dark,
+      toggleTheme,
+      timezone,
+      setTimezone,
+      language,
+      changeLanguage,
+      pageTitle,
+      setPageTitle,
+      user,
+      isAuthenticated,
+      isLoading,
+      login: handleLogin,
+      logout: handleLogout,
+    }),
+    [
+      dark,
+      toggleTheme,
+      timezone,
+      setTimezone,
+      language,
+      changeLanguage,
+      pageTitle,
+      setPageTitle,
+      user,
+      isAuthenticated,
+      isLoading,
+      handleLogin,
+      handleLogout,
+    ],
+  );
 
-  return <AppProviderBase value={value}>{children}</AppProviderBase>;
+  return (
+    <AppProviderBase value={value}>
+      <Suspense
+        fallback={<Spin size="large" tip={t(I18N_KEYS.loading.key, I18N_KEYS.loading.fallback)} />}
+      >
+        {children}
+      </Suspense>
+    </AppProviderBase>
+  );
 };
 
 // Експортуємо єдиний хук

@@ -1,5 +1,6 @@
-import { apiRequest, cleanAndSerializeParams } from "../utils/apiUtils";
+import { apiRequest } from "../utils/apiUtils";
 import { DomainCreate, DomainRead, DomainUpdate } from "../types/schemas";
+
 
 export const getDomains = async (): Promise<DomainRead[]> => {
   return apiRequest<DomainRead[]>("get", "/domains/");
@@ -30,12 +31,15 @@ export const validateDomain = async (
   );
 };
 
+interface ScanResponse {
+  status: string;
+  task_id?: string;
+  task_ids?: string[];
+}
+
 export const scanDomains = async (
   domainId?: number,
-): Promise<{ status: string; task_id?: string; task_ids?: string[] }> => {
+): Promise<ScanResponse> => {
   const params = domainId ? { domain_id: domainId } : {};
-  return apiRequest("post", "/domains/scan", undefined, {
-    params,
-    paramsSerializer: () => cleanAndSerializeParams(params).toString(),
-  });
+  return apiRequest<ScanResponse>("post", "/domains/scan", undefined, { params }); 
 };

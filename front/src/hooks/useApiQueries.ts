@@ -19,14 +19,16 @@ export const useStatistics = (metrics: string[]) => {
 
 export const useComputers = (params: Partial<Filters>) => {
   const { isAuthenticated } = useAppContext();
+  const serializedParams = JSON.stringify({
+    ...params,
+    hostname: params.hostname || undefined, 
+    os_name: params.os_name || undefined,
+    check_status: params.check_status || undefined,
+    sort_by: params.sort_by || undefined,
+    sort_order: params.sort_order || undefined,
+  });
   return useQuery<ComputersResponse, Error>({
-    queryKey: [
-      "computers",
-      params.show_disabled,
-      params.server_filter,
-      params.ip_range,
-      params.domain,
-    ],
+    queryKey: ["computers", serializedParams], 
     queryFn: () => getComputers(params as Filters),
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,

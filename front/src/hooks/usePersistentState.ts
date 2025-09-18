@@ -6,13 +6,22 @@ export function usePersistentState<T>(
   defaultValue: T,
 ): [T, Dispatch<SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => {
-    const storedValue = localStorage.getItem(key);
-    return storedValue ? JSON.parse(storedValue) : defaultValue;
+    try {
+      const storedValue = localStorage.getItem(key);
+      return storedValue ? JSON.parse(storedValue) as T : defaultValue; // Cast для TS
+    } catch {
+      // Фallback на default при помилці parse
+      return defaultValue;
+    }
   });
 
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(state));
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // Ігнор: storage full, etc. (логувати в dev)
+    }
   }, [key, state]);
 
   return [state, setState];
-}
+};

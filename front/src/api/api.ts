@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { handleApiError } from "../utils/apiErrorHandler";
+import { cleanAndSerializeParams } from "../utils/apiUtils"
 
 // Інтерфейс для структури помилки API
 interface ApiErrorResponse {
@@ -8,11 +9,12 @@ interface ApiErrorResponse {
   errors?: any;
 }
 
-// Створення інстансу axios
 export const apiInstance = axios.create({
   baseURL: "/api",
   withCredentials: true,
+  paramsSerializer: cleanAndSerializeParams, 
 });
+
 
 apiInstance.interceptors.response.use(
   (response) => response,
@@ -23,7 +25,7 @@ apiInstance.interceptors.response.use(
       }
       return;
     }
-    throw handleApiError(error);
+    throw handleApiError(error, undefined);
   },
 );
 

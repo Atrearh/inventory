@@ -1,5 +1,5 @@
 import { ConfigProvider, theme } from "antd";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo} from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
@@ -13,32 +13,36 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 хвилин
-      gcTime: 10 * 60 * 1000, // 10 хвилин
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+    },
+    mutations: {
+      onError: (error) => { 
+        console.error("Global query error:", error);
+      },
     },
   },
 });
 
 const AppWithTheme: React.FC = () => {
   const { dark } = useAppContext();
+  const themeObj = useMemo(() => ({ 
+    algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    token: {
+      colorPrimary: "#1890ff",
+      colorTextBase: dark ? "#d9d9d9" : "#333",
+      colorBgBase: dark ? "#1a1a1a" : "#f5f5f5",
+      colorBgContainer: dark ? "#2c2c2c" : "#fafafa",
+      colorBorder: dark ? "#444444" : "#d9d9d9",
+    },
+  }), [dark]);
 
   useEffect(() => {
     document.body.setAttribute("data-theme", dark ? "dark" : "light");
   }, [dark]);
 
   return (
-    <ConfigProvider
-      theme={{
-        algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
-        token: {
-          colorPrimary: "#1890ff",
-          colorTextBase: dark ? "#d9d9d9" : "#333",
-          colorBgBase: dark ? "#1a1a1a" : "#f5f5f5",
-          colorBgContainer: dark ? "#2c2c2c" : "#fafafa",
-          colorBorder: dark ? "#444444" : "#d9d9d9",
-        },
-      }}
-    >
+    <ConfigProvider theme={themeObj}>
       <App />
     </ConfigProvider>
   );

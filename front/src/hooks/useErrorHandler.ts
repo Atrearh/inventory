@@ -15,7 +15,7 @@ export const useErrorHandler = () => {
 
   const handleError = useCallback(
     (error: AxiosError<ApiErrorResponse> | any, defaultMessage?: string) => {
-      const errorObj = handleApiError(error, t, defaultMessage);
+      const errorObj = handleApiError(error, t, defaultMessage); 
       notification.error({
         message: t("error"),
         description: errorObj.message,

@@ -12,10 +12,12 @@ export interface ScriptExecutionResult {
   error?: string;
 }
 
+export const validateHostname = (hostname: string): void => {
+  if (!hostname?.trim()) throw new Error("Hostname не вказано");
+};
+
 export const updatePolicies = async (hostname: string) => {
-  if (!hostname) {
-    throw new Error("Hostname не вказано");
-  }
+  validateHostname(hostname); // Reuse
   return apiRequest<ScriptExecutionResult>(
     "post",
     "/scripts/execute/updatePolicies.ps1",
@@ -38,17 +40,11 @@ export const getScriptsList = async (): Promise<string[]> => {
   return apiRequest<string[]>("get", "/scripts/list");
 };
 
-export const executeScript = async (
+export const executeScript = async <T = ScriptExecutionResult>(
   hostname: string,
   scriptName: string,
   params: Record<string, any> = {},
-): Promise<ScriptExecutionResult> => {
-  if (!hostname) {
-    throw new Error("Hostname не вказано");
-  }
-  return apiRequest<ScriptExecutionResult>(
-    "post",
-    `/scripts/execute/${scriptName}`,
-    { hostname, ...params },
-  );
+): Promise<T> => {
+  validateHostname(hostname);
+  return apiRequest<T>("post", `/scripts/execute/${scriptName}`, { hostname, ...params });
 };

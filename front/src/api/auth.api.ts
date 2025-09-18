@@ -2,7 +2,7 @@
 import { apiRequest } from "../utils/apiUtils";
 import { UserRead, UserCreate, UserUpdate } from "../types/schemas";
 
-interface LoginCredentials {
+export interface LoginCredentials { 
   email: string;
   password: string;
 }
@@ -34,10 +34,16 @@ export const login = async (
   );
 };
 
+// Використовувати apiRequest для logout (додати ендпоінт на бекенді /auth/jwt/logout якщо немає)
 export const logout = async (): Promise<void> => {
-  document.cookie =
-    "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  window.location.href = "/login";
+  try {
+    await apiRequest("post", "/auth/jwt/logout"); // Серверний logout
+  } catch (error) {
+    // Ігнорувати помилки (токен може бути invalid)
+  } finally {
+    document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    window.location.href = "/login";
+  }
 };
 
 export const getUsers = async (): Promise<UserRead[]> => {

@@ -9,7 +9,6 @@ import DashboardMenu from "./DashboardMenu";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import { AxiosError } from "axios";
 import { startHostScan } from "../api/api";
-import { useScanEvents } from "../hooks/useScanEvents";
 import { useTranslation } from "react-i18next";
 import { usePageTitle } from "../context/PageTitleContext";
 
@@ -22,7 +21,6 @@ const Dashboard: React.FC = () => {
   const { t } = useTranslation();
   const params = new URLSearchParams(location.search);
   const activeTab = params.get("tab") || "summary";
-  const events = useScanEvents();
 
   useEffect(() => {
     setPageTitle(t("statistics", "Статистика"));

@@ -5,6 +5,7 @@ import {
   Select,
   Button,
   message,
+  Switch,
   Spin,
   Card,
   Tabs,
@@ -12,25 +13,18 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import { apiInstance } from "../api/api";
-import { useTimezone } from "../context/TimezoneContext";
-import { usePageTitle } from "../context/PageTitleContext";
+import { useAppContext } from "../context/AppContext";
 import { handleApiError } from "../utils/apiErrorHandler";
 import SessionManagement from "./SessionManagement";
 
-const availableTimezones = Intl.supportedValuesOf("timeZone");
-const logLevels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
 const { Title } = Typography;
 
-interface SettingsData {
-  timezone: string;
-  log_level: string;
-}
+interface SettingsData {}
 
 const Settings: React.FC = () => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
-  const { timezone, setTimezone, isLoading: isTimezoneLoading } = useTimezone();
-  const { setPageTitle } = usePageTitle();
+  const { language, changeLanguage, dark, toggleTheme, setPageTitle } = useAppContext();
 
   useEffect(() => {
     setPageTitle(t("settings", "Налаштування"));
@@ -42,48 +36,35 @@ const Settings: React.FC = () => {
       const response = await apiInstance.get("/settings");
       return response.data;
     },
-    enabled: !isTimezoneLoading,
   });
 
   const mutation = useMutation({
-    mutationFn: async (values: { timezone: string; log_level: string }) => {
+    mutationFn: async (values: {}) => {
       return await apiInstance.post("/settings", values);
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       message.success(t("settings_updated", "Налаштування успішно оновлено!"));
-      if (data.data.timezone) {
-        setTimezone(data.data.timezone);
-      }
     },
     onError: (error: Error) => {
-      const apiError = handleApiError(
-        error,
-        t("error_updating_settings", "Помилка оновлення налаштувань"),
-      );
+      const apiError = handleApiError(error, t("error_updating_settings", "Помилка оновлення налаштувань"));
       message.error(apiError.message);
     },
   });
 
   useEffect(() => {
     if (data) {
-      form.setFieldsValue({
-        timezone: data.timezone || timezone,
-        log_level: data.log_level || "INFO",
-      });
+      form.setFieldsValue({ language });
     }
-  }, [data, timezone, form]);
+  }, [data, language, form]);
 
-  if (isLoading || isTimezoneLoading) {
+  if (isLoading) {
     return (
       <Spin size="large" style={{ display: "block", margin: "50px auto" }} />
     );
   }
 
   if (error) {
-    const apiError = handleApiError(
-      error,
-      t("error_loading_settings", "Помилка завантаження налаштувань"),
-    );
+    const apiError = handleApiError(error, t("error_loading_settings", "Помилка завантаження налаштувань"));
     return (
       <div>
         {t("error_loading_settings", "Помилка завантаження налаштувань")}:{" "}
@@ -95,69 +76,49 @@ const Settings: React.FC = () => {
   const tabItems = [
     {
       key: "general",
-      label: t("general_settings"),
+      label: t("general_settings", "Загальні налаштування"),
       children: (
         <Form
           form={form}
           layout="vertical"
-          onFinish={(values) => mutation.mutate(values)}
+          onFinish={(values) => {
+            if (values.language) changeLanguage(values.language);
+            mutation.mutate(values);
+          }}
           style={{ maxWidth: 400 }}
         >
           <Form.Item
-            label={t("timezone", "Часовий пояс")}
-            name="timezone"
+            label={t("language", "Мова")}
+            name="language"
+            initialValue={language}
             rules={[
               {
                 required: true,
-                message: t(
-                  "select_timezone",
-                  "Будь ласка, оберіть часовий пояс",
-                ),
+                message: t("select_language", "Будь ласка, оберіть мову"),
               },
             ]}
             tooltip={t(
-              "timezone_tooltip",
-              "Усі дати та час у системі будуть відображатися відповідно до цього налаштування.",
+              "language_tooltip",
+              "Виберіть мову інтерфейсу системи.",
             )}
           >
             <Select
-              showSearch
-              placeholder={t("select_timezone", "Оберіть часовий пояс")}
-              optionFilterProp="children"
-              filterOption={(input, option) =>
-                (option?.label ?? "")
-                  .toLowerCase()
-                  .includes(input.toLowerCase())
-              }
-              options={availableTimezones.map((tz) => ({
-                value: tz,
-                label: tz,
-              }))}
+              placeholder={t("select_language", "Оберіть мову")}
+              options={[
+                { value: "uk", label: "Українська" },
+                { value: "en", label: "English" },
+              ]}
             />
           </Form.Item>
           <Form.Item
-            label={t("log_level", "Рівень логування")}
-            name="log_level"
-            rules={[
-              {
-                required: true,
-                message: t(
-                  "select_log_level",
-                  "Будь ласка, оберіть рівень логування",
-                ),
-              },
-            ]}
-            tooltip={t(
-              "log_level_tooltip",
-              "Визначає деталізацію логів системи.",
-            )}
+            label={t("theme", "Тема")}
+            tooltip={t("theme_tooltip", "Виберіть темну або світлу тему інтерфейсу.")}
           >
-            <Select
-              placeholder={t("select_log_level", "Оберіть рівень логування")}
-              options={logLevels.map((level) => ({
-                value: level,
-                label: level,
-              }))}
+            <Switch
+              checked={dark}
+              onChange={toggleTheme}
+              checkedChildren={t("dark", "Темна")}
+              unCheckedChildren={t("light", "Світла")}
             />
           </Form.Item>
           <Form.Item>
@@ -174,7 +135,7 @@ const Settings: React.FC = () => {
     },
     {
       key: "security",
-      label: t("security"),
+      label: t("security", "Безпека"),
       children: <SessionManagement />,
     },
   ];

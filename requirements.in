@@ -37,6 +37,7 @@ black
 isort
 ruff                   
 alembic                
+pre-commit
 
 # --- Testing ---
 pytest

@@ -1,8 +1,8 @@
-import React, { useState, useContext } from "react";
+import React, { useState } from "react";
 import { Layout, Menu, Button, Typography, theme } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { usePageTitle } from "../context/PageTitleContext";
+import { useAppContext } from "../context/AppContext";
 import HeaderWidget from "./HeaderWidget";
 import {
   MenuFoldOutlined,
@@ -13,17 +13,15 @@ import {
   UserOutlined,
   BarsOutlined,
 } from "@ant-design/icons";
-import { ThemeContext } from "../context/ThemeContext";
 
 const { Sider, Content, Header } = Layout;
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { t } = useTranslation();
-  const { pageTitle } = usePageTitle();
+  const { pageTitle, dark } = useAppContext();
   const [collapsed, setCollapsed] = useState(false);
   const { token } = theme.useToken();
-  const { dark } = useContext(ThemeContext);
 
   return (
     <Layout
@@ -62,9 +60,9 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             top: 0,
             zIndex: 1000,
           }}
-          aria-label={collapsed ? t("expand_menu") : t("collapse_menu")}
+          aria-label={collapsed ? t("expand_menu", "Розгорнути меню") : t("collapse_menu", "Згорнути меню")}
         >
-          {!collapsed && (collapsed ? t("expand_menu") : t("collapse_menu"))}
+          {!collapsed && t(collapsed ? "expand_menu" : "collapse_menu", collapsed ? "Розгорнути меню" : "Згорнути меню")}
         </Button>
         <Menu
           theme={dark ? "dark" : "light"}
@@ -74,27 +72,27 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             {
               key: "/",
               icon: <DashboardOutlined />,
-              label: <Link to="/">{t("dashboard")}</Link>,
+              label: <Link to="/">{t("dashboard", "Панель керування")}</Link>,
             },
             {
               key: "/computers",
               icon: <DesktopOutlined />,
-              label: <Link to="/computers">{t("computers")}</Link>,
+              label: <Link to="/computers">{t("computers", "Комп’ютери")}</Link>,
             },
             {
               key: "/admin",
               icon: <UserOutlined />,
-              label: <Link to="/admin">{t("admin")}</Link>,
+              label: <Link to="/admin">{t("admin", "Адмін")}</Link>,
             },
             {
               key: "/settings",
               icon: <SettingOutlined />,
-              label: <Link to="/settings">{t("settings")}</Link>,
+              label: <Link to="/settings">{t("settings", "Налаштування")}</Link>,
             },
             {
               key: "/tasks",
               icon: <BarsOutlined />,
-              label: <Link to="/tasks">{t("tasks")}</Link>,
+              label: <Link to="/tasks">{t("tasks", "Завдання")}</Link>,
             },
           ]}
           style={{ paddingTop: "56px" }}

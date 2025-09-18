@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { getComputers, getStatistics, getUsers } from "../api/api";
 import { ComputersResponse, DashboardStats, UserRead } from "../types/schemas";
-import { useAuth } from "../context/AuthContext";
+import { useAppContext } from "../context/AppContext";
 import { Filters } from "../hooks/useComputerFilters";
 
 export const useStatistics = (metrics: string[]) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAppContext();
   return useQuery<DashboardStats, Error>({
     queryKey: ["statistics", metrics],
     queryFn: () => getStatistics({ metrics }),
@@ -18,7 +18,7 @@ export const useStatistics = (metrics: string[]) => {
 };
 
 export const useComputers = (params: Partial<Filters>) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAppContext();
   return useQuery<ComputersResponse, Error>({
     queryKey: [
       "computers",
@@ -39,7 +39,7 @@ export const useComputers = (params: Partial<Filters>) => {
 };
 
 export const useUsers = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAppContext();
   return useQuery<UserRead[], Error>({
     queryKey: ["users"],
     queryFn: getUsers,

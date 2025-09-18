@@ -8,20 +8,18 @@ from pydantic_settings import BaseSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .logging_config import setup_logging, update_logging_level
+from .logging_config import setup_logging
 from app.models import AppSetting
 from .utils.validators import (
     AllowedIPsStr,
     CORSOriginsStr,
     DatabaseURLStr,
-    LogLevelStr,
     NonEmptyStr,
     SecretKeyStr,
     WinRMCertValidationStr,
 )
 
 logger = logging.getLogger(__name__)
-
 
 class AppSettings(BaseSettings):
     """
@@ -33,6 +31,8 @@ class AppSettings(BaseSettings):
     database_url: Optional[DatabaseURLStr] = None
     secret_key: SecretKeyStr
     encryption_key: NonEmptyStr
+    log_level: NonEmptyStr = "DEBUG"  
+    timezone: NonEmptyStr = "UTC"
 
     # --- Поля налаштувань, які можуть бути динамічними (з БД) ---
     api_url: Optional[NonEmptyStr] = None
@@ -48,8 +48,6 @@ class AppSettings(BaseSettings):
     server_port: int = 8000
     cors_allow_origins: CORSOriginsStr = "http://localhost:8080"
     allowed_ips: AllowedIPsStr = "127.0.0.1"
-    timezone: NonEmptyStr = "UTC"
-    log_level: LogLevelStr = "DEBUG"
 
     model_config = ConfigDict(
         env_file=Path(__file__).parent / ".env",
@@ -94,8 +92,6 @@ class AppSettings(BaseSettings):
                     except (ValueError, TypeError) as e:
                         logger.warning(f"Не вдалося конвертувати налаштування '{key}' зі значенням '{value}': {e}")
 
-            # 3. Оновлення рівня логування
-            update_logging_level(self.log_level)
             logger.info("Динамічні налаштування успішно завантажені та застосовані.")
 
         except Exception as e:
@@ -119,16 +115,12 @@ class AppSettings(BaseSettings):
                     # Оновлюємо значення в поточному об'єкті
                     setattr(self, key, value)
 
-                    if key == "log_level":
-                        update_logging_level(self.log_level)
-
             await db.commit()
             logger.info("Налаштування успішно збережені.")
         except Exception as e:
             await db.rollback()
             logger.error(f"Помилка збереження налаштувань: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Помилка збереження налаштувань")
-
 
 # Створюємо єдиний екземпляр налаштувань для всього додатку
 settings = AppSettings()

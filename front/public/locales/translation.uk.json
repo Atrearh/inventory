@@ -261,5 +261,7 @@
   "task_restart_error": "Помилка перезапуску завдання",
   "status_completed": "Завершено",
   "status_running": "Виконується",
-  "status_pending": "Очікує"
+  "status_pending": "Очікує",
+  "software_distribution" : "Установленний софт",
+  "no_software_data" : "Нет данних" 
 }

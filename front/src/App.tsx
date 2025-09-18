@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
-import { useAuth } from "./context/AuthContext";
+import { useAppContext } from "./context/AppContext";
 import Login from "./components/Login";
 import NotFound from "./components/NotFound";
 import Layout from "./components/Layout";
@@ -15,17 +15,17 @@ const TaskManager = lazy(() => import("./components/TaskManager"));
 
 const ProtectedRoute: React.FC<{ children: JSX.Element }> = ({ children }) => {
   const { t } = useTranslation();
-  const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <div>{t("loading")}</div>;
+  const { isAuthenticated, isLoading } = useAppContext();
+  if (isLoading) return <div>{t("loading", "Завантаження")}</div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 };
 
 const App: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAppContext();
   const { t } = useTranslation();
 
-  if (isLoading) return <div>{t("loading")}</div>;
+  if (isLoading) return <div>{t("loading", "Завантаження")}</div>;
 
   return (
     <Routes>
@@ -34,7 +34,7 @@ const App: React.FC = () => {
         path="*"
         element={
           isAuthenticated ? (
-            <Suspense fallback={<div>{t("loading")}</div>}>
+            <Suspense fallback={<div>{t("loading", "Завантаження")}</div>}>
               <Layout>
                 <Routes>
                   <Route

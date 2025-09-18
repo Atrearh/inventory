@@ -17,7 +17,7 @@ import { useUsers } from "../hooks/useApiQueries";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useModalForm } from "../hooks/useModalForm";
 import DomainManagement from "./DomainManagement";
-import { usePageTitle } from "../context/PageTitleContext";
+import { usePageTitle } from "../context/AppContext";
 import { useTranslation } from "react-i18next";
 
 interface MutationResponse {
@@ -39,7 +39,6 @@ const AdminPanel: React.FC = () => {
   } = useModalForm<UserRead>({ form });
   const {
     data: users,
-    refetch: refetchUsers,
     isLoading: isUsersLoading,
   } = useUsers();
   const usersQueryKey: QueryKey = ["users"];

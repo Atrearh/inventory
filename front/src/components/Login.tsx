@@ -1,7 +1,6 @@
-import React, { useState, useContext } from "react";
+import { useState} from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import { ThemeContext } from "../context/ThemeContext";
+import { useAppContext } from "../context/AppContext";
 import { Button, Form, Input, Card } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { getStatistics, getComputers, getUsers } from "../api/api";
@@ -13,9 +12,8 @@ import { theme } from "antd";
 
 const Login: React.FC = () => {
   const { token } = theme.useToken();
-  const { login } = useAuth();
+  const { login, dark } = useAppContext();
   const navigate = useNavigate();
-  const { dark } = useContext(ThemeContext);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { t } = useTranslation();

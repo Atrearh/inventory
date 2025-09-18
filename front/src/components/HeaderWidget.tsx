@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useContext } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -8,13 +8,13 @@ import {
   Badge,
   Typography,
   theme,
+  message,
 } from "antd";
-import { useAuth } from "../context/AuthContext";
-import { useTimezone } from "../context/TimezoneContext";
-import { ThemeContext } from "../context/ThemeContext";
+import { useAppContext } from "../context/AppContext";
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTasks } from "../api/tasks.api";
+import { handleApiError } from "../utils/apiErrorHandler";
 import LanguageAndThemeSwitch from "./LanguageAndThemeSwitch";
 import { LogoutOutlined, DownOutlined } from "@ant-design/icons";
 import styles from "./HeaderWidget.module.css";
@@ -22,67 +22,65 @@ import { ScanTask } from "../types/schemas";
 
 const HeaderWidget: React.FC = () => {
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
-  const { timezone } = useTimezone();
-  const { dark } = useContext(ThemeContext);
+  const { user, logout, timezone, dark } = useAppContext();
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
   const { token } = theme.useToken();
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    let rafId: number;
+    const updateTime = () => {
       setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
+      rafId = requestAnimationFrame(updateTime);
+    };
+    rafId = requestAnimationFrame(updateTime);
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
-  const { data: tasks = [], isLoading: isTasksLoading } = useQuery({
+  const { data = { tasks: [], total: 0 }, isLoading: isTasksLoading } = useQuery<
+    { tasks: ScanTask[]; total: number },
+    Error
+  >({
     queryKey: ["tasks"],
     queryFn: () => getTasks(),
     refetchInterval: 15000,
     enabled: !!user,
-    select: (data: [ScanTask[], number]) => data[0],
   });
 
   const handleLogout = useCallback(() => {
     logout();
-    queryClient.clear();
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
   }, [logout, queryClient]);
 
-  const formattedTime = formatDateInUserTimezone(
-    currentTime,
-    timezone,
-    "dd.MM.yyyy HH:mm:ss",
+  const formattedTime = useMemo(
+    () =>
+      formatDateInUserTimezone(currentTime, timezone, "dd.MM.yyyy HH:mm:ss"),
+    [currentTime, timezone],
   );
 
-  const taskMenuItems: MenuProps["items"] =
-    tasks.length > 0
-      ? tasks.map((task) => ({
-          key: task.id,
-          label: (
-            <div>
-              <Typography.Text strong>
-                {task.name || `Сканування ${task.id}`}
-              </Typography.Text>
-              <br />
-              <Typography.Text type="secondary">
-                {t("status")}: {task.status} |{" "}
-                {formatDateInUserTimezone(
-                  task.created_at,
-                  timezone,
-                  "HH:mm:ss",
-                )}
-              </Typography.Text>
-            </div>
-          ),
-        }))
-      : [
-          {
-            key: "no-tasks",
-            label: t("no_active_tasks", "Немає активних завдань"),
-            disabled: true,
-          },
-        ];
+  const taskMenuItems: MenuProps["items"] = data.tasks.length
+    ? data.tasks.map((task: ScanTask) => ({
+        key: task.id,
+        label: (
+          <div>
+            <Typography.Text strong>
+              {task.name || `Сканування ${task.id}`}
+            </Typography.Text>
+            <br />
+            <Typography.Text type="secondary">
+              {t("status", "Статус")}: {task.status} |{" "}
+              {formatDateInUserTimezone(task.created_at, timezone, "HH:mm:ss")}
+            </Typography.Text>
+          </div>
+        ),
+      }))
+    : [
+        {
+          key: "no-tasks",
+          label: t("no_active_tasks", "Немає активних завдань"),
+          disabled: true,
+        },
+      ];
 
   return (
     <div
@@ -104,7 +102,7 @@ const HeaderWidget: React.FC = () => {
               disabled={isTasksLoading}
             >
               <Button size="small" type={dark ? "default" : "primary"}>
-                <Badge count={tasks.length} size="small">
+                <Badge count={data.tasks.length} size="small">
                   {t("tasks", "Завдання")} <DownOutlined />
                 </Badge>
               </Button>

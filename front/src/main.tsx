@@ -1,16 +1,13 @@
 import { ConfigProvider, theme } from "antd";
-import React, { useContext, useEffect } from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { AuthProvider } from "./context/AuthContext";
-import { TimezoneProvider } from "./context/TimezoneContext";
-import { ThemeContext, ThemeProvider } from "./context/ThemeContext";
-import { PageTitleProvider } from "./context/PageTitleContext";
 import "./components/i18n";
 import "./index.css";
+import { AppProvider, useAppContext } from "./context/AppContext";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +20,7 @@ const queryClient = new QueryClient({
 });
 
 const AppWithTheme: React.FC = () => {
-  const { dark } = useContext(ThemeContext);
+  const { dark } = useAppContext();
 
   useEffect(() => {
     document.body.setAttribute("data-theme", dark ? "dark" : "light");
@@ -51,24 +48,18 @@ const Root = () => {
   return (
     <React.StrictMode>
       <ErrorBoundary>
-        <AuthProvider>
-          <ThemeProvider>
-            <TimezoneProvider>
-              <PageTitleProvider>
-                <QueryClientProvider client={queryClient}>
-                  <BrowserRouter
-                    future={{
-                      v7_startTransition: true,
-                      v7_relativeSplatPath: true,
-                    }}
-                  >
-                    <AppWithTheme />
-                  </BrowserRouter>
-                </QueryClientProvider>
-              </PageTitleProvider>
-            </TimezoneProvider>
-          </ThemeProvider>
-        </AuthProvider>
+        <AppProvider>
+          <QueryClientProvider client={queryClient}>
+            <BrowserRouter
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true,
+              }}
+            >
+              <AppWithTheme />
+            </BrowserRouter>
+          </QueryClientProvider>
+        </AppProvider>
       </ErrorBoundary>
     </React.StrictMode>
   );

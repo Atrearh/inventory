@@ -4,8 +4,9 @@ import { ScanTask } from "../types/schemas";
 export const getTasks = async (
   limit: number = 100,
   offset: number = 0,
-): Promise<[ScanTask[], number]> => {
-  return apiRequest("get", `/tasks/?limit=${limit}&offset=${offset}`);
+): Promise<{ tasks: ScanTask[]; total: number }> => {
+  const [tasks, total] = await apiRequest("get", `/tasks/?limit=${limit}&offset=${offset}`);
+  return { tasks, total };
 };
 
 export const deleteTask = async (taskId: string): Promise<{ ok: boolean }> => {

@@ -261,5 +261,6 @@
   "status_completed": "Completed",
   "status_running": "Running",
   "status_pending": "Pending",
-  "scan_all_domains_started": "Scan of all domains started, task_ids: {{task_ids}}"
+  "scan_all_domains_started": "Scan of all domains started, task_ids: {{task_ids}}",
+  "software_distribution" : "Software Distribution"
 } 

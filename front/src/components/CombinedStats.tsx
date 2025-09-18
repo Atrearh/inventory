@@ -11,7 +11,7 @@ import {
 } from "chart.js";
 import { DashboardStats } from "../types/schemas";
 import { useNavigate, Link } from "react-router-dom";
-import { useTimezone } from "../context/TimezoneContext";
+import { useTimezone } from "../context/AppContext";
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -26,7 +26,7 @@ interface CombinedStatsProps {
   lastScanTime: string | null;
   clientOsData: DashboardStats["os_stats"]["client_os"];
   serverOsData: DashboardStats["os_stats"]["server_os"];
-  softwareData: DashboardStats["os_stats"]["software_distribution"]; // Додано
+  softwareData?: DashboardStats["os_stats"]["software_distribution"];
   statusStats: DashboardStats["scan_stats"]["status_stats"];
   lowDiskSpaceCount: number;
   onOsClick: (os: string, isClientOs: boolean) => void;
@@ -67,7 +67,7 @@ const CombinedStats: React.FC<CombinedStatsProps> = ({
   const chartColors = {
     clientOs: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"],
     serverOs: ["#FF9F40", "#FFCD56", "#C9CB3F", "#36A2EB"],
-    software: ["#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#33FFF5"], // Додано кольори для ПЗ
+    software: ["#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#33FFF5"], 
   };
 
   const clientOsTotal =

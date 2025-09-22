@@ -1,3 +1,4 @@
+// front/src/main.tsx
 import { ConfigProvider, theme, App as AntApp } from "antd";
 import React, { useEffect, useMemo } from "react";
 import ReactDOM from "react-dom/client";
@@ -24,11 +25,12 @@ const queryClient = new QueryClient({
       gcTime: 10 * 60 * 1000,
     },
   },
-
   queryCache: new QueryCache({
     onError: (error) => {
+      console.log("QueryCache: Error detected", error);
       if (error instanceof AxiosError && error.response?.status === 401) {
         if (window.location.pathname !== "/login") {
+          console.log("QueryCache: Clearing cache and redirecting to /login");
           queryClient.clear();
           window.location.href = "/login";
         }
@@ -72,16 +74,16 @@ const Root = () => {
     <React.StrictMode>
       <ErrorBoundary t={t}>
         <QueryClientProvider client={queryClient}>
-          <AppProvider>
-            <BrowserRouter
-              future={{
-                v7_startTransition: true,
-                v7_relativeSplatPath: true,
-              }}
-            >
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
+            <AppProvider> // Переміщено всередину BrowserRouter
               <AppWithTheme />
-            </BrowserRouter>
-          </AppProvider>
+            </AppProvider>
+          </BrowserRouter>
         </QueryClientProvider>
       </ErrorBoundary>
     </React.StrictMode>

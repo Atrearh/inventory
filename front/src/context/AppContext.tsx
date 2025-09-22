@@ -1,6 +1,7 @@
 // front/src/context/AppContext.tsx
 import { ReactNode, useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom"; 
 import { usePersistentState } from "../hooks/usePersistentState";
 import { createCustomContext } from "../utils/createContext";
 import { LoginCredentials, getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
@@ -34,6 +35,7 @@ const [AppContext, AppProviderBase, useAppContext] = createCustomContext<AppCont
 const AppProvider = ({ children }: { children: ReactNode }) => {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate(); 
 
   // --- Theme ---
   const [dark, toggleTheme] = usePersistentTheme();
@@ -73,14 +75,13 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const handleLogin = useCallback(
     async (credentials: LoginCredentials) => {
       try {
-        console.log("AppContext: Attempting login for", credentials.email);
         const loggedInUser: UserRead = await apiLogin(credentials);
-        console.log("AppContext: Login successful, user:", loggedInUser);
         queryClient.setQueryData(["auth", "me"], loggedInUser);
         notification.success({
           message: t("login_success", "Успішний вхід"),
           placement: "topRight",
         });
+        navigate("/"); 
       } catch (error: any) {
         console.error("AppContext: Login failed:", error);
         const apiError = handleApiError(error, t);
@@ -91,19 +92,19 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
         throw apiError;
       }
     },
-    [t, queryClient],
+    [t, queryClient, navigate],
   );
 
   const handleLogout = useCallback(
     async () => {
       try {
-        console.log("AppContext: Attempting logout");
         await apiLogout();
-        console.log("AppContext: Logout successful");
         notification.success({
           message: t("logout_success", "Успішний вихід"),
           placement: "topRight",
         });
+        queryClient.setQueryData(["auth", "me"], null);
+        navigate("/login"); 
       } catch (error: any) {
         console.error("AppContext: Logout failed:", error);
         const apiError = handleApiError(error, t);
@@ -115,10 +116,9 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
       } finally {
         queryClient.clear();
         sessionStorage.clear();
-        console.log("AppContext: Cleared queryClient and sessionStorage");
       }
     },
-    [t, queryClient],
+    [t, queryClient, navigate],
   );
 
   const value: AppContextType = useMemo(

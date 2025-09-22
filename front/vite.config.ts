@@ -8,6 +8,7 @@ interface NodeJSError extends Error {code?: string;}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  console.log('Loaded VITE_API_URL:', env.VITE_API_URL);
 
   return {
     plugins: [

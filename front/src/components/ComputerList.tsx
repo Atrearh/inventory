@@ -261,7 +261,7 @@ const ComputerListComponent: React.FC = () => {
             dataSource={filteredComputers.data}
             rowKey="id"
             pagination={false}
-            scroll={{ y: 500 }} // Вбудована віртуалізація: рендерить тільки видимі рядки
+            scroll={{ y: 650 }} // Вбудована віртуалізація: рендерить тільки видимі рядки
             onChange={handleTableChange}
             locale={{ emptyText: t("no_data", "Немає даних для відображення") }}
             size="small"

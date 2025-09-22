@@ -143,7 +143,7 @@ const AdminPanel: React.FC = () => {
   return (
     <div>
       <Card
-        title={t("admin_panel_title")}
+        title={t("users_management")}
         extra={
           <Button type="primary" onClick={openCreateModal} aria-label={t("new_user")}>
             {t("new_user")}

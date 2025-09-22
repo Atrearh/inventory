@@ -264,5 +264,6 @@
   "scan_all_domains_started": "Scan of all domains started, task_ids: {{task_ids}}",
   "software_distribution" : "Software Distribution",
   "admin_panel_title": "Admin Panel",
-  "error_logging_in": "error logging_in"
+  "error_logging_in": "error logging_in",
+  "users_management": "Users Management"
 } 

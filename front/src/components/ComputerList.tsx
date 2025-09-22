@@ -9,20 +9,20 @@ import type { TableProps } from "antd";
 import styles from "./ComputerList.module.css";
 import { useComputerFilters } from "../hooks/useComputerFilters";
 import ComputerFiltersPanel from "./ComputerFiltersPanel";
+import ActionPanel from "./ActionPanel";
 import { AxiosError } from "axios";
 import { useAppContext } from "../context/AppContext";
 import { formatDateInUserTimezone } from "../utils/formatDate";
 import { getDomains } from "../api/domain.api";
-import { ComputerListItem, OperatingSystemRead } from "../types/schemas"; 
+import { ComputerListItem, OperatingSystemRead } from "../types/schemas";
 
 const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { timezone } = useAppContext();
   const { setPageTitle } = useAppContext();
-  const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>(
-    [],
-  );
+  const [cachedComputers, setCachedComputers] = useState<ComputerListItem[]>([]);
+  const [selectedHostnames, setSelectedHostnames] = useState<string[]>([]);
 
   const { data: domainsData, isLoading: isDomainsLoading } = useQuery({
     queryKey: ["domains"],
@@ -123,6 +123,19 @@ const ComputerListComponent: React.FC = () => {
     return "#ff4d4f"; // Червоний для старіших
   };
 
+  const rowSelection = useMemo(
+    () => ({
+      onChange: (selectedRowKeys: React.Key[], selectedRows: ComputerListItem[]) => {
+        setSelectedHostnames(selectedRows.map((row) => row.hostname));
+      },
+      getCheckboxProps: (record: ComputerListItem) => ({
+        disabled: record.check_status === "is_deleted",
+        name: record.hostname,
+      }),
+    }),
+    [],
+  );
+
   const columns = useMemo<TableProps<ComputerListItem>["columns"]>(
     () => [
       {
@@ -146,11 +159,10 @@ const ComputerListComponent: React.FC = () => {
         title: t("ip_addresses", "IP-адреси"),
         dataIndex: "ip_addresses",
         key: "ip_addresses",
-        sorter: false, // Сортування по IP може бути нетривіальним
+        sorter: false,
         render: (_: any, record: ComputerListItem) =>
           record.ip_addresses?.map((ip) => ip.address).join(", ") || "-",
       },
-      // -- ЗМІНЕНО --
       {
         title: t("os_name", "Операційна система"),
         dataIndex: "os",
@@ -164,7 +176,6 @@ const ComputerListComponent: React.FC = () => {
             : undefined,
         render: (os: OperatingSystemRead | null) => os?.name ?? "-",
       },
-      // -- КІНЕЦЬ ЗМІН --
       {
         title: t("last_check", "Остання перевірка"),
         dataIndex: "last_full_scan",
@@ -229,17 +240,6 @@ const ComputerListComponent: React.FC = () => {
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (
         <>
-          <h2 className={styles.title}>
-            {t("computers_list", "Список комп’ютерів")} (
-            {filteredComputers.total || 0})
-            <Button
-              type="primary"
-              onClick={handleExportCSV}
-              className={styles.csvButton}
-            >
-              {t("export_csv", "Експорт у CSV")}
-            </Button>
-          </h2>
           <ComputerFiltersPanel
             filters={filters}
             statsData={statsData}
@@ -255,18 +255,23 @@ const ComputerListComponent: React.FC = () => {
             )}
             handleFilterChange={handleFilterChange}
             clearAllFilters={clearAllFilters}
+            handleExportCSV={handleExportCSV} 
           />
           <Table
+            rowSelection={rowSelection}
             columns={columns}
             dataSource={filteredComputers.data}
             rowKey="id"
             pagination={false}
-            scroll={{ y: 650 }} // Вбудована віртуалізація: рендерить тільки видимі рядки
+            scroll={{ y: 700 }}
             onChange={handleTableChange}
             locale={{ emptyText: t("no_data", "Немає даних для відображення") }}
             size="small"
             showSorterTooltip={false}
           />
+          <div className={styles.actionPanel} style={{ marginTop: "16px" }}>
+            <ActionPanel hostnames={selectedHostnames} />
+          </div>
         </>
       )}
     </div>

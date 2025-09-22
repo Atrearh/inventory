@@ -168,7 +168,6 @@ const TaskManager: React.FC = () => {
 
   return (
     <div style={{ padding: "16px 24px" }}>
-      <Title level={2}>{t("task_management", "Керування завданнями")}</Title>
       <Table
         dataSource={data.tasks}
         columns={columns}

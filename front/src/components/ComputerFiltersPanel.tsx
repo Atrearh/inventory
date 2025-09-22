@@ -21,6 +21,7 @@ interface ComputerFiltersPanelProps {
     value: string | boolean | undefined,
   ) => void;
   clearAllFilters: () => void;
+  handleExportCSV: () => void; // Додаємо пропс
 }
 
 const CHECK_STATUS_OPTIONS = [
@@ -61,6 +62,7 @@ const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
   debouncedSetCheckStatus,
   handleFilterChange,
   clearAllFilters,
+  handleExportCSV, // Додаємо пропс
 }) => {
   const { t } = useTranslation();
   const inputRef = useRef<InputRef>(null);
@@ -135,6 +137,14 @@ const ComputerFiltersPanel: React.FC<ComputerFiltersPanelProps> = ({
       </Checkbox>
       <Button onClick={clearAllFilters} style={{ marginLeft: 8 }}>
         {t("clear_filters", "Очистити всі фільтри")}
+      </Button>
+      <Button
+        type="primary"
+        onClick={handleExportCSV}
+        className={styles.csvButton}
+        style={{ marginLeft: 8 }}
+      >
+        {t("export_csv", "Експорт у CSV")}
       </Button>
     </div>
   );

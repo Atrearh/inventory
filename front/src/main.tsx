@@ -80,7 +80,7 @@ const Root = () => {
               v7_relativeSplatPath: true,
             }}
           >
-            <AppProvider> // Переміщено всередину BrowserRouter
+            <AppProvider> 
               <AppWithTheme />
             </AppProvider>
           </BrowserRouter>

@@ -1,7 +1,8 @@
-import { useState} from "react";
+// front/src/components/Login.tsx
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
-import { Button, Form, Input, Card } from "antd";
+import { Button, Form, Input, Card, App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { getStatistics, getComputers, getUsers } from "../api/api";
 import { Filters, isServerOs } from "../hooks/useComputerFilters";
@@ -17,6 +18,7 @@ const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { t } = useTranslation();
+  const { message } = App.useApp();
 
   const defaultFilters: Filters = {
     hostname: undefined,
@@ -34,11 +36,11 @@ const Login: React.FC = () => {
 
   const onFinish = async (values: { email: string; password: string }) => {
     try {
+      setError(null);
       await login(values);
-            navigate("/");
-
-      await Promise.all([
-        queryClient.prefetchQuery({
+      navigate("/");
+      try {
+        await queryClient.prefetchQuery({
           queryKey: ["statistics"],
           queryFn: () =>
             getStatistics({
@@ -50,8 +52,8 @@ const Login: React.FC = () => {
                 "status_stats",
               ],
             }),
-        }),
-        queryClient.prefetchQuery({
+        });
+        await queryClient.prefetchQuery({
           queryKey: ["computers", defaultFilters],
           queryFn: () => {
             const params: Partial<Filters> = {
@@ -68,16 +70,20 @@ const Login: React.FC = () => {
             }
             return getComputers(params as Filters);
           },
-        }),
-        queryClient.prefetchQuery({
+        });
+        await queryClient.prefetchQuery({
           queryKey: ["users"],
           queryFn: getUsers,
-        }),
-      ]);
-
-
+        });
+      } catch (prefetchError) {
+        console.error("Prefetch error:", prefetchError);
+        message.error(t("error_prefetching_data", "Помилка при завантаженні даних"));
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error("Login failed:", err);
+      const errorMessage = err.message || t("login_failed", "Не вдалося увійти. Спробуйте ще раз.");
+      setError(errorMessage);
+      message.error(errorMessage);
     }
   };
 

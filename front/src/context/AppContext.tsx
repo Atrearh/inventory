@@ -1,14 +1,15 @@
+// front/src/context/AppContext.tsx
 import { ReactNode, useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { createCustomContext } from "../utils/createContext";
 import { LoginCredentials, getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
 import { handleApiError } from "../utils/apiErrorHandler";
-import { Spin, App  } from "antd";
+import { Spin, App, notification } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserRead } from "../types/schemas";
 import ErrorBoundary from "../components/ErrorBoundary";
-import { usePersistentTheme } from "../hooks/usePersistentTheme"; 
+import { usePersistentTheme } from "../hooks/usePersistentTheme";
 
 interface AppContextType {
   dark: boolean;
@@ -33,11 +34,9 @@ const [AppContext, AppProviderBase, useAppContext] = createCustomContext<AppCont
 const AppProvider = ({ children }: { children: ReactNode }) => {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  const { message } = App.useApp();
 
   // --- Theme ---
   const [dark, toggleTheme] = usePersistentTheme();
-
 
   // --- Timezone ---
   const [timezone, setTimezone] = useState<string>(
@@ -48,6 +47,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const [language, setLanguage] = usePersistentState<string>("language", i18n.language || "uk");
   const changeLanguage = useCallback(
     (lng: string) => {
+      console.log(`AppContext: Changing language to ${lng}`);
       setLanguage(lng);
       i18n.changeLanguage(lng);
     },
@@ -73,31 +73,52 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const handleLogin = useCallback(
     async (credentials: LoginCredentials) => {
       try {
+        console.log("AppContext: Attempting login for", credentials.email);
         const loggedInUser: UserRead = await apiLogin(credentials);
+        console.log("AppContext: Login successful, user:", loggedInUser);
         queryClient.setQueryData(["auth", "me"], loggedInUser);
-        message.success(t("login_success"));
-      } catch (error) {
-        const apiError = handleApiError(error, undefined, t("error_logging_in"));
+        notification.success({
+          message: t("login_success", "Успішний вхід"),
+          placement: "topRight",
+        });
+      } catch (error: any) {
+        console.error("AppContext: Login failed:", error);
+        const apiError = handleApiError(error, t);
+        notification.error({
+          message: apiError.message,
+          placement: "topRight",
+        });
         throw apiError;
       }
     },
-    [t, queryClient, message],
+    [t, queryClient],
   );
 
   const handleLogout = useCallback(
     async () => {
       try {
+        console.log("AppContext: Attempting logout");
         await apiLogout();
-        message.success(t("logout_success"));
-      } catch (error) {
-        const apiError = handleApiError(error, undefined, t("error_logging_out"));
-        message.error(apiError.message);
+        console.log("AppContext: Logout successful");
+        notification.success({
+          message: t("logout_success", "Успішний вихід"),
+          placement: "topRight",
+        });
+      } catch (error: any) {
+        console.error("AppContext: Logout failed:", error);
+        const apiError = handleApiError(error, t);
+        notification.error({
+          message: apiError.message,
+          placement: "topRight",
+        });
+        throw apiError;
       } finally {
         queryClient.clear();
         sessionStorage.clear();
+        console.log("AppContext: Cleared queryClient and sessionStorage");
       }
     },
-    [t, queryClient, message],
+    [t, queryClient],
   );
 
   const value: AppContextType = useMemo(
@@ -132,16 +153,18 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   return (
-    <AppProviderBase value={value}>
-      <ErrorBoundary t={t}>
-        <Suspense
-          fallback={<Spin size="large" tip={t("loading")} />}
-        >
-          {children}
-        </Suspense>
-      </ErrorBoundary>
-    </AppProviderBase>
+    <App>
+      <AppProviderBase value={value}>
+        <ErrorBoundary t={t}>
+          <Suspense
+            fallback={<Spin size="large" tip={t("loading", "Завантаження...")} />}
+          >
+            {children}
+          </Suspense>
+        </ErrorBoundary>
+      </AppProviderBase>
+    </App>
   );
 };
 
-export { AppContext, useAppContext, AppProvider }; // Єдиний експорт
+export { AppContext, useAppContext, AppProvider };

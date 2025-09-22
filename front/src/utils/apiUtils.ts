@@ -13,7 +13,7 @@ export async function apiRequest<T>(
   url: string,
   data?: any,
   options: ApiRequestOptions = {},
-  retries = 3,
+  retries = 3
 ): Promise<T> {
   const { params, ...restOptions } = options;
   const queryString = params ? cleanAndSerializeParams(params) : "";
@@ -27,6 +27,11 @@ export async function apiRequest<T>(
       return response.data;
     } catch (error: unknown) {
       lastError = error instanceof AxiosError ? error : new AxiosError(String(error));
+      console.error(
+        `apiRequest: Error on attempt ${attempt + 1} for ${method.toUpperCase()} ${fullUrl}`,
+        lastError.response?.status,
+        lastError.response?.data
+      );
       if (attempt === retries - 1 || !lastError.response || lastError.response.status < 500) {
         throw handleApiError(lastError);
       }

@@ -4,7 +4,7 @@ import { UserRead, UserCreate, UserUpdate } from "../types/schemas";
 import { handleApiError } from "../utils/apiErrorHandler";
 import { AxiosError } from "axios";
 
-export interface LoginCredentials { 
+export interface LoginCredentials {
   email: string;
   password: string;
 }
@@ -16,39 +16,50 @@ export interface SessionData {
   is_current: boolean;
 }
 
-export const getMe = async (): Promise<UserRead | null> => {  // Оновлено тип повернення на UserRead | null
+export const getMe = async (): Promise<UserRead | null> => {
   try {
-    return await apiRequest("get", "/users/me");
+    const user = await apiRequest<UserRead>("get", "/users/me");
+    return user;
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 401) {
-      return null;  // Повертаємо null для 401, щоб уникнути помилки в React Query
+      return null;
     }
-    throw handleApiError(error);  // Для інших помилок викидаємо як раніше
+    throw handleApiError(error);
   }
 };
 
 export const login = async (
-  credentials: LoginCredentials,
+  credentials: LoginCredentials
 ): Promise<UserRead> => {
-  return apiRequest(
-    "post",
-    "/auth/jwt/login",
-    new URLSearchParams({
-      username: credentials.email,
-      password: credentials.password,
-    }),
-    {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    },
-  );
+  try {
+    // Виконуємо запит на логін
+    const response = await apiRequest<UserRead>(
+      "post",
+      "/auth/jwt/login",
+      new URLSearchParams({
+        username: credentials.email,
+        password: credentials.password,
+      }),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }
+    );
+
+    const user = await getMe();
+    if (!user) {
+      throw new Error("Failed to fetch user data after login");
+    }
+
+    return user;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
-// Використовувати apiRequest для logout (додати ендпоінт на бекенді /auth/jwt/logout якщо немає)
 export const logout = async (): Promise<void> => {
   try {
-    await apiRequest("post", "/auth/jwt/logout"); // Серверний logout
+    await apiRequest("post", "/auth/jwt/logout");
   } catch (error) {
-    // Ігнорувати помилки (токен може бути invalid)
   } finally {
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   }
@@ -64,7 +75,7 @@ export const register = async (userData: UserCreate): Promise<UserRead> => {
 
 export const updateUser = async (
   id: number,
-  userData: Partial<UserUpdate>,
+  userData: Partial<UserUpdate>
 ): Promise<UserRead> => {
   return apiRequest("patch", `/users/${id}`, userData);
 };

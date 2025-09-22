@@ -35,8 +35,12 @@ class AuthenticationBackendWithBody(AuthenticationBackend):
     відповіді з даними користувача при успішному логіні.
     """
     async def login(self, strategy: Strategy, user: User) -> Response:
+        logger.debug(f"Login: Generating response for user {user.email}")
         # Викликаємо оригінальний метод login, щоб отримати відповідь з cookie
         original_response = await super().login(strategy, user)
+
+        # Логуємо заголовки оригінальної відповіді
+        logger.debug(f"Login: Original response headers: {original_response.headers}")
 
         # Створюємо Pydantic-схему з даними користувача
         user_read = UserRead.from_orm(user)
@@ -46,6 +50,7 @@ class AuthenticationBackendWithBody(AuthenticationBackend):
 
         # Копіюємо заголовки (найголовніше - 'Set-Cookie') з оригінальної відповіді
         final_response.headers.raw.extend(original_response.headers.raw)
+        logger.info(f"Login: Final response headers for {user.email}: {final_response.headers}")
 
         return final_response
 
@@ -60,6 +65,7 @@ cookie_transport = CookieTransport(
 )
 
 async def get_refresh_token_db(session: AsyncSession = Depends(get_db)):
+    logger.debug("Getting refresh token database")
     return SQLAlchemyAccessTokenDatabase(session, RefreshToken)
 
 def get_refresh_strategy() -> Callable[[], DatabaseStrategy]:
@@ -263,4 +269,5 @@ router.include_router(
 async def read_users_me(
     current_user: User = Depends(fastapi_users.current_user(active=True)),
 ):
+    logger.info(f"Fetching current user: {current_user.email}")
     return current_user

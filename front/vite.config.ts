@@ -29,25 +29,29 @@ export default defineConfig(({ mode }) => {
       },
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:8000',
+          target: env.VITE_API_URL || 'http://localhost:8000/api',
           changeOrigin: true,
           secure: false,
+          timeout: 5000, // Додаємо таймаут 5 секунд
           configure: (proxy) => {
             proxy.on('error', (err: NodeJSError, _req: IncomingMessage, res: ServerResponse | object) => {
+              console.error('Proxy error:', err);
               if ('writeHead' in res && typeof res.writeHead === 'function') {
                 if (err.code === 'ECONNREFUSED') {
                   res.writeHead(503, { 'Content-Type': 'application/json' });
                   res.end(JSON.stringify({ message: 'Сервер недоступний. Перевірте підключення до мережі.' }));
                 } else {
                   res.writeHead(500, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ message: 'Помилка проксі-сервера' }));
+                  res.end(JSON.stringify({ message: 'Помилка проксі-сервера', details: err.message }));
                 }
               }
+            });
+            proxy.on('proxyReq', (proxyReq) => {
+              console.log('Proxying request to:', proxyReq.getHeader('host'), proxyReq.path);
             });
           },
         },
       },
-    },
     build: { 
       rollupOptions: {
         output: {
@@ -68,5 +72,6 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+  }
   };
 });

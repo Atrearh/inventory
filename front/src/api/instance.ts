@@ -2,6 +2,7 @@
 import axios from "axios";
 
 export const apiInstance = axios.create({
-  baseURL: "/api",
+  baseURL: `http://${window.location.hostname}:8000/api`,
+  //baseURL: "/api",
   withCredentials: true,
 });

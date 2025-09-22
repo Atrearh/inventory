@@ -264,5 +264,6 @@
   "status_pending": "Очікує",
   "admin_panel_title": "Адмін-панель",
   "software_distribution" : "Встановлене ПЗ",
-  "no_software_data" : "Нет данних" 
+  "no_software_data" : "Нет данних", 
+  "error_logging_in": "Помилка під час входу. Перевірте email та пароль."
 }

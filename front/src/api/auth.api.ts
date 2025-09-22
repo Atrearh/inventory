@@ -2,6 +2,7 @@
 import { apiRequest } from "../utils/apiUtils";
 import { UserRead, UserCreate, UserUpdate } from "../types/schemas";
 import { handleApiError } from "../utils/apiErrorHandler";
+import { AxiosError } from "axios";
 
 export interface LoginCredentials { 
   email: string;
@@ -15,11 +16,14 @@ export interface SessionData {
   is_current: boolean;
 }
 
-export const getMe = async (): Promise<UserRead> => {
+export const getMe = async (): Promise<UserRead | null> => {  // Оновлено тип повернення на UserRead | null
   try {
     return await apiRequest("get", "/users/me");
-  } catch (_) { // Фікс: замість error використовуємо _, якщо не потрібен
-    throw handleApiError(new Error("Failed to fetch user"));
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 401) {
+      return null;  // Повертаємо null для 401, щоб уникнути помилки в React Query
+    }
+    throw handleApiError(error);  // Для інших помилок викидаємо як раніше
   }
 };
 
@@ -47,7 +51,6 @@ export const logout = async (): Promise<void> => {
     // Ігнорувати помилки (токен може бути invalid)
   } finally {
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    window.location.href = "/login";
   }
 };
 

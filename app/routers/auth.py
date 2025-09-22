@@ -1,16 +1,23 @@
+# app/routers/auth.py
 import logging
 from typing import Callable
+
 from argon2 import PasswordHasher
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
+from fastapi_users.authentication.strategy import Strategy
 from fastapi_users.password import PasswordHelper
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
+from fastapi_users_db_sqlalchemy.access_token import (
+    SQLAlchemyAccessTokenDatabase,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..database import get_db
 from ..models import RefreshToken, User
 from ..schemas import UserCreate, UserRead, UserUpdate
@@ -20,7 +27,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 users_router = APIRouter(tags=["users"])
 
-# Налаштування транспорту для access- і refresh-токенів
+# --- Крок 1: Створюємо кастомний AuthenticationBackend ---
+
+class AuthenticationBackendWithBody(AuthenticationBackend):
+    """
+    Розширює стандартний AuthenticationBackend, щоб повертати тіло
+    відповіді з даними користувача при успішному логіні.
+    """
+    async def login(self, strategy: Strategy, user: User) -> Response:
+        # Викликаємо оригінальний метод login, щоб отримати відповідь з cookie
+        original_response = await super().login(strategy, user)
+
+        # Створюємо Pydantic-схему з даними користувача
+        user_read = UserRead.from_orm(user)
+
+        # Створюємо нову JSON-відповідь зі статусом 200 OK
+        final_response = JSONResponse(content=user_read.model_dump())
+
+        # Копіюємо заголовки (найголовніше - 'Set-Cookie') з оригінальної відповіді
+        final_response.headers.raw.extend(original_response.headers.raw)
+
+        return final_response
+
+# --- Крок 2: Налаштовуємо FastAPIUsers з нашим кастомним backend ---
+
 cookie_transport = CookieTransport(
     cookie_name="auth_token",
     cookie_max_age=604800,  # 7 днів
@@ -29,46 +59,38 @@ cookie_transport = CookieTransport(
     cookie_samesite="lax",
 )
 
-
-# Стратегія для access- і refresh-токенів
 async def get_refresh_token_db(session: AsyncSession = Depends(get_db)):
     return SQLAlchemyAccessTokenDatabase(session, RefreshToken)
-
-
-async def get_user_db(session: AsyncSession = Depends(get_db)):
-    yield SQLAlchemyUserDatabase(session, User)
-
-
-async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):
-    yield UserManager(user_db)
-
 
 def get_refresh_strategy() -> Callable[[], DatabaseStrategy]:
     def strategy(session: AsyncSession = Depends(get_db)) -> DatabaseStrategy:
         logger.debug("Initializing token database strategy")
         db = SQLAlchemyAccessTokenDatabase(session, RefreshToken)
-        logger.info(f"Database strategy initialized for table: {RefreshToken.__tablename__}, adapter: {type(db).__name__}")
+        logger.info(
+            f"Database strategy initialized for table: {RefreshToken.__tablename__}, "
+            f"adapter: {type(db).__name__}"
+        )
         strategy_instance = DatabaseStrategy(
             database=db,
             lifetime_seconds=604800,  # Час життя refresh-токена (7 днів)
         )
         logger.debug(f"DatabaseStrategy created: {strategy_instance}")
         return strategy_instance
-
     return strategy
 
-
-# Backend для автентифікації
-auth_backend = AuthenticationBackend(
+# Використовуємо наш новий AuthenticationBackendWithBody
+auth_backend = AuthenticationBackendWithBody(
     name="cookie",
     transport=cookie_transport,
     get_strategy=get_refresh_strategy(),
 )
 
+# --- Решта файлу залишається майже без змін ---
 
 class UserManager(BaseUserManager[User, int]):
     password_helper = PasswordHelper(PasswordHasher())
-
+    
+    # ... (Весь код UserManager залишається таким самим, як був)
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
         logger.debug(f"Authenticating user with email: {credentials.username}")
         async with self.user_db.session as session:
@@ -78,10 +100,12 @@ class UserManager(BaseUserManager[User, int]):
                 if not user:
                     logger.debug(f"User with email {credentials.username} not found")
                     return None
-
+                
                 logger.debug(f"Found user: {user.email}, user type: {type(user)}")
                 try:
-                    verified, updated_hash = self.password_helper.verify_and_update(credentials.password, user.hashed_password)
+                    verified, updated_hash = self.password_helper.verify_and_update(
+                        credentials.password, user.hashed_password
+                    )
                     if verified:
                         if updated_hash:
                             user.hashed_password = updated_hash
@@ -137,32 +161,39 @@ class UserManager(BaseUserManager[User, int]):
             logger.error(f"Error parsing user_id '{user_id}' to int: {str(e)}")
             raise
 
+async def get_user_db(session: AsyncSession = Depends(get_db)):
+    yield SQLAlchemyUserDatabase(session, User)
 
-# Ініціалізація FastAPIUsers
+async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):
+    yield UserManager(user_db)
+
 fastapi_users = FastAPIUsers[User, int](
     get_user_manager,
     [auth_backend],
 )
 
-
 get_current_user = fastapi_users.current_user()
 
-# Використання стандартного роутера для логіну
+# --- Крок 3: Використовуємо стандартний роутер, який тепер працюватиме з нашим backend ---
+
+# Тепер цей стандартний роутер автоматично підхопить наш кастомний backend
+# і буде повертати відповідь з тілом JSON
 router.include_router(
     fastapi_users.get_auth_router(auth_backend, requires_verification=False),
     prefix="/jwt",
 )
 
-
 # Роути для роботи з користувачами
 @users_router.get("/", response_model=list[UserRead])
-async def get_custom_users(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_custom_users(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     logger.info(f"Requesting user list, current user: {current_user.email}")
     result = await db.execute(select(User))
     users = result.scalars().all()
     logger.info(f"Found {len(users)} users")
     return [UserRead.model_validate(user) for user in users]
-
 
 @users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
@@ -196,7 +227,6 @@ async def delete_user(
     logger.info(f"User with id={user_id} deleted successfully")
     return None
 
-
 @users_router.patch("/{user_id}", response_model=UserRead)
 async def update_user(
     user_id: int,
@@ -228,7 +258,6 @@ router.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/jwt",
 )
-
 
 @users_router.get("/me", response_model=UserRead)
 async def read_users_me(

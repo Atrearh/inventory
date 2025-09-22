@@ -35,6 +35,7 @@ const Login: React.FC = () => {
   const onFinish = async (values: { email: string; password: string }) => {
     try {
       await login(values);
+            navigate("/");
 
       await Promise.all([
         queryClient.prefetchQuery({
@@ -74,7 +75,7 @@ const Login: React.FC = () => {
         }),
       ]);
 
-      navigate("/");
+
     } catch (err: any) {
       setError(err.message);
     }

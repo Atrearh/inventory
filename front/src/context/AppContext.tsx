@@ -73,8 +73,8 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const handleLogin = useCallback(
     async (credentials: LoginCredentials) => {
       try {
-        await apiLogin(credentials);
-        await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+        const loggedInUser: UserRead = await apiLogin(credentials);
+        queryClient.setQueryData(["auth", "me"], loggedInUser);
         message.success(t("login_success"));
       } catch (error) {
         const apiError = handleApiError(error, undefined, t("error_logging_in"));

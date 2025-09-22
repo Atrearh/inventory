@@ -49,7 +49,7 @@ class ComputerRepository:
         if os_name:
             query = query.join(models.OperatingSystem).filter(models.OperatingSystem.name.ilike(f"%{os_name}%"))
         if check_status:
-            query = query.filter(models.Computer.check_status == check_status)
+            query = query.filter(models.Computer.check_status == check_status) 
         if server_filter == "server":
             query = query.join(models.OperatingSystem).filter(models.OperatingSystem.name.ilike("%Server%"))
         elif server_filter == "client":

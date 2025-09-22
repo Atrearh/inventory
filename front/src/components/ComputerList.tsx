@@ -15,7 +15,6 @@ import { formatDateInUserTimezone } from "../utils/formatDate";
 import { getDomains } from "../api/domain.api";
 import { ComputerListItem, OperatingSystemRead } from "../types/schemas"; 
 
-
 const ComputerListComponent: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -261,13 +260,8 @@ const ComputerListComponent: React.FC = () => {
             columns={columns}
             dataSource={filteredComputers.data}
             rowKey="id"
-            pagination={{
-              current: filters.page,
-              pageSize: filters.limit,
-              total: filteredComputers.total || 0,
-              showSizeChanger: false,
-              showQuickJumper: false,
-            }}
+            pagination={false}
+            scroll={{ y: 500 }} // Вбудована віртуалізація: рендерить тільки видимі рядки
             onChange={handleTableChange}
             locale={{ emptyText: t("no_data", "Немає даних для відображення") }}
             size="small"

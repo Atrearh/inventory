@@ -1,11 +1,10 @@
 import { ReactNode, useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { TFunction } from "i18next"; // Виправлено імпорт TFunction
 import { usePersistentState } from "../hooks/usePersistentState";
 import { createCustomContext } from "../utils/createContext";
 import { LoginCredentials, getMe, login as apiLogin, logout as apiLogout } from "../api/auth.api";
 import { handleApiError } from "../utils/apiErrorHandler";
-import { message, Spin } from "antd";
+import { Spin, App  } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserRead } from "../types/schemas";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -34,6 +33,7 @@ const [AppContext, AppProviderBase, useAppContext] = createCustomContext<AppCont
 const AppProvider = ({ children }: { children: ReactNode }) => {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const { message } = App.useApp();
 
   // --- Theme ---
   const [dark, toggleTheme] = usePersistentTheme();
@@ -81,7 +81,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
         throw apiError;
       }
     },
-    [t, queryClient],
+    [t, queryClient, message],
   );
 
   const handleLogout = useCallback(
@@ -97,7 +97,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
         sessionStorage.clear();
       }
     },
-    [t, queryClient],
+    [t, queryClient, message],
   );
 
   const value: AppContextType = useMemo(

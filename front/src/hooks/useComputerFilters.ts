@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useDebounce } from "./useDebounce";
 import { ComputerListItem } from "../types/schemas";
-import { ITEMS_PER_PAGE } from "../config";
 import type { TablePaginationConfig } from "antd";
 import type { SorterResult } from "antd/es/table/interface";
 
@@ -14,8 +13,8 @@ export interface Filters {
   show_disabled: boolean;
   sort_by: string;
   sort_order: "asc" | "desc";
-  page: number;
-  limit: number;
+  page?: number; // Відновлено як опціональне для сумісності
+  limit?: number; // Відновлено як опціональне для сумісності
   server_filter?: string;
   ip_range?: string;
 }
@@ -38,8 +37,8 @@ export const useComputerFilters = (
     show_disabled: searchParams.get("show_disabled") === "true" || false,
     sort_by: searchParams.get("sort_by") || "hostname",
     sort_order: (searchParams.get("sort_order") as "asc" | "desc") || "asc",
-    page: Number(searchParams.get("page")) || 1,
-    limit: Number(searchParams.get("limit") || ITEMS_PER_PAGE),
+    page: Number(searchParams.get("page")) || undefined, // Відновлено для сумісності
+    limit: Number(searchParams.get("limit")) || undefined, // Відновлено для сумісності
     server_filter: searchParams.get("server_filter") || undefined,
     ip_range: searchParams.get("ip_range") || undefined,
   });
@@ -74,7 +73,6 @@ export const useComputerFilters = (
       setFilters((prev) => ({
         ...prev,
         [key]: value,
-        page: key !== "page" ? 1 : prev.page,
       }));
     },
     [],
@@ -90,8 +88,8 @@ export const useComputerFilters = (
       show_disabled: false,
       sort_by: "hostname",
       sort_order: "asc",
-      page: 1,
-      limit: ITEMS_PER_PAGE,
+      page: undefined, // Сетимо undefined для сумісності
+      limit: undefined, // Сетимо undefined для сумісності
       server_filter: undefined,
       ip_range: undefined,
     });
@@ -107,8 +105,6 @@ export const useComputerFilters = (
       const sort = Array.isArray(sorter) ? sorter[0] : sorter;
       setFilters((prev) => ({
         ...prev,
-        page: pagination.current || 1,
-        limit: pagination.pageSize || ITEMS_PER_PAGE,
         sort_by: sort.field ? String(sort.field) : prev.sort_by,
         sort_order:
           sort.order === "ascend"
@@ -129,14 +125,6 @@ export const useComputerFilters = (
   ) => {
     if (field === "ip_addresses") return comp.ip_addresses?.[0]?.address || "";
     if (field === "os") return comp.os?.name?.toLowerCase() || "";
-    //if (field === 'is_virtual') return comp.is_virtual ?? false;
-    //if (field === 'physical_disks') return comp.physical_disks?.[0]?.model || '';
-    //if (field === 'logical_disks') return comp.logical_disks?.[0]?.volume_label || '';
-    //if (field === 'processors') return comp.processors?.[0]?.name || '';
-    //if (field === 'mac_addresses') return comp.mac_addresses?.[0]?.address || '';
-    //if (field === 'roles') return comp.roles?.[0]?.Name || '';
-    //if (field === 'software') return comp.software?.[0]?.DisplayName || '';
-    //if (field === 'video_cards') return comp.video_cards?.[0]?.name || '';
     if (field === "last_full_scan")
       return comp.last_full_scan ? new Date(comp.last_full_scan) : new Date(0);
     if (field === "domain_id")
@@ -189,7 +177,7 @@ export const useComputerFilters = (
           const rangeParts = debouncedFilters.ip_range!.split(".");
           if (rangeParts[2]?.startsWith("[")) {
             const [start, end] = rangeParts[2]
-              .match(/\[(\d+)-(\d+)\]/)!
+              .match(/\[(\d+)-(\d+)\]/)! // eslint-disable-line @typescript-eslint/no-non-null-assertion
               .slice(1)
               .map(Number);
             const thirdOctet = Number(ipParts[2]);
@@ -242,11 +230,8 @@ export const useComputerFilters = (
         : String(bValue).localeCompare(String(aValue));
     });
 
-    // Пагінація
-    const start = (filters.page - 1) * filters.limit;
-    const end = start + filters.limit;
     return {
-      data: filtered.slice(start, end),
+      data: filtered,
       total: filtered.length,
     };
   }, [
@@ -254,8 +239,6 @@ export const useComputerFilters = (
     debouncedFilters,
     filters.sort_by,
     filters.sort_order,
-    filters.page,
-    filters.limit,
     domainMap,
   ]);
 

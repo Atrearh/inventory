@@ -9,7 +9,7 @@ from .middlewares import register_middlewares
 from .routers import (
     auth,
     computers,
-    domain_router,
+    domain_router, 
     scan,
     scripts,
     sessions,

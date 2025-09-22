@@ -7,7 +7,6 @@ from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from .logging_config import setup_logging
 from app.models import AppSetting
 from .utils.validators import (
@@ -50,7 +49,7 @@ class AppSettings(BaseSettings):
     allowed_ips: AllowedIPsStr = "127.0.0.1"
 
     model_config = ConfigDict(
-        env_file=Path(__file__).parent / ".env",
+        env_file=Path(__file__).parent.parent / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )

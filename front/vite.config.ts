@@ -32,7 +32,6 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_URL || 'http://localhost:8000',
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api/, ''),
           configure: (proxy) => {
             proxy.on('error', (err: NodeJSError, _req: IncomingMessage, res: ServerResponse | object) => {
               if ('writeHead' in res && typeof res.writeHead === 'function') {
@@ -49,7 +48,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    build: { // <-- Додайте цю секцію
+    build: { 
       rollupOptions: {
         output: {
           manualChunks(id) {

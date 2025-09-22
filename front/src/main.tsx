@@ -1,7 +1,11 @@
-import { ConfigProvider, theme } from "antd";
+import { ConfigProvider, theme, App as AntApp } from "antd";
 import React, { useEffect, useMemo } from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider, QueryCache } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryCache,
+} from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import App from "./App";
@@ -9,7 +13,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import "./components/i18n";
 import "./index.css";
 import { AppProvider, useAppContext } from "./context/AppContext";
-import i18n from "./components/i18n"; 
+import i18n from "./components/i18n";
 import { AxiosError } from "axios";
 
 const queryClient = new QueryClient({
@@ -55,7 +59,9 @@ const AppWithTheme: React.FC = () => {
 
   return (
     <ConfigProvider theme={themeObj}>
-      <App />
+      <AntApp>
+        <App />
+      </AntApp>
     </ConfigProvider>
   );
 };
@@ -83,7 +89,7 @@ const Root = () => {
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <ErrorBoundary t={i18n.t}> 
+  <ErrorBoundary t={i18n.t}>
     <Root />
   </ErrorBoundary>
 );

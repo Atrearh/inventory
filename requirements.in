@@ -15,6 +15,7 @@ argon2-cffi
 cryptography
 pyjwt[crypto]          # для JWT-токенів 
 passlib[bcrypt]        
+pwdlib[argon2]
 
 # --- Networking / Windows Integration ---
 pywinrm
@@ -22,6 +23,7 @@ ldap3
 requests-ntlm
 ntlm-auth
 ping3                 
+dahua-rpc-api
 
 # --- Pydantic & Settings ---
 pydantic

@@ -65,25 +65,30 @@ export interface LogicalDisk {
 export interface Processor {
   detected_on?: string | null;
   removed_on?: string | null;
-  Name: string;
-  NumberOfCores?: number | null;
-  NumberOfThreads?: number | null;
+  name: string;
+  number_of_cores?: number | null;
+  number_of_logical_processors?: number | null;
   MaxClockSpeed?: number | null;
 }
 export interface VideoCard {
   detected_on?: string | null;
   removed_on?: string | null;
-  Name: string;
+  name: string;
   AdapterRAM?: number | null;
+  driver_version?: string | null;
 }
 export interface IPAddress {
   detected_on?: string | null;
   removed_on?: string | null;
+  id?: number | null;
+  device_id: number;
   address: string;
 }
 export interface MACAddress {
   detected_on?: string | null;
   removed_on?: string | null;
+  id?: number | null;
+  device_id: number;
   address: string;
 }
 export interface InstalledSoftwareRead {
@@ -101,30 +106,19 @@ export interface ComponentSchema {
   detected_on?: string | null;
   removed_on?: string | null;
 }
-export interface ComputerCore {
-  hostname: string;
-  os?: OperatingSystemRead | null;
-  ram?: number | null;
-  motherboard?: string | null;
-  last_boot?: string | null;
-  is_virtual?: boolean | null;
-  check_status?: CheckStatus | null;
-}
-export interface OperatingSystemRead {
-  name: string;
-  version?: string | null;
-  architecture?: string | null;
-}
 export interface ComputerCreate {
-  hostname: string;
-  os?: OperatingSystemRead | null;
-  ram?: number | null;
-  motherboard?: string | null;
-  last_boot?: string | null;
-  is_virtual?: boolean | null;
-  check_status?: CheckStatus | null;
   ip_addresses?: IPAddress[];
   mac_addresses?: MACAddress[];
+  os?: OperatingSystemRead | null;
+  ram?: number | null;
+  motherboard?: string | null;
+  last_boot?: string | null;
+  is_virtual?: boolean | null;
+  check_status?: CheckStatus | null;
+  domain_name?: string | null;
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
   processors?: Processor[];
   video_cards?: VideoCard[];
   software?: InstalledSoftwareRead[];
@@ -132,19 +126,26 @@ export interface ComputerCreate {
   physical_disks?: PhysicalDisk[];
   logical_disks?: LogicalDisk[];
 }
+export interface OperatingSystemRead {
+  name: string;
+  version?: string | null;
+  architecture?: string | null;
+}
 export interface ComputerDetail {
-  hostname: string;
   os?: OperatingSystemRead | null;
   ram?: number | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  id: number;
-  last_updated?: string | null;
+  domain_name?: string | null;
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
   last_full_scan?: string | null;
   domain_id?: number | null;
-  domain_name?: string | null;
   object_guid?: string | null;
   when_created?: string | null;
   when_changed?: string | null;
@@ -152,8 +153,6 @@ export interface ComputerDetail {
   ad_notes?: string | null;
   local_notes?: string | null;
   last_logon?: string | null;
-  ip_addresses?: IPAddress[];
-  mac_addresses?: MACAddress[];
   processors?: Processor[];
   video_cards?: VideoCard[];
   software?: InstalledSoftwareRead[];
@@ -162,19 +161,28 @@ export interface ComputerDetail {
   logical_disks?: LogicalDisk[];
 }
 export interface ComputerListItem {
-  hostname: string;
   os?: OperatingSystemRead | null;
   ram?: number | null;
   motherboard?: string | null;
   last_boot?: string | null;
   is_virtual?: boolean | null;
   check_status?: CheckStatus | null;
-  id: number;
-  last_updated?: string | null;
-  last_full_scan?: string | null;
-  domain_id?: number | null;
   domain_name?: string | null;
   ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
+  last_full_scan?: string | null;
+}
+export interface ComputerSpecifics {
+  os?: OperatingSystemRead | null;
+  ram?: number | null;
+  motherboard?: string | null;
+  last_boot?: string | null;
+  is_virtual?: boolean | null;
+  check_status?: CheckStatus | null;
+  domain_name?: string | null;
 }
 export interface ComputerUpdateCheckStatus {
   hostname: string;
@@ -183,6 +191,53 @@ export interface ComputerUpdateCheckStatus {
 export interface ComputersResponse {
   data: ComputerListItem[];
   total: number;
+}
+export interface DahuaDVRBase {
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
+  name: string;
+  port?: number;
+}
+export interface DahuaDVRCreate {
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
+  name: string;
+  port?: number;
+  users?: DahuaDVRUserCreate[];
+}
+export interface DahuaDVRUserCreate {
+  username: string;
+  encrypted_password: string;
+}
+export interface DahuaDVRRead {
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
+  id: number;
+  hostname: string;
+  device_type?: string | null;
+  name: string;
+  port?: number;
+  users?: DahuaDVRUserRead[];
+}
+export interface DahuaDVRUserRead {
+  username: string;
+  id?: number | null;
+  dvr_id: number;
+}
+export interface DahuaDVRUpdate {
+  hostname?: string | null;
+  name?: string | null;
+  port?: number | null;
+  ip_addresses?: IPAddress[] | null;
+  mac_addresses?: MACAddress[] | null;
+  users?: DahuaDVRUserCreate[] | null;
+}
+export interface DahuaDVRUserBase {
+  username: string;
 }
 export interface DashboardStats {
   total_computers?: number | null;
@@ -220,6 +275,15 @@ export interface ScanStats {
 export interface StatusStats {
   status: CheckStatus;
   count: number;
+}
+export interface DeviceBase {
+  id?: number | null;
+  hostname: string;
+  device_type?: string | null;
+}
+export interface DeviceNetworkInfo {
+  ip_addresses?: IPAddress[];
+  mac_addresses?: MACAddress[];
 }
 export interface DomainBase {
   name: string;

@@ -7,3 +7,13 @@ logs/
 node_modules/
 merged_output/
 dist/
+.vscode/
+.pre-commit-config.yaml
+eslint.config.js
+requirements.in
+.env.local
+alembic/
+alembic.ini
+build/
+medoc_terminate_session.py
+front/start.bat

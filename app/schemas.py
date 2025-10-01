@@ -17,20 +17,18 @@ from app.utils.validators import (
     MACAddressStr,
     NonEmptyStr,
     WinRMCertValidationStr,
+    DeviceTypeStr,
 )
 
 logger = logging.getLogger(__name__)
 
-
 # --- Визначення Enum для ідентифікаторів компонентів ---
 class IdentifierField(Enum):
     """Унікальні ідентифікатори для компонентів комп'ютера."""
-
     NAME = "name"
     SERIAL = "serial"
     ADDRESS = "address"
     DEVICE_ID = "device_id"
-
 
 class CheckStatus(Enum):
     success = "success"
@@ -40,13 +38,11 @@ class CheckStatus(Enum):
     disabled = "disabled"
     is_deleted = "is_deleted"
 
-
 class ScanStatus(Enum):
     pending = "pending"
     running = "running"
     completed = "completed"
     failed = "failed"
-
 
 # --- Базові класи ---
 class BaseSchema(BaseModel):
@@ -56,15 +52,12 @@ class BaseSchema(BaseModel):
         json_encoders={datetime: lambda v: v.isoformat() if v else None},
     )
 
-
 class TrackableComponent(BaseSchema):
     detected_on: Optional[datetime] = None
     removed_on: Optional[datetime] = None
 
-
 class ComponentSchema(TrackableComponent):
     _identifier_field: IdentifierField = IdentifierField.NAME
-
 
 # --- Схеми компонентів комп'ютера ---
 class Role(ComponentSchema):
@@ -72,18 +65,17 @@ class Role(ComponentSchema):
     name: NonEmptyStr = Field(..., alias="Name")
 
 
+
 class OperatingSystemRead(BaseSchema):
     name: NonEmptyStr
     version: Optional[str] = None
     architecture: Optional[str] = None
-
 
 class InstalledSoftwareRead(BaseSchema):
     name: NonEmptyStr
     version: Optional[str] = None
     publisher: Optional[str] = None
     install_date: Optional[datetime] = None
-
 
 class PhysicalDisk(ComponentSchema):
     _identifier_field = IdentifierField.SERIAL
@@ -94,7 +86,6 @@ class PhysicalDisk(ComponentSchema):
     interface: Optional[NonEmptyStr] = Field(None, alias="interface", max_length=50)
     media_type: Optional[NonEmptyStr] = Field(None, alias="media_type", max_length=50)
 
-
 class LogicalDisk(ComponentSchema):
     _identifier_field = IdentifierField.DEVICE_ID
     device_id: Optional[NonEmptyStr] = Field(None, alias="device_id", max_length=255)
@@ -103,72 +94,55 @@ class LogicalDisk(ComponentSchema):
     free_space: Optional[int] = Field(None, ge=0, alias="free_space")
     parent_disk_serial: Optional[NonEmptyStr] = Field(None, alias="parent_disk_serial", max_length=100)
 
-
 class Processor(ComponentSchema):
     _identifier_field = IdentifierField.NAME
-    name: NonEmptyStr = Field(..., alias="Name")
-    cores: Optional[int] = Field(None, ge=1, alias="NumberOfCores")
-    threads: Optional[int] = Field(None, ge=1, alias="NumberOfThreads")
+    name: NonEmptyStr = Field(..., alias="name")
+    cores: Optional[int] = Field(None, ge=1, alias="number_of_cores")
+    threads: Optional[int] = Field(None, ge=1, alias="number_of_logical_processors")
     speed_ghz: Optional[float] = Field(None, ge=0.0, alias="MaxClockSpeed")
-
 
 class VideoCard(ComponentSchema):
     _identifier_field = IdentifierField.NAME
-    name: NonEmptyStr = Field(..., alias="Name")
+    name: NonEmptyStr = Field(..., alias="name")
     vram: Optional[int] = Field(None, ge=0, alias="AdapterRAM")
-
+    driver_version: Optional[NonEmptyStr] = Field(None, alias="driver_version")
 
 class IPAddress(ComponentSchema):
     _identifier_field = IdentifierField.ADDRESS
+    id: Optional[int] = None
+    device_id: int = Field(..., alias="device_id")
     address: IPAddressStr = Field(..., alias="address")
-
 
 class MACAddress(ComponentSchema):
     _identifier_field = IdentifierField.ADDRESS
+    id: Optional[int] = None
+    device_id: int = Field(..., alias="device_id")
     address: MACAddressStr = Field(..., alias="address")
 
-
-# --- Базова схема для комп'ютерів з мінімальними полями ---
-class ComputerCore(BaseSchema):
+class DeviceBase(BaseSchema):
+    id: Optional[int] = Field(default=None, alias="id")
     hostname: HostnameStr = Field(..., max_length=255)
+    device_type: Optional[DeviceTypeStr] = Field(default=None, max_length=50)
+
+class DeviceNetworkInfo(BaseSchema):
+    ip_addresses: List[IPAddress] = []
+    mac_addresses: List[MACAddress] = []
+
+class ComputerSpecifics(BaseSchema):
     os: Optional[OperatingSystemRead] = None
-    ram: Optional[int] = Field(None, ge=0)
+    ram: Optional[int] = Field(default=None, ge=0)
     motherboard: Optional[NonEmptyStr] = None
     last_boot: Optional[datetime] = None
     is_virtual: Optional[bool] = False
-    check_status: Optional[CheckStatus] = Field(None, examples=["reachable", "unreachable"])
-
-
-# --- Схема для створення та оновлення комп'ютерів ---
-class ComputerCreate(ComputerCore):
-    ip_addresses: List[IPAddress] = []
-    mac_addresses: List[MACAddress] = []
-    processors: List[Processor] = []
-    video_cards: List[VideoCard] = []
-    software: List[InstalledSoftwareRead] = []
-    roles: List[Role] = []
-    physical_disks: List[PhysicalDisk] = []
-    logical_disks: List[LogicalDisk] = []
-
-
-# --- Схема для спискового представлення ---
-class ComputerListItem(ComputerCore):
-    id: int
-    last_updated: Optional[datetime] = None
-    last_full_scan: Optional[datetime] = None
-    domain_id: Optional[int] = None
+    check_status: Optional[CheckStatus] = None
     domain_name: Optional[NonEmptyStr] = None
-    ip_addresses: List[IPAddress] = []
-    os: Optional[OperatingSystemRead] = None
 
-
-# --- Схема для детального перегляду комп'ютера ---
-class ComputerDetail(ComputerCore):
-    id: int
-    last_updated: Optional[datetime] = None
+# --- Схеми для Комп'ютерів ---
+class ComputerListItem(DeviceBase, DeviceNetworkInfo, ComputerSpecifics):
     last_full_scan: Optional[datetime] = None
+
+class ComputerDetail(ComputerListItem):
     domain_id: Optional[int] = None
-    domain_name: Optional[NonEmptyStr] = None
     object_guid: Optional[str] = None
     when_created: Optional[datetime] = None
     when_changed: Optional[datetime] = None
@@ -176,8 +150,6 @@ class ComputerDetail(ComputerCore):
     ad_notes: Optional[NonEmptyStr] = None
     local_notes: Optional[NonEmptyStr] = None
     last_logon: Optional[datetime] = None
-    ip_addresses: List[IPAddress] = []
-    mac_addresses: List[MACAddress] = []
     processors: List[Processor] = []
     video_cards: List[VideoCard] = []
     software: List[InstalledSoftwareRead] = []
@@ -185,23 +157,56 @@ class ComputerDetail(ComputerCore):
     physical_disks: List[PhysicalDisk] = []
     logical_disks: List[LogicalDisk] = []
 
+class ComputerCreate(DeviceBase, ComputerSpecifics, DeviceNetworkInfo):
+    processors: List[Processor] = []
+    video_cards: List[VideoCard] = []
+    software: List[InstalledSoftwareRead] = []
+    roles: List[Role] = []
+    physical_disks: List[PhysicalDisk] = []
+    logical_disks: List[LogicalDisk] = []
 
-# --- Схема для списку комп'ютерів ---
 class ComputersResponse(BaseSchema):
     data: List[ComputerListItem]
     total: int
+    
+# --- Схеми для Dahua DVR ---
+class DahuaDVRUserBase(BaseSchema):
+    username: NonEmptyStr = Field(..., max_length=255)
 
+class DahuaDVRUserCreate(DahuaDVRUserBase):
+    encrypted_password: NonEmptyStr = Field(..., max_length=512)
+
+class DahuaDVRUserRead(DahuaDVRUserBase):
+    id: Optional[int] = None
+    dvr_id: int
+
+class DahuaDVRBase(DeviceBase):
+    name: NonEmptyStr = Field(..., max_length=255)
+    port: int = Field(default=37777, ge=1, le=65535)
+
+class DahuaDVRCreate(DahuaDVRBase, DeviceNetworkInfo):
+    users: List[DahuaDVRUserCreate] = []
+
+class DahuaDVRRead(DahuaDVRBase, DeviceNetworkInfo):
+    id: int
+    users: List[DahuaDVRUserRead] = []
+
+class DahuaDVRUpdate(BaseSchema):
+    hostname: Optional[HostnameStr] = None
+    name: Optional[NonEmptyStr] = None
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    ip_addresses: Optional[List[IPAddress]] = None
+    mac_addresses: Optional[List[MACAddress]] = None
+    users: Optional[List[DahuaDVRUserCreate]] = None
 
 # --- Схеми статистики ---
 class StatusStats(BaseSchema):
     status: CheckStatus
     count: int = Field(ge=0)
 
-
 class OsCategoryStats(BaseSchema):
     category: str
     count: int
-
 
 class OsStats(BaseSchema):
     client_os: List[OsCategoryStats] = []
@@ -209,7 +214,6 @@ class OsStats(BaseSchema):
     os_name: Optional[NonEmptyStr] = None
     count: int = Field(ge=0)
     software_distribution: List[OsCategoryStats] = []
-
 
 class DiskVolume(BaseSchema):
     id: int
@@ -219,25 +223,20 @@ class DiskVolume(BaseSchema):
     total_space_gb: float = Field(ge=0.0)
     free_space_gb: float = Field(ge=0.0)
 
-
 class DiskStats(BaseSchema):
     low_disk_space: List[DiskVolume]
-
 
 class ScanStats(BaseSchema):
     last_scan_time: Optional[datetime]
     status_stats: List[StatusStats]
 
-
 class ComponentChangeStats(BaseSchema):
     component_type: NonEmptyStr
     changes_count: int = Field(ge=0)
 
-
 class ScanResponse(BaseSchema):
     status: NonEmptyStr
     task_id: NonEmptyStr
-
 
 class DashboardStats(BaseSchema):
     total_computers: Optional[int] = None
@@ -246,12 +245,10 @@ class DashboardStats(BaseSchema):
     scan_stats: ScanStats
     component_changes: List[ComponentChangeStats] = []
 
-
 class ErrorResponse(BaseSchema):
     error: NonEmptyStr
     detail: Optional[NonEmptyStr] = None
     correlation_id: Optional[NonEmptyStr] = None
-
 
 # --- Схеми налаштувань та історії ---
 class AppSettingUpdate(BaseSchema):
@@ -276,7 +273,6 @@ class AppSettingUpdate(BaseSchema):
     encryption_key: Optional[NonEmptyStr] = None
     timezone: Optional[NonEmptyStr] = None
 
-
 class ComponentHistory(BaseSchema):
     component_type: NonEmptyStr
     data: Union[
@@ -292,12 +288,10 @@ class ComponentHistory(BaseSchema):
     detected_on: Optional[NonEmptyStr] = None
     removed_on: Optional[NonEmptyStr] = None
 
-
 # --- Схеми користувачів ---
 class UserRead(schemas.BaseUser[int]):
     username: NonEmptyStr
     role: Optional[NonEmptyStr] = None
-
 
 class UserCreate(schemas.BaseUserCreate):
     username: NonEmptyStr
@@ -305,11 +299,9 @@ class UserCreate(schemas.BaseUserCreate):
     password: NonEmptyStr
     role: Optional[NonEmptyStr] = None
 
-
 class UserUpdate(schemas.BaseUserUpdate):
     username: Optional[NonEmptyStr] = None
     role: Optional[NonEmptyStr] = None
-
 
 # --- Схеми доменів ---
 class DomainCore(BaseSchema):
@@ -319,15 +311,12 @@ class DomainCore(BaseSchema):
     server_url: DomainNameStr
     ad_base_dn: NonEmptyStr
 
-
 class DomainCreate(DomainCore):
     pass
-
 
 class DomainBase(DomainCore):
     id: int
     last_updated: Optional[datetime] = None
-
 
 class DomainUpdate(BaseSchema):
     id: int
@@ -338,10 +327,8 @@ class DomainUpdate(BaseSchema):
     server_url: Optional[DomainNameStr] = None
     ad_base_dn: Optional[NonEmptyStr] = None
 
-
 class DomainRead(DomainBase):
     password: Optional[str] = Field(None, exclude=True)
-
 
 class TaskRead(BaseSchema):
     id: NonEmptyStr
@@ -349,11 +336,9 @@ class TaskRead(BaseSchema):
     status: NonEmptyStr
     created_at: NonEmptyStr
 
-
 class ComputerUpdateCheckStatus(BaseSchema):
     hostname: HostnameStr
     check_status: CheckStatus
-
 
 class ScanTask(BaseSchema):
     id: UUID
@@ -373,7 +358,6 @@ class ScanTask(BaseSchema):
         data = super().model_validate(obj, **kwargs)
         data.progress = (data.successful_hosts / max(data.scanned_hosts, 1)) * 100
         return data
-
 
 class SessionRead(BaseSchema):
     id: int

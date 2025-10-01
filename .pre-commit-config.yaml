@@ -1,7 +1,7 @@
 # .pre-commit-config.yaml
 repos:
   # -----------------------
-  # Python: Black
+  # Python: Black 
   # -----------------------
   - repo: https://github.com/psf/black
     rev: 24.8.0

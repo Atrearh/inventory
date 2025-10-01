@@ -17,3 +17,6 @@ alembic.ini
 build/
 medoc_terminate_session.py
 front/start.bat
+.pre-commit-config.yaml
+eslint.config.js
+.vscode/launch.json

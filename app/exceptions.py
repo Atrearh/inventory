@@ -1,16 +1,12 @@
-# app/exceptions.py
-
 import logging
-
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-
-# 👇 Додайте імпорти для специфічних помилок SQLAlchemy
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from winrm.exceptions import WinRMError, WinRMTransportError
-
 from .config import settings
 from .schemas import ErrorResponse
+from pydantic import ValidationError
+from asyncio import TimeoutError
 
 logger = logging.getLogger(__name__)
 settings_manager = settings
@@ -23,33 +19,32 @@ async def global_exception_handler(request: Request, exc: Exception):
     request_logger.error(f"Необроблений виняток: {exc}", exc_info=True)
 
     match exc:
-        case HTTPException(status_code=status_code, detail=detail):
-            error_message = detail
-
-        # 👇 Нова, більш детальна обробка помилок БД
-        case IntegrityError():
-            status_code = status.HTTP_409_CONFLICT  # 409 Conflict - краще підходить для дублікатів
-            error_message = "Запис із такими даними вже існує."
-
-        case OperationalError():
-            status_code = status.HTTP_503_SERVICE_UNAVAILABLE  # 503 Service Unavailable
-            error_message = "Помилка з'єднання з базою даних. Спробуйте пізніше."
-
-        case SQLAlchemyError():  # Залишаємо як загальний обробник для інших помилок БД
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Сталася помилка бази даних."
-
-        case WinRMTransportError() | WinRMError():
-            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            error_message = "Помилка підключення до WinRM-хоста."
-
-        case ValueError():
-            status_code = status.HTTP_400_BAD_REQUEST
-            error_message = str(exc)
-
-        case _:
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            error_message = "Внутрішня помилка сервера."
+            case HTTPException(status_code=status_code, detail=detail):
+                error_message = detail
+            case IntegrityError():
+                status_code = status.HTTP_409_CONFLICT
+                error_message = "Запис із такими даними вже існує."
+            case OperationalError():
+                status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+                error_message = "Помилка з'єднання з базою даних. Спробуйте пізніше."
+            case SQLAlchemyError():
+                status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+                error_message = "Сталася помилка бази даних."
+            case WinRMTransportError() | WinRMError():
+                status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+                error_message = "Помилка підключення до WinRM-хоста."
+            case ValidationError():
+                status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+                error_message = f"Помилка валідації даних: {exc.errors()}"
+            case TimeoutError():
+                status_code = status.HTTP_504_GATEWAY_TIMEOUT
+                error_message = "Таймаут виконання операції."
+            case ValueError():
+                status_code = status.HTTP_400_BAD_REQUEST
+                error_message = str(exc)
+            case _:
+                status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+                error_message = "Внутрішня помилка сервера."
 
     response = ErrorResponse(
         error=error_message,

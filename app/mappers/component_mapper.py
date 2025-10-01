@@ -1,8 +1,7 @@
-# app/mappers/component_mapper.py
 import logging
 from typing import Any, Dict, List, Type, TypeVar
 from pydantic import ValidationError
-from sqlmodel import SQLModel
+from sqlalchemy.orm import DeclarativeBase
 from app.schemas import (
     IPAddress,
     MACAddress,
@@ -15,9 +14,9 @@ from app.schemas import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=SQLModel)
+T = TypeVar("T", bound=DeclarativeBase)
 
-IDENTIFIER_MAP: Dict[Type[SQLModel], str] = {
+IDENTIFIER_MAP: Dict[Type[DeclarativeBase], str] = {
     IPAddress: "address",
     MACAddress: "address",
     PhysicalDisk: "serial",
@@ -27,7 +26,7 @@ IDENTIFIER_MAP: Dict[Type[SQLModel], str] = {
     Role: "name",
 }
 
-SCHEMA_MAP: Dict[Type[SQLModel], Type] = {
+SCHEMA_MAP: Dict[Type[DeclarativeBase], Type] = {
     IPAddress: IPAddress,
     MACAddress: MACAddress,
     PhysicalDisk: PhysicalDisk,
@@ -36,7 +35,6 @@ SCHEMA_MAP: Dict[Type[SQLModel], Type] = {
     VideoCard: VideoCard,
     Role: Role,
 }
-
 
 def map_to_components(cls: Type[T], raw_data: Any, hostname: str) -> List[T]:
     if not isinstance(raw_data, list):
@@ -72,7 +70,12 @@ def map_to_components(cls: Type[T], raw_data: Any, hostname: str) -> List[T]:
                 validated_data = item
 
             seen_identifiers.add(identifier)
-            result.append(cls.model_construct(**validated_data))
+            # Створюємо об'єкт SQLAlchemy без виклику конструктора
+            instance = cls.__new__(cls)
+            cls.__init__(instance)
+            for key, value in validated_data.items():
+                object.__setattr__(instance, key, value)
+            result.append(instance)
         except ValidationError as e:
             logger.warning(
                 f"Помилка валідації даних для {cls.__name__}: {str(e)}",

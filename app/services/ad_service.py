@@ -87,6 +87,7 @@ class ADService:
                         "ad_notes": (entry.description.value if entry.description else None),
                         "last_logon": (entry.lastLogon.value if entry.lastLogon else None),
                         "domain_id": domain.id,
+                        "device_type": "computer",
                     }
                 )
                 logger.debug(f"Знайдено хост: {dns_hostname}, enabled: {enabled}, object_guid: {object_guid}")

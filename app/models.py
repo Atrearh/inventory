@@ -2,12 +2,11 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
-from sqlalchemy import (
-    Column, Enum, Index, UniqueConstraint, func, String, BigInteger, Integer, Boolean, Float, ForeignKey
-)
+from sqlalchemy import (Enum, Index, UniqueConstraint, func, String, BigInteger, Integer, ForeignKey,Boolean)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from app.utils.validators import (DomainNameStr, HostnameStr, NonEmptyStr, IPAddressStr, MACAddressStr)
 from app.schemas import ScanStatus, CheckStatus
+from sqlalchemy.ext.hybrid import hybrid_property
 
 class Base(DeclarativeBase):
     pass
@@ -75,6 +74,7 @@ class Computer(Base):
     last_logon: Mapped[Optional[datetime]] = mapped_column(default=None)
     check_status: Mapped[Optional[CheckStatus]] = mapped_column(Enum(CheckStatus))
     is_virtual: Mapped[bool] = mapped_column(default=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     physical_disks: Mapped[List["PhysicalDisk"]] = relationship(back_populates="computer")
     logical_disks: Mapped[List["LogicalDisk"]] = relationship(back_populates="computer")
     processors: Mapped[List["Processor"]] = relationship(back_populates="computer")
@@ -250,7 +250,7 @@ class AppSetting(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    value: Mapped[str] = mapped_column()
+    value: Mapped[str] = mapped_column(String(255))
 
 class User(Base):
     __tablename__ = "users"
@@ -291,6 +291,7 @@ class RefreshToken(Base):
 class DahuaDVR(Device):
     __tablename__ = "dahua_dvrs"
 
+    id: Mapped[int] = mapped_column(ForeignKey("devices.id"), primary_key=True, index=True)
     name: Mapped[NonEmptyStr] = mapped_column(String(255), nullable=False, unique=True)
     port: Mapped[int] = mapped_column(Integer, default=37777, nullable=False)
     users: Mapped[List["DahuaDVRUser"]] = relationship(back_populates="dvr")
@@ -323,3 +324,7 @@ class ScanTask(Base):
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow, server_default=func.now(), onupdate=func.now()
     )
+
+    @hybrid_property
+    def progress(self) -> float:
+        return (self.successful_hosts / max(self.scanned_hosts, 1)) * 100

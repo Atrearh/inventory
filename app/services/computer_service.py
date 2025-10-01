@@ -199,35 +199,25 @@ class ComputerService:
             raise
 
     @log_function_call
-    async def process_single_host(self, host: str, logger_adapter: logging.LoggerAdapter) -> bool:
-        """Обробка одного хоста."""
+    async def process_single_host(self, host: str, winrm_service: WinRMService, logger_adapter: logging.LoggerAdapter) -> bool:
         try:
             db_computer, mode = await self._get_scan_context(host)
             last_updated = db_computer.last_updated if db_computer else None
 
-            async with async_session_factory() as session:
-                encryption_service = get_encryption_service()
-                winrm_service = WinRMService(encryption_service=encryption_service, db=session)
-                await winrm_service.initialize()
+            raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
 
-                raw_data = await self._fetch_data_from_host(host, mode, last_updated, winrm_service)
+            if not raw_data or raw_data.get("check_status") in ["failed", "unreachable"]:
+                logger_adapter.warning(
+                    f"Збір даних з хоста {host} не вдався.",
+                    extra={"details": raw_data.get("errors")},
+                )
+                await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status", "failed"))
+                await self.computer_repo.db.commit()
+                return False
 
-                if not raw_data or raw_data.get("check_status") in [
-                    "failed",
-                    "unreachable",
-                ]:
-                    logger_adapter.warning(
-                        f"Збір даних з хоста {host} не вдався.",
-                        extra={"details": raw_data.get("errors")},
-                    )
-                    await self.computer_repo.async_update_computer_check_status(host, raw_data.get("check_status", "failed"))
-                    await self.computer_repo.db.commit()
-                    return False
-
-                await self._prepare_and_save_data(raw_data, host, mode)
-
-                logger_adapter.info(f"Хост {host} успішно оброблено.")
-                return True
+            await self._prepare_and_save_data(raw_data, host, mode)
+            logger_adapter.info(f"Хост {host} успішно оброблено.")
+            return True
         except Exception as e:
             logger_adapter.error(f"Критична помилка при обробці хоста {host}: {e}", exc_info=True)
             await self.computer_repo.db.rollback()
@@ -246,8 +236,8 @@ class ComputerService:
         task_id: str,
         logger_adapter: logging.LoggerAdapter,
         hostname: Optional[str] = None,
+        winrm_service: WinRMService = None,
     ):
-        """Запускає задачу сканування для одного або всіх хостів."""
         hosts = []
         successful = 0
         try:
@@ -291,7 +281,7 @@ class ComputerService:
             async def process_host_with_semaphore(host: str):
                 nonlocal successful
                 async with self.semaphore:
-                    result = await self.process_single_host(host, logger_adapter)
+                    result = await self.process_single_host(host, winrm_service, logger_adapter)
                     if result:
                         successful += 1
 

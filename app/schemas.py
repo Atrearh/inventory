@@ -199,6 +199,12 @@ class DahuaDVRUpdate(BaseSchema):
     mac_addresses: Optional[List[MACAddress]] = None
     users: Optional[List[DahuaDVRUserCreate]] = None
 
+class DahuaDVRUserRead(BaseSchema):
+    id: Optional[int] = None
+    dvr_id: int
+    username: NonEmptyStr
+    encrypted_password: Optional[str] = Field(None, exclude=True)
+    
 # --- Схеми статистики ---
 class StatusStats(BaseSchema):
     status: CheckStatus

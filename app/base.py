@@ -1,5 +1,4 @@
-from sqlmodel import SQLModel
+from sqlalchemy.orm import DeclarativeBase
 
-# SQLModel вже має вбудований Base клас
-# Тому просто експортуємо SQLModel як Base для сумісності
-Base = SQLModel
+# Експортуємо SQLAlchemy Base клас
+Base = DeclarativeBase

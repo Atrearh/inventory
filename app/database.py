@@ -1,10 +1,8 @@
 import logging
 from typing import AsyncGenerator
-
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel
-
+from app.base import Base
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +25,7 @@ engine = create_async_engine(
     # echo=True  # Для дебагу SQL запитів
 )
 
-# Створюємо фабрику сесій з SQLModel AsyncSession
+# Створюємо фабрику сесій для асинхронних сесій
 async_session_factory = sessionmaker(
     engine,
     class_=AsyncSession,
@@ -58,8 +56,8 @@ async def init_db():
     try:
         async with engine.begin() as conn:
             logger.debug("Створення таблиць бази даних")
-            # SQLModel.metadata містить всі зареєстровані моделі
-            await conn.run_sync(SQLModel.metadata.create_all)
+
+            await conn.run_sync(Base.metadata.create_all)
         logger.info("База даних успішно ініціалізована")
     except Exception as e:
         logger.error(f"Помилка ініціалізації бази даних: {str(e)}", exc_info=True)

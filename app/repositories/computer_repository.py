@@ -3,15 +3,13 @@ from datetime import datetime
 from typing import Union, AsyncGenerator, Dict, List, Optional, Tuple, Any
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
-from sqlmodel import func
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
+from sqlalchemy.ext.asyncio.session import AsyncSession
 from .. import models
 from ..decorators import log_function_call
 from ..schemas import ComputerCreate, ComputerListItem
 
 logger = logging.getLogger(__name__)
-
 
 class ComputerRepository:
     def __init__(self, db: AsyncSession):
@@ -49,11 +47,11 @@ class ComputerRepository:
         if os_name:
             query = query.join(models.OperatingSystem).filter(models.OperatingSystem.name.ilike(f"%{os_name}%"))
         if check_status:
-            query = query.filter(models.Computer.check_status == check_status) 
+            query = query.filter(models.Computer.check_status == check_status)
         if server_filter == "server":
             query = query.join(models.OperatingSystem).filter(models.OperatingSystem.name.ilike("%Server%"))
         elif server_filter == "client":
-            query = query.filter(~models.Computer.os_name.ilike("%server%"))
+            query = query.join(models.OperatingSystem).filter(~models.OperatingSystem.name.ilike("%server%"))
         if domain_id:
             query = query.filter(models.Computer.domain_id == domain_id)
         if ip_range and ip_range != "none":
@@ -139,8 +137,8 @@ class ComputerRepository:
             # Виключення видалених комп'ютерів
             query = query.filter(
                 and_(
-                    models.Computer.check_status != "disabled",
-                    models.Computer.check_status != "is_deleted",
+                    models.Computer.check_status != models.CheckStatus.disabled,
+                    models.Computer.check_status != models.CheckStatus.is_deleted,
                 )
             )
 
@@ -224,6 +222,7 @@ class ComputerRepository:
         """Базовий метод для оновлення комп'ютера за ID."""
         try:
             await self.db.execute(models.Computer.__table__.update().where(models.Computer.id == id).values(**data))
+            await self.db.commit()
             logger.debug("Комп'ютер оновлено за ID", extra={"computer_id": id})
         except SQLAlchemyError as e:
             logger.error(
@@ -263,6 +262,7 @@ class ComputerRepository:
             if db_computer:
                 for key, value in computer_data.items():
                     setattr(db_computer, key, value)
+                await self.db.commit()
             else:
                 db_computer = await self.create_computer(computer_data)
 
@@ -281,8 +281,6 @@ class ComputerRepository:
             computer_data = computer.model_dump(
                 include={
                     "hostname",
-                    "os_name",
-                    "os_version",
                     "ram",
                     "motherboard",
                     "last_boot",
@@ -361,6 +359,7 @@ class ComputerRepository:
             new_check_status = models.CheckStatus(check_status)
             if db_computer.check_status != new_check_status:
                 await self.update_computer(db_computer.id, {"check_status": new_check_status})
+                await self.db.commit()
                 logger.debug(f"Статус оновлено до {check_status}", extra={"hostname": hostname})
             return db_computer
         except ValueError:
@@ -427,11 +426,11 @@ class ComputerRepository:
             logger.error(f"Помилка отримання комп'ютера {computer_id}: {str(e)}", exc_info=True)
             raise
 
-    async def get_computer_by_hostname(self, hostname: str) -> Optional[models.Computer]:
+    async def get_computer_by_hostname(self, hostname: str) -> Optional[ComputerListItem]:
         """Обгортка: отримує комп'ютер за hostname."""
         try:
             computers, _ = await self.get_computer(hostname=hostname)
-            return computers[0].model_validate(computers[0], from_attributes=True) if computers else None
+            return computers[0] if computers else None
         except SQLAlchemyError as e:
             logger.error(
                 f"Помилка отримання комп'ютера за hostname: {str(e)}",

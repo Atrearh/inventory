@@ -2,23 +2,61 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import SQLModel, select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio.session import AsyncSession
 from .. import models
 from ..decorators import log_function_call
 from ..schemas import ComputerCreate
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=SQLModel)
+T = TypeVar("T", bound=models.Base)
 
+# Конфігурація компонентів для спрощення оновлення пов’язаних сутностей
+COMPONENT_CONFIG = {
+    "ip_addresses": {
+        "model": models.IPAddress,
+        "unique_field": "address",
+        "update_fields": ["address"],
+    },
+    "mac_addresses": {
+        "model": models.MACAddress,
+        "unique_field": "address",
+        "update_fields": ["address"],
+    },
+    "processors": {
+        "model": models.Processor,
+        "unique_field": "name",
+        "update_fields": ["name", "cores", "threads", "speed_ghz"],
+    },
+    "video_cards": {
+        "model": models.VideoCard,
+        "unique_field": "name",
+        "update_fields": ["name", "vram", "driver_version"],
+    },
+    "physical_disks": {
+        "model": models.PhysicalDisk,
+        "unique_field": "serial",
+        "update_fields": ["model", "serial", "interface", "media_type"],
+    },
+    "logical_disks": {
+        "model": models.LogicalDisk,
+        "unique_field": "device_id",
+        "update_fields": ["device_id", "volume_label", "total_space", "free_space"],
+        "custom_logic": "_create_logical_disk",
+    },
+    "roles": {
+        "model": models.Role,
+        "unique_field": "name",
+        "update_fields": ["name"],
+    },
+}
 
 class ComponentRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def _get_physical_disk_id(self, computer_id: int, serial: Optional[str]) -> Optional[int]:
-        # Перенесено з ComputerRepository без змін
         if not serial:
             return None
         try:
@@ -38,13 +76,8 @@ class ComponentRepository:
             return None
 
     async def _create_logical_disk(self, db_computer: models.Computer, pydantic_model: models.LogicalDisk) -> models.LogicalDisk:
-        # Перенесено з ComputerRepository без змін
-        entity_data = pydantic_model.dict(exclude={"total_space_gb", "free_space_gb"})
-        entity_data.pop("parent_disk_serial", None)
-        entity_data.pop("computer_id", None)
-        entity_data.pop("detected_on", None)
-        entity_data.pop("removed_on", None)
-
+        entity_data = pydantic_model.dict(exclude={"total_space_gb", "free_space_gb", "parent_disk_serial", "computer_id", "detected_on", "removed_on"})
+        
         logger.debug(
             f"Дані для створення LogicalDisk: {entity_data}",
             extra={"computer_id": db_computer.id},
@@ -59,8 +92,8 @@ class ComponentRepository:
         if pydantic_model.parent_disk_serial:
             result = await self.db.execute(
                 select(models.PhysicalDisk)
-                .filter(models.PhysicalDisk.computer_id == db_computer.id)
-                .filter(models.PhysicalDisk.serial == pydantic_model.parent_disk_serial)
+                .where(models.PhysicalDisk.computer_id == db_computer.id)
+                .where(models.PhysicalDisk.serial == pydantic_model.parent_disk_serial)
             )
             physical_disk = result.scalars().first()
             if physical_disk:
@@ -72,13 +105,12 @@ class ComponentRepository:
         self,
         db_computer: models.Computer,
         new_entities: List[T],
-        model_class: Type[SQLModel],
+        model_class: Type[models.Base],
         unique_field: str | Tuple[str, ...],
         collection_name: str,
         update_fields: Optional[List[str]] = None,
         custom_logic: Optional[Callable[[models.Computer, T], Any]] = None,
     ) -> None:
-        # Перенесено з ComputerRepository без змін
         try:
             current_entities = getattr(db_computer, collection_name) or []
             current_entities_map = (
@@ -146,93 +178,30 @@ class ComponentRepository:
             raise
 
     async def update_computer_entities(self, db_computer: models.Computer, computer: ComputerCreate) -> None:
-        # Перенесено з ComputerRepository без змін
         try:
-            if computer.ip_addresses is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.ip_addresses,
-                    models.IPAddress,
-                    "address",
-                    "ip_addresses",
-                    update_fields=["address"],
-                )
-            if computer.mac_addresses is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.mac_addresses,
-                    models.MACAddress,
-                    "address",
-                    "mac_addresses",
-                    update_fields=["address"],
-                )
-            if computer.processors is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.processors,
-                    models.Processor,
-                    "name",
-                    "processors",
-                    update_fields=[
-                        "name",
-                        "number_of_cores",
-                        "number_of_logical_processors",
-                    ],
-                )
-            if computer.video_cards is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.video_cards,
-                    models.VideoCard,
-                    "name",
-                    "video_cards",
-                    update_fields=["name", "driver_version"],
-                )
-            if computer.physical_disks is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.physical_disks,
-                    models.PhysicalDisk,
-                    "serial",
-                    "physical_disks",
-                    update_fields=["model", "serial", "interface", "media_type"],
-                )
-            if computer.logical_disks is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.logical_disks,
-                    models.LogicalDisk,
-                    "device_id",
-                    "logical_disks",
-                    update_fields=[
-                        "device_id",
-                        "volume_label",
-                        "total_space",
-                        "free_space",
-                    ],
-                    custom_logic=self._create_logical_disk,
-                )
-            if computer.roles is not None:
-                await self.update_related_entities(
-                    db_computer,
-                    computer.roles,
-                    models.Role,
-                    "name",
-                    "roles",
-                    update_fields=["name"],
-                )
+            for collection_name, config in COMPONENT_CONFIG.items():
+                new_entities = getattr(computer, collection_name)
+                if new_entities is not None:
+                    custom_logic_func = getattr(self, config["custom_logic"], None) if "custom_logic" in config else None
+                    
+                    await self.update_related_entities(
+                        db_computer,
+                        new_entities,
+                        config["model"],
+                        config["unique_field"],
+                        collection_name,
+                        update_fields=config["update_fields"],
+                        custom_logic=custom_logic_func,
+                    )
+            
             await self.db.commit()
-            logger.debug(
-                f"Транзакцію для пов’язаних сутностей зафіксовано",
-                extra={"computer_id": db_computer.id},
-            )
+            logger.debug(f"Транзакцію для пов’язаних сутностей зафіксовано", extra={"computer_id": db_computer.id})
         except SQLAlchemyError as e:
             logger.error(f"Помилка оновлення пов’язаних сутностей для комп’ютера з ID {db_computer.id}: {str(e)}")
             await self.db.rollback()
             raise
 
     async def get_component_history(self, computer_id: int) -> List[Dict[str, Any]]:
-        # Перенесено з ComputerRepository без змін
         try:
             history = []
             for component_type, model in [
@@ -242,14 +211,16 @@ class ComponentRepository:
                 ("video_card", models.VideoCard),
                 ("ip_address", models.IPAddress),
                 ("mac_address", models.MACAddress),
-                ("software", models.Software),
+                ("software", models.InstalledSoftware),  # Оновлено з Software на InstalledSoftware
             ]:
-                result = await self.db.execute(select(model).where(model.computer_id == computer_id))
+                result = await self.db.execute(
+                    select(model).where(model.computer_id == computer_id)
+                )
                 for item in result.scalars().all():
                     history.append(
                         {
                             "component_type": component_type,
-                            "data": item.dict(),
+                            "data": item.__dict__,
                             "detected_on": (item.detected_on.isoformat() if item.detected_on else None),
                             "removed_on": (item.removed_on.isoformat() if item.removed_on else None),
                         }
